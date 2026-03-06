@@ -146,7 +146,7 @@ alias pi='ssh raspby@192.168.2.181'
 ###############################################################################
 alias cp='cp -i'
 alias mv='mv -i'
-alias rm='trash -v'
+command -v trash &>/dev/null && alias rm='trash -v'
 alias mkdir='mkdir -p'
 alias ps='ps auxf'
 alias ping='ping -c 10'
