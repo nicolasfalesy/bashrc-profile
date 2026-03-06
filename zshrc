@@ -818,3 +818,10 @@ command_not_found_handler() {
 ###############################################################################
 command -v starship &>/dev/null && eval "$(starship init zsh)"
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
+
+# TrueNAS workaround: system /etc/zsh/zshrc may unset PROMPT_PERCENT after
+# our config loads, causing starship's %% escapes to render literally.
+# Re-enable it via a precmd hook so it's always set before prompt renders.
+autoload -Uz add-zsh-hook 2>/dev/null
+_fix_prompt_opts() { setopt PROMPT_PERCENT PROMPT_SUBST }
+add-zsh-hook precmd _fix_prompt_opts 2>/dev/null
