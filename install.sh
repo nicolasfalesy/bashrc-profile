@@ -40,8 +40,10 @@ fi
 
 BASHRC_SRC="$REPO_DIR/bashrc"
 SHELL_FUNCS_SRC="$REPO_DIR/shell_functions"
+STARSHIP_SRC="$REPO_DIR/starship.toml"
 BASHRC_DEST="$HOME_DIR/.bashrc"
 SHELL_FUNCS_DEST="$HOME_DIR/.shell_functions"
+STARSHIP_DEST="${XDG_CONFIG_HOME:-$HOME_DIR/.config}/starship.toml"
 
 ###############################################################################
 # Helper functions
@@ -89,6 +91,13 @@ download_from_github() {
         return 1
     fi
     print_success "Downloaded shell_functions"
+
+    print_info "Downloading starship.toml..."
+    if ! curl -fsSL "$GITHUB_RAW/starship.toml" -o "$STARSHIP_SRC"; then
+        print_error "Failed to download starship.toml"
+        return 1
+    fi
+    print_success "Downloaded starship.toml"
 }
 
 validate_files() {
@@ -105,6 +114,12 @@ validate_files() {
         return 1
     fi
     print_success "Found shell_functions"
+
+    if [[ ! -f "$STARSHIP_SRC" ]]; then
+        print_error "Source starship.toml not found: $STARSHIP_SRC"
+        return 1
+    fi
+    print_success "Found starship.toml"
 }
 
 check_existing_files() {
@@ -156,6 +171,18 @@ create_backups() {
     else
         print_info "No .shell_functions to backup"
     fi
+
+    if [[ -f "$STARSHIP_DEST" ]]; then
+        local backup_file="$STARSHIP_DEST.bak.$TIMESTAMP"
+        if [[ "$DRY_RUN" == true ]]; then
+            print_info "[DRY-RUN] Would backup: $STARSHIP_DEST → $backup_file"
+        else
+            cp "$STARSHIP_DEST" "$backup_file"
+            print_success "Backed up starship.toml → $backup_file"
+        fi
+    else
+        print_info "No starship.toml to backup"
+    fi
 }
 
 install_files() {
@@ -164,6 +191,7 @@ install_files() {
     if [[ "$DRY_RUN" == true ]]; then
         print_info "[DRY-RUN] Would install bashrc → $BASHRC_DEST"
         print_info "[DRY-RUN] Would install shell_functions → $SHELL_FUNCS_DEST"
+        print_info "[DRY-RUN] Would install starship.toml → $STARSHIP_DEST"
         print_success "Dry-run complete (no changes made)"
     else
         cp "$BASHRC_SRC" "$BASHRC_DEST"
@@ -171,6 +199,10 @@ install_files() {
 
         cp "$SHELL_FUNCS_SRC" "$SHELL_FUNCS_DEST"
         print_success "Installed .shell_functions"
+
+        mkdir -p "$(dirname "$STARSHIP_DEST")"
+        cp "$STARSHIP_SRC" "$STARSHIP_DEST"
+        print_success "Installed starship.toml"
     fi
 }
 
@@ -193,6 +225,12 @@ validate_installation() {
         return 1
     fi
     print_success ".shell_functions installed correctly"
+
+    if [[ ! -f "$STARSHIP_DEST" ]]; then
+        print_error "starship.toml not found after installation"
+        return 1
+    fi
+    print_success "starship.toml installed correctly"
 
     # Check if shell_functions is sourced in bashrc
     if grep -q 'shell_functions' "$BASHRC_DEST"; then
@@ -235,6 +273,7 @@ show_summary() {
     echo "Files installed:"
     echo "  • ~/.bashrc"
     echo "  • ~/.shell_functions"
+    echo "  • ~/.config/starship.toml"
     echo ""
     echo "Next steps:"
     echo "  1. Restart your terminal or run: source ~/.bashrc"

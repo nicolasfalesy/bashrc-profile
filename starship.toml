@@ -1,0 +1,289 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  Starship Prompt — "Aurora" theme                                   ║
+# ║  Two-line powerline with right-aligned info bar                     ║
+# ║  Palette: deep space blacks, aurora greens/purples, warm ambers     ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+#
+# Color reference (Tokyo Night inspired):
+#   #1a1b26  bg_deep    — deep space background
+#   #24283b  bg_mid     — twilight panels
+#   #7dcfff  cyan       — ice / accents
+#   #73daca  green_aur  — aurora green (primary accent)
+#   #bb9af7  purple     — aurora purple (git)
+#   #ff9e64  orange     — ember (warnings / duration)
+#   #e0af68  yellow     — gold (jobs / caution)
+#   #7aa2f7  blue       — royal blue (directory)
+#   #c0caf5  fg_bright  — moonlight text
+#   #f7768e  red        — errors / deletions
+#   #9ece6a  green_ok   — success / additions
+
+format = """
+[](fg:#1a1b26)\
+$os\
+$username\
+[](bg:#7aa2f7 fg:#1a1b26)\
+$directory\
+[](bg:#bb9af7 fg:#7aa2f7)\
+$git_branch\
+$git_status\
+$git_metrics\
+[](bg:#73daca fg:#bb9af7)\
+$c\
+$elixir\
+$elm\
+$golang\
+$haskell\
+$java\
+$julia\
+$nodejs\
+$nim\
+$python\
+$rust\
+$docker_context\
+[](bg:#ff9e64 fg:#73daca)\
+$cmd_duration\
+[](bg:#1a1b26 fg:#ff9e64)\
+$jobs\
+$sudo\
+$status\
+$time\
+[](fg:#1a1b26)\
+$fill\
+$memory_usage\
+[ ]()\
+$battery\
+$line_break\
+$character\
+"""
+
+add_newline = false
+command_timeout = 5000
+
+# ── Left prompt segments ─────────────────────────────────────────────
+
+[os]
+disabled = false
+style = "bg:#1a1b26 fg:#7dcfff"
+
+[os.symbols]
+Ubuntu = "  "
+Arch = "  "
+Debian = "  "
+Fedora = "  "
+Windows = "  "
+Macos = "  "
+Linux = "  "
+
+[username]
+show_always = true
+style_user = "bg:#1a1b26 fg:#c0caf5"
+style_root = "bg:#1a1b26 fg:#f7768e bold"
+format = "[ $user ]($style)"
+
+[directory]
+style = "bg:#7aa2f7 fg:#1a1b26 bold"
+format = "[ $path$read_only ]($style)"
+truncation_length = 4
+truncation_symbol = ".../"
+read_only = " 󰌾"
+fish_style_pwd_dir_length = 1
+
+[directory.substitutions]
+"Documents" = "󰈙 "
+"Downloads" = " "
+"Music" = "󰎆 "
+"Pictures" = "󰋩 "
+"Videos" = "󰕧 "
+"Nextcloud" = "󰅟 "
+"Scripts" = " "
+".config" = " "
+".local" = "󰆼 "
+"Code" = " "
+
+[git_branch]
+symbol = ""
+style = "bg:#bb9af7 fg:#1a1b26"
+format = "[ $symbol $branch ]($style)"
+truncation_length = 24
+truncation_symbol = "..."
+
+[git_status]
+style = "bg:#bb9af7 fg:#1a1b26"
+format = "[$all_status$ahead_behind]($style)"
+conflicted = "[  ${count}](bg:#bb9af7 fg:#f7768e bold) "
+ahead = "[󰜸 ${count}](bg:#bb9af7 fg:#1a1b26) "
+behind = "[󰜯 ${count}](bg:#bb9af7 fg:#1a1b26) "
+diverged = "[󰹺 ](bg:#bb9af7 fg:#f7768e bold) "
+untracked = "[? ${count}](bg:#bb9af7 fg:#e0af68) "
+stashed = "[󰏗 ${count}](bg:#bb9af7 fg:#7dcfff) "
+modified = "[~ ${count}](bg:#bb9af7 fg:#ff9e64) "
+staged = "[ ${count}](bg:#bb9af7 fg:#9ece6a bold) "
+renamed = "[» ${count}](bg:#bb9af7 fg:#7dcfff) "
+deleted = "[ ${count}](bg:#bb9af7 fg:#f7768e) "
+up_to_date = "[](bg:#bb9af7 fg:#9ece6a) "
+
+[git_metrics]
+disabled = false
+added_style = "bg:#bb9af7 fg:#9ece6a bold"
+deleted_style = "bg:#bb9af7 fg:#f7768e bold"
+format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
+only_nonzero_diffs = true
+
+# ── Language segments (aurora green band) ────────────────────────────
+
+[c]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[elixir]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[elm]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[golang]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[haskell]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[java]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[julia]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[nodejs]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[nim]
+symbol = "󰆥 "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[python]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version( $virtualenv)]($style)"
+
+[rust]
+symbol = "󱘗 "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$version ]($style)"
+
+[docker_context]
+symbol = " "
+style = "bg:#73daca fg:#1a1b26"
+format = "[ $symbol$context ]($style)"
+
+# ── Info segments (right side of line 1) ─────────────────────────────
+
+[cmd_duration]
+min_time = 1000
+style = "bg:#ff9e64 fg:#1a1b26 bold"
+format = "[ 󰔟 $duration ]($style)"
+show_milliseconds = false
+min_time_to_notify = 30000
+
+[jobs]
+style = "bg:#1a1b26 fg:#e0af68 bold"
+format = "[ 󰜎 $number ]($style)"
+number_threshold = 1
+symbol_threshold = 1
+
+[sudo]
+disabled = false
+style = "bg:#1a1b26 fg:#f7768e bold"
+format = "[ 󰞀 ]($style)"
+symbol = ""
+
+[status]
+disabled = false
+style = "bg:#1a1b26 fg:#f7768e"
+format = "[ 󰅗 $status ]($style)"
+success_symbol = ""
+not_found_symbol = "? "
+sigint_symbol = "INT "
+signal_symbol = "SIG "
+map_symbol = true
+recognize_signal_code = true
+
+[time]
+disabled = false
+time_format = "%H:%M"
+style = "bg:#1a1b26 fg:#c0caf5"
+format = "[  $time ]($style)"
+
+[fill]
+symbol = " "
+
+[memory_usage]
+disabled = false
+threshold = 60
+style = "fg:#e0af68"
+format = "[󰍛 ${ram_pct}%]($style)"
+
+# ── Battery (right-aligned, line 1) ──────────────────────────────────
+
+[battery]
+full_symbol = "󰁹 "
+charging_symbol = "󱐋 "
+discharging_symbol = "󰂃 "
+unknown_symbol = "󰂑 "
+empty_symbol = "󰂎 "
+format = "[$symbol$percentage]($style)"
+
+[[battery.display]]
+threshold = 10
+style = "bold fg:#f7768e"
+charging_symbol = "󱐋 "
+discharging_symbol = "󰁺 "
+
+[[battery.display]]
+threshold = 20
+style = "fg:#f7768e"
+discharging_symbol = "󰁻 "
+
+[[battery.display]]
+threshold = 40
+style = "fg:#ff9e64"
+discharging_symbol = "󰁽 "
+
+[[battery.display]]
+threshold = 60
+style = "fg:#e0af68"
+discharging_symbol = "󰁿 "
+
+[[battery.display]]
+threshold = 80
+style = "fg:#73daca"
+discharging_symbol = "󰂁 "
+
+[[battery.display]]
+threshold = 100
+style = "fg:#9ece6a"
+
+# ── Line 2: prompt character ─────────────────────────────────────────
+
+[character]
+success_symbol = "[❯](bold fg:#73daca)"
+error_symbol = "[❯](bold fg:#f7768e)"
+vimcmd_symbol = "[❮](bold fg:#bb9af7)"
+vimcmd_replace_one_symbol = "[❮](bold fg:#ff9e64)"
+vimcmd_replace_symbol = "[❮](bold fg:#ff9e64)"
+vimcmd_visual_symbol = "[❮](bold fg:#e0af68)"
