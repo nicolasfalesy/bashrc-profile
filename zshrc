@@ -146,7 +146,7 @@ alias pi='ssh pi-host@192.0.2.1'
 ###############################################################################
 alias cp='cp -i'
 alias mv='mv -i'
-alias rm='trash -v'
+command -v trash &>/dev/null && alias rm='trash -v'
 alias mkdir='mkdir -p'
 alias ps='ps auxf'
 alias ping='ping -c 10'
