@@ -239,6 +239,69 @@ See [Starship docs](https://starship.rs/config/) for full options.
 
 ---
 
+## TrueNAS Setup
+
+TrueNAS requires a few extra steps after installation due to its locked-down environment.
+
+### 1. Fix Shell Auto-Sourcing
+
+TrueNAS SSH sessions do not automatically source `~/.zshrc`. Create `~/.zshenv` to fix this:
+
+```bash
+echo '[[ -o interactive ]] && [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"' > ~/.zshenv
+```
+
+This file is always read by zsh regardless of how the shell is started.
+
+### 2. Enable exec on Your Home Dataset
+
+TrueNAS sets `exec=off` on the home directory ZFS dataset by default. This silently prevents any binary installed to `~/.local/bin` (starship, zoxide, neovim, etc.) from running.
+
+Check your dataset:
+```bash
+zfs get exec $(df -P ~/.local | tail -1 | awk '{print $1}')
+```
+
+Fix via command line (replace dataset name with what the above command shows):
+```bash
+sudo zfs set exec=on boot-pool/ROOT/<version>/home
+```
+
+Or via **TrueNAS WebUI → Storage → Datasets → (your home dataset) → Edit → Advanced Options → Exec: On**.
+
+> **Note:** TrueNAS system updates may reset this. Re-run the command if binaries stop working after an update.
+
+### 3. Install Tools Manually
+
+Package managers (`apt`/`nala`) are unsupported on TrueNAS. Install tools via curl instead.
+
+**Starship** (prompt):
+```bash
+curl -sS https://starship.rs/install.sh | sh -s -- --bin-dir ~/.local/bin -y
+```
+
+**Zoxide** (smart navigation):
+```bash
+curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+chmod +x ~/.local/bin/zoxide
+```
+
+**Neovim** (editor):
+```bash
+curl -LO https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz
+tar xzf nvim-linux-x86_64.tar.gz
+cp nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
+/bin/rm -rf nvim-linux-x86_64 nvim-linux-x86_64.tar.gz
+```
+
+### 4. Reload
+
+```bash
+source ~/.zshrc
+```
+
+---
+
 ## Troubleshooting
 
 ### Aliases Not Working
@@ -302,6 +365,34 @@ cp ~/.shell_functions.bak.20260101-120000 ~/.shell_functions
 # Reload
 reload
 ```
+
+### TrueNAS: Binaries Say "permission denied"
+
+**Problem**: Commands like `nvim`, `starship`, or `zoxide` fail with `permission denied` even after `chmod +x`
+
+**Cause**: The home directory ZFS dataset has `exec=off`
+
+**Solution**:
+```bash
+# Find and fix the dataset
+zfs get exec $(df -P ~/.local | tail -1 | awk '{print $1}')
+sudo zfs set exec=on boot-pool/ROOT/<version>/home
+```
+
+Or enable via TrueNAS WebUI → Storage → Datasets → Edit → Advanced Options → Exec: On.
+
+### TrueNAS: Prompt Doesn't Load on SSH Login
+
+**Problem**: Shell shows default `truenas%` prompt instead of Starship after SSH login
+
+**Cause**: TrueNAS doesn't auto-source `~/.zshrc` for SSH sessions
+
+**Solution**:
+```bash
+echo '[[ -o interactive ]] && [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"' > ~/.zshenv
+```
+
+Log out and back in. Note: this also requires `exec=on` (see above) for the Starship prompt to appear.
 
 ### SSH Aliases Not Working
 
