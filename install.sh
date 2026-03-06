@@ -25,14 +25,23 @@ NC='\033[0m'  # No Color
 ###############################################################################
 # Configuration
 ###############################################################################
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOME_DIR="${HOME:-$(eval echo ~)}"
+DRY_RUN=false
+TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+
+# Determine if running from file or pipe
+if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ "${BASH_SOURCE[0]}" != "-" ]]; then
+    REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+    # Running from pipe (curl | bash), download from GitHub
+    REPO_DIR="$(mktemp -d)"
+    GITHUB_RAW="https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main"
+fi
+
 BASHRC_SRC="$REPO_DIR/bashrc"
 SHELL_FUNCS_SRC="$REPO_DIR/shell_functions"
 BASHRC_DEST="$HOME_DIR/.bashrc"
 SHELL_FUNCS_DEST="$HOME_DIR/.shell_functions"
-DRY_RUN=false
-TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
 
 ###############################################################################
 # Helper functions
@@ -62,6 +71,24 @@ print_error() {
 print_section() {
     echo ""
     echo -e "${BLUE}--- $1 ---${NC}"
+}
+
+download_from_github() {
+    print_section "Downloading files from GitHub"
+
+    print_info "Downloading bashrc..."
+    if ! curl -fsSL "$GITHUB_RAW/bashrc" -o "$BASHRC_SRC"; then
+        print_error "Failed to download bashrc"
+        return 1
+    fi
+    print_success "Downloaded bashrc"
+
+    print_info "Downloading shell_functions..."
+    if ! curl -fsSL "$GITHUB_RAW/shell_functions" -o "$SHELL_FUNCS_SRC"; then
+        print_error "Failed to download shell_functions"
+        return 1
+    fi
+    print_success "Downloaded shell_functions"
 }
 
 validate_files() {
@@ -279,6 +306,15 @@ main() {
         echo ""
     fi
 
+    # Download files from GitHub if running from pipe
+    if [[ -n "${GITHUB_RAW:-}" ]]; then
+        if ! download_from_github; then
+            print_error "Installation failed: could not download files"
+            rm -rf "$REPO_DIR"
+            exit 1
+        fi
+    fi
+
     # Validate source files exist
     if ! validate_files; then
         print_error "Installation failed: source files not found"
@@ -305,6 +341,11 @@ main() {
     validate_installation
     reload_shell
     show_summary
+
+    # Clean up temporary directory if we created one
+    if [[ -n "${GITHUB_RAW:-}" ]]; then
+        rm -rf "$REPO_DIR"
+    fi
 
     echo ""
 }
