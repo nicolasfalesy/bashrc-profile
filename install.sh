@@ -27,6 +27,7 @@ NC='\033[0m'  # No Color
 ###############################################################################
 HOME_DIR="${HOME:-$(eval echo ~)}"
 DRY_RUN=false
+TRUENAS=false
 TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
 
 # Determine if running from file or pipe
@@ -38,12 +39,14 @@ else
     GITHUB_RAW="https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main"
 fi
 
-BASHRC_SRC="$REPO_DIR/bashrc"
 SHELL_FUNCS_SRC="$REPO_DIR/shell_functions"
 STARSHIP_SRC="$REPO_DIR/starship.toml"
-BASHRC_DEST="$HOME_DIR/.bashrc"
 SHELL_FUNCS_DEST="$HOME_DIR/.shell_functions"
 STARSHIP_DEST="${XDG_CONFIG_HOME:-$HOME_DIR/.config}/starship.toml"
+
+# Set RC file paths — resolved after TrueNAS flag is determined in main()
+BASHRC_SRC=""
+BASHRC_DEST=""
 
 ###############################################################################
 # Helper functions
@@ -78,12 +81,21 @@ print_section() {
 download_from_github() {
     print_section "Downloading files from GitHub"
 
-    print_info "Downloading bashrc..."
-    if ! curl -fsSL "$GITHUB_RAW/bashrc" -o "$BASHRC_SRC"; then
-        print_error "Failed to download bashrc"
-        return 1
+    if [[ "$TRUENAS" == true ]]; then
+        print_info "Downloading zshrc..."
+        if ! curl -fsSL "$GITHUB_RAW/zshrc" -o "$BASHRC_SRC"; then
+            print_error "Failed to download zshrc"
+            return 1
+        fi
+        print_success "Downloaded zshrc"
+    else
+        print_info "Downloading bashrc..."
+        if ! curl -fsSL "$GITHUB_RAW/bashrc" -o "$BASHRC_SRC"; then
+            print_error "Failed to download bashrc"
+            return 1
+        fi
+        print_success "Downloaded bashrc"
     fi
-    print_success "Downloaded bashrc"
 
     print_info "Downloading shell_functions..."
     if ! curl -fsSL "$GITHUB_RAW/shell_functions" -o "$SHELL_FUNCS_SRC"; then
@@ -103,11 +115,14 @@ download_from_github() {
 validate_files() {
     print_section "Validating source files"
 
+    local rc_label
+    [[ "$TRUENAS" == true ]] && rc_label="zshrc" || rc_label="bashrc"
+
     if [[ ! -f "$BASHRC_SRC" ]]; then
-        print_error "Source bashrc not found: $BASHRC_SRC"
+        print_error "Source $rc_label not found: $BASHRC_SRC"
         return 1
     fi
-    print_success "Found bashrc"
+    print_success "Found $rc_label"
 
     if [[ ! -f "$SHELL_FUNCS_SRC" ]]; then
         print_error "Source shell_functions not found: $SHELL_FUNCS_SRC"
@@ -188,14 +203,17 @@ create_backups() {
 install_files() {
     print_section "Installing files"
 
+    local rc_dest_label
+    [[ "$TRUENAS" == true ]] && rc_dest_label="~/.zshrc" || rc_dest_label="~/.bashrc"
+
     if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY-RUN] Would install bashrc → $BASHRC_DEST"
+        print_info "[DRY-RUN] Would install $(basename "$BASHRC_SRC") → $BASHRC_DEST"
         print_info "[DRY-RUN] Would install shell_functions → $SHELL_FUNCS_DEST"
         print_info "[DRY-RUN] Would install starship.toml → $STARSHIP_DEST"
         print_success "Dry-run complete (no changes made)"
     else
         cp "$BASHRC_SRC" "$BASHRC_DEST"
-        print_success "Installed .bashrc"
+        print_success "Installed $rc_dest_label"
 
         cp "$SHELL_FUNCS_SRC" "$SHELL_FUNCS_DEST"
         print_success "Installed .shell_functions"
@@ -214,11 +232,14 @@ validate_installation() {
         return 0
     fi
 
+    local rc_dest_label2
+    [[ "$TRUENAS" == true ]] && rc_dest_label2=".zshrc" || rc_dest_label2=".bashrc"
+
     if [[ ! -f "$BASHRC_DEST" ]]; then
-        print_error ".bashrc not found after installation"
+        print_error "$rc_dest_label2 not found after installation"
         return 1
     fi
-    print_success ".bashrc installed correctly"
+    print_success "$rc_dest_label2 installed correctly"
 
     if [[ ! -f "$SHELL_FUNCS_DEST" ]]; then
         print_error ".shell_functions not found after installation"
@@ -271,14 +292,24 @@ show_summary() {
     echo "✨ Installation complete!"
     echo ""
     echo "Files installed:"
-    echo "  • ~/.bashrc"
+    if [[ "$TRUENAS" == true ]]; then
+        echo "  • ~/.zshrc"
+    else
+        echo "  • ~/.bashrc"
+    fi
     echo "  • ~/.shell_functions"
     echo "  • ~/.config/starship.toml"
     echo ""
     echo "Next steps:"
-    echo "  1. Restart your terminal or run: source ~/.bashrc"
-    echo "  2. Run 'install_prereqs' to install optional dependencies"
-    echo "  3. Check FEATURES.md for a complete list of aliases & functions"
+    if [[ "$TRUENAS" == true ]]; then
+        echo "  1. Restart your shell or run: source ~/.zshrc"
+        echo "  2. Check FEATURES.md for a complete list of aliases & functions"
+        echo "  Note: Package installation (install_prereqs) is not available on TrueNAS."
+    else
+        echo "  1. Restart your terminal or run: source ~/.bashrc"
+        echo "  2. Run 'install_prereqs' to install optional dependencies"
+        echo "  3. Check FEATURES.md for a complete list of aliases & functions"
+    fi
     echo ""
     echo "To restore your previous config:"
     echo "  cp ~/.bashrc.bak.$TIMESTAMP ~/.bashrc"
@@ -343,6 +374,26 @@ main() {
     if [[ "$DRY_RUN" == true ]]; then
         print_warning "DRY-RUN MODE - No changes will be made"
         echo ""
+    fi
+
+    # Ask if this is a TrueNAS installation
+    if [[ "$force_install" == false ]]; then
+        echo ""
+        read -rp "Are you installing on TrueNAS? [y/N] " -n 1 truenas_confirm
+        echo ""
+        if [[ "$truenas_confirm" =~ ^[Yy]$ ]]; then
+            TRUENAS=true
+            print_info "TrueNAS mode: will install zshrc → ~/.zshrc (no package manager installs)"
+        fi
+    fi
+
+    # Set RC source/dest based on TrueNAS flag
+    if [[ "$TRUENAS" == true ]]; then
+        BASHRC_SRC="$REPO_DIR/zshrc"
+        BASHRC_DEST="$HOME_DIR/.zshrc"
+    else
+        BASHRC_SRC="$REPO_DIR/bashrc"
+        BASHRC_DEST="$HOME_DIR/.bashrc"
     fi
 
     # Download files from GitHub if running from pipe
