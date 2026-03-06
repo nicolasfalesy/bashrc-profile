@@ -64,6 +64,49 @@ When prompted `Are you installing on TrueNAS? [y/N]`, answer `y`. This will:
 - Skip all `apt`/`nala` package manager steps (unsupported on TrueNAS)
 - Use `starship init zsh` and `zoxide init zsh`
 
+### Post-Install Steps for TrueNAS
+
+**1. Fix shell auto-sourcing** — TrueNAS doesn't auto-source `~/.zshrc` on SSH login. Run this once:
+```bash
+echo '[[ -o interactive ]] && [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"' > ~/.zshenv
+```
+
+**2. Enable exec on your home ZFS dataset** — TrueNAS sets `exec=off` on the home dataset by default, which prevents any binary in `~/.local/bin` from running (starship, zoxide, nvim, etc.):
+```bash
+# Check your dataset name
+zfs get exec $(df -P ~/.local | tail -1 | awk '{print $1}')
+
+# Enable exec (replace with your actual dataset name)
+sudo zfs set exec=on boot-pool/ROOT/25.10.2.1/home
+```
+Or do it via **TrueNAS WebUI → Storage → Datasets → (your home dataset) → Edit → Advanced Options → Exec: On**.
+
+> **Note:** This may need to be re-applied after a TrueNAS system update.
+
+**3. Install starship** (prompt):
+```bash
+curl -sS https://starship.rs/install.sh | sh -s -- --bin-dir ~/.local/bin -y
+```
+
+**4. Install zoxide** (smart navigation):
+```bash
+curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+chmod +x ~/.local/bin/zoxide
+```
+
+**5. Install neovim** (editor, no apt needed):
+```bash
+curl -LO https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz
+tar xzf nvim-linux-x86_64.tar.gz
+cp nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
+/bin/rm -rf nvim-linux-x86_64 nvim-linux-x86_64.tar.gz
+```
+
+**6. Reload:**
+```bash
+source ~/.zshrc
+```
+
 ## Install Script Features
 
 The `install.sh` script handles:
