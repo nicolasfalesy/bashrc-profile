@@ -9,6 +9,8 @@ setopt SHARE_HISTORY
 setopt AUTO_CD
 setopt INTERACTIVE_COMMENTS
 setopt NO_FLOW_CONTROL
+setopt PROMPT_PERCENT
+setopt PROMPT_SUBST
 
 ###############################################################################
 # SOURCED FILES & COMPLETIONS
