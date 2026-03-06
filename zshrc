@@ -22,8 +22,9 @@ if [ -f /etc/zshrc ]; then
 	. /etc/zshrc
 fi
 
-# Enable zsh completions
+# Enable zsh completions and bash completion compatibility
 autoload -Uz compinit && compinit
+autoload -Uz bashcompinit && bashcompinit
 
 # Source additional shell functions
 if [ -f "$HOME/.shell_functions" ]; then
@@ -807,5 +808,5 @@ command_not_found_handler() {
 ###############################################################################
 # PROMPT & SHELL INIT (must be last)
 ###############################################################################
-eval "$(starship init zsh)"
-eval "$(zoxide init zsh)"
+command -v starship &>/dev/null && eval "$(starship init zsh)"
+command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
