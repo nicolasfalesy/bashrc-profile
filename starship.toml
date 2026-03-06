@@ -236,7 +236,7 @@ symbol = " "
 disabled = false
 threshold = 60
 style = "fg:#e0af68"
-format = "[󰍛 ${ram_pct}%]($style)"
+format = "[󰍛 ${ram_pct}]($style)"
 
 # ── Battery (right-aligned, line 1) ──────────────────────────────────
 
