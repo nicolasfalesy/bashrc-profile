@@ -1,0 +1,459 @@
+#!/usr/bin/env bash
+# ~/.shell_functions - Power-user shell functions
+# Sourced from ~/.bashrc
+# ──────────────────────────────────────────────────────────────────────
+
+# ── mkcd: create directory and cd into it ─────────────────────────────
+mkcd() {
+    case "$1" in
+        -h|--help|-H|"")
+            cat <<'EOF'
+Create a directory (with parents) and cd into it.
+
+Usage: mkcd <directory>
+
+Options:
+  -h, --help, -H   Show this help message
+
+Examples:
+  mkcd new-project
+  mkcd /tmp/deep/nested/dir
+  mkcd ~/Code/my-app
+EOF
+            return 0
+            ;;
+    esac
+    mkdir -p "$1" && builtin cd "$1" && ll
+}
+
+# ── psg: find processes by name ───────────────────────────────────────
+psg() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Search running processes by name or PID.
+
+Usage: psg <pattern> [pattern2...]
+
+Options:
+  -h, --help, -H   Show this help message
+
+Examples:
+  psg docker
+  psg nginx postgres
+  psg "python.*server"
+EOF
+            return 0
+            ;;
+        "")
+            echo "Error: please provide a search pattern" >&2
+            return 1
+            ;;
+    esac
+
+    local pattern count total
+    total=0
+    for pattern in "$@"; do
+        echo -e "\033[0;34m--- $pattern ---\033[0m"
+        count=$(command ps aux | grep -v "grep" | grep -ic "$pattern")
+        command ps aux | head -1
+        command ps aux | grep -v "grep" | grep -i --color=always "$pattern"
+        echo -e "\033[0;32m$count match(es)\033[0m"
+        (( total += count ))
+        echo ""
+    done
+    if (( $# > 1 )); then
+        echo -e "\033[0;34mTotal: $total match(es)\033[0m"
+    fi
+}
+
+_psg_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    COMPREPLY=($(compgen -W "-h --help -H" -- "$cur"))
+}
+complete -F _psg_completions psg
+
+# ── port: show what's listening on a specific port ────────────────────
+port() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Show what process is listening on a given port, or list all listening ports.
+
+Usage: port [PORT...]
+
+Options:
+  -h, --help, -H   Show this help message
+  -a, --all         Show all listening ports
+
+Examples:
+  port                 List all listening ports
+  port 80              What's on port 80?
+  port 80 443 8080     Check multiple ports
+  port -a              Same as no args
+EOF
+            return 0
+            ;;
+        ""|"-a"|"--all")
+            echo -e "\033[0;34m--- All listening ports ---\033[0m"
+            sudo ss -tlnp 2>/dev/null || sudo netstat -tlnp 2>/dev/null
+            return $?
+            ;;
+    esac
+
+    local p
+    for p in "$@"; do
+        if ! [[ "$p" =~ ^[0-9]+$ ]]; then
+            echo "Error: '$p' is not a valid port number" >&2
+            continue
+        fi
+        echo -e "\033[0;34m--- Port $p ---\033[0m"
+        sudo ss -tlnp "sport = :$p" 2>/dev/null || sudo netstat -tlnp 2>/dev/null | grep ":$p "
+        echo ""
+    done
+}
+
+_port_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -a --all" -- "$cur"))
+    fi
+}
+complete -F _port_completions port
+
+# ── weather: quick weather report ─────────────────────────────────────
+weather() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Show weather for a location (defaults to Waterloo, Ontario, Canada).
+
+Usage: weather [OPTIONS] [LOCATION]
+
+Options:
+  -h, --help, -H   Show this help message
+  -s               Short/one-line format
+
+Examples:
+  weather              Waterloo, ON weather (default)
+  weather Toronto
+  weather -s           One-line summary (default location)
+  weather -s Paris     One-line summary for Paris
+  weather "New York"
+EOF
+            return 0
+            ;;
+        -s)
+            local sloc="${2:-Waterloo+Ontario+Canada}"
+            curl -s "wttr.in/${sloc}?format=3" 2>/dev/null
+            return $?
+            ;;
+    esac
+    local location="${1:-Waterloo+Ontario+Canada}"
+    curl -s "wttr.in/${location}" 2>/dev/null | head -40
+}
+
+_weather_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -s" -- "$cur"))
+    fi
+}
+complete -F _weather_completions weather
+
+# ── take: download and extract an archive in one step ─────────────────
+take() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Download a URL and extract it, or just create+cd into a directory.
+
+Usage: take <url|directory>
+
+Options:
+  -h, --help, -H   Show this help message
+
+Examples:
+  take https://example.com/archive.tar.gz
+  take my-new-project
+  take https://github.com/user/repo/archive/main.zip
+EOF
+            return 0
+            ;;
+        "")
+            echo "Error: please provide a URL or directory name" >&2
+            return 1
+            ;;
+    esac
+
+    if [[ "$1" =~ ^https?:// ]]; then
+        local tmpfile filename
+        filename=$(basename "$1")
+        tmpfile=$(mktemp -d)
+        echo "Downloading $1 ..."
+        if curl -fSL "$1" -o "$tmpfile/$filename"; then
+            echo "Extracting $filename ..."
+            builtin cd "$tmpfile" || return 1
+            extract "$filename"
+            rm -f "$filename"
+            # If extraction created exactly one directory, cd into it
+            local dirs=()
+            dirs=(*/)
+            if (( ${#dirs[@]} == 1 )); then
+                builtin cd "${dirs[0]}" && ll
+            else
+                ll
+            fi
+        else
+            echo "Error: download failed" >&2
+            rm -rf "$tmpfile"
+            return 1
+        fi
+    else
+        mkcd "$1"
+    fi
+}
+
+# ── path: pretty-print PATH or manage entries ─────────────────────────
+path() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Display PATH entries one per line, or search within PATH.
+
+Usage: path [OPTIONS] [pattern]
+
+Options:
+  -h, --help, -H   Show this help message
+  -c, --count       Show count of entries
+
+Examples:
+  path               List all PATH entries, numbered
+  path cargo         Show only PATH entries matching "cargo"
+  path -c            How many PATH entries?
+EOF
+            return 0
+            ;;
+        -c|--count)
+            echo "$PATH" | tr ':' '\n' | wc -l
+            return 0
+            ;;
+        "")
+            echo "$PATH" | tr ':' '\n' | nl
+            ;;
+        *)
+            echo "$PATH" | tr ':' '\n' | grep -i --color=always "$1" | nl
+            ;;
+    esac
+}
+
+_path_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -c --count" -- "$cur"))
+    fi
+}
+complete -F _path_completions path
+
+# ── bak: create a timestamped backup copy of a file ───────────────────
+bak() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Create a timestamped backup copy of one or more files.
+
+Usage: bak <file> [file2...]
+
+Options:
+  -h, --help, -H   Show this help message
+  -r, --restore     Restore from a .bak file (removes the .bak.TIMESTAMP suffix)
+
+Examples:
+  bak config.yml                 Creates config.yml.bak.20260306-141500
+  bak file1.txt file2.txt        Backup multiple files
+  bak -r config.yml.bak.20260306-141500
+EOF
+            return 0
+            ;;
+        "")
+            echo "Error: please provide at least one file" >&2
+            return 1
+            ;;
+        -r|--restore)
+            shift
+            if [[ -z "$1" ]]; then
+                echo "Error: provide the .bak file to restore" >&2
+                return 1
+            fi
+            local bakfile="$1"
+            # Strip .bak.TIMESTAMP to get original name
+            local original
+            original=$(echo "$bakfile" | sed 's/\.bak\.[0-9]\{8\}-[0-9]\{6\}$//')
+            if [[ "$original" == "$bakfile" ]]; then
+                echo "Error: '$bakfile' doesn't look like a .bak.TIMESTAMP file" >&2
+                return 1
+            fi
+            cp -i "$bakfile" "$original"
+            echo "Restored: $bakfile -> $original"
+            return 0
+            ;;
+    esac
+
+    local file count=0
+    local timestamp
+    timestamp=$(date +"%Y%m%d-%H%M%S")
+    for file in "$@"; do
+        if [[ ! -f "$file" ]]; then
+            echo "Error: '$file' not found or not a regular file" >&2
+            continue
+        fi
+        cp "$file" "${file}.bak.${timestamp}"
+        echo "Backed up: $file -> ${file}.bak.${timestamp}"
+        (( count++ ))
+    done
+    if (( $# > 1 )); then
+        echo "--- $count file(s) backed up ---"
+    fi
+}
+
+_bak_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -r --restore" -- "$cur"))
+    else
+        COMPREPLY=($(compgen -f -- "$cur"))
+    fi
+}
+complete -F _bak_completions bak
+
+# ── diff2: side-by-side colored diff ─────────────────────────────────
+diff2() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Side-by-side colored diff of two files.
+
+Usage: diff2 <file1> <file2>
+
+Options:
+  -h, --help, -H   Show this help message
+
+Examples:
+  diff2 old.conf new.conf
+  diff2 ~/.bashrc ~/.bashrc.bak
+EOF
+            return 0
+            ;;
+    esac
+    if [[ $# -ne 2 ]]; then
+        echo "Error: exactly two files required" >&2
+        return 1
+    fi
+    if [[ ! -f "$1" ]]; then
+        echo "Error: '$1' not found" >&2
+        return 1
+    fi
+    if [[ ! -f "$2" ]]; then
+        echo "Error: '$2' not found" >&2
+        return 1
+    fi
+    command diff --color=always --side-by-side "$1" "$2" | less -R
+}
+
+_diff2_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    COMPREPLY=($(compgen -f -- "$cur"))
+}
+complete -F _diff2_completions diff2
+
+# ── tre: tree with depth limit and common ignores ─────────────────────
+tre() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Tree listing with sensible defaults (ignores .git, node_modules, __pycache__).
+
+Usage: tre [DEPTH] [DIRECTORY]
+
+Options:
+  -h, --help, -H   Show this help message
+
+Defaults: depth 3, current directory.
+
+Examples:
+  tre                 3 levels deep, current dir
+  tre 2               2 levels deep
+  tre 5 /etc          5 levels deep in /etc
+  tre 1 ~/Code
+EOF
+            return 0
+            ;;
+    esac
+    local depth="${1:-3}"
+    local dir="${2:-.}"
+    if [[ ! -d "$dir" ]]; then
+        echo "Error: '$dir' is not a directory" >&2
+        return 1
+    fi
+    command tree -CAhF --dirsfirst -L "$depth" -I '.git|node_modules|__pycache__|.venv|.cache|*.pyc' "$dir"
+}
+
+# ── note: quick notes to a scratch file ───────────────────────────────
+note() {
+    local NOTES_FILE="$HOME/Nextcloud/quick-notes.txt"
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Quick scratchpad notes (saved to ~/Nextcloud/quick-notes.txt).
+
+Usage: note [OPTIONS] [text...]
+
+Options:
+  -h, --help, -H   Show this help message
+  -l, --list        Show all notes
+  -c, --clear       Clear all notes (with confirmation)
+  -e, --edit        Open notes in editor
+
+Examples:
+  note Remember to update the server config
+  note -l           Show all notes
+  note -e           Edit notes in nvim
+EOF
+            return 0
+            ;;
+        "")
+            echo "Error: provide a note or use -l to list" >&2
+            return 1
+            ;;
+        -l|--list)
+            if [[ -f "$NOTES_FILE" ]]; then
+                cat -n "$NOTES_FILE"
+            else
+                echo "(no notes yet)"
+            fi
+            return 0
+            ;;
+        -c|--clear)
+            read -rp "Clear all notes? [y/N] " confirm
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                > "$NOTES_FILE"
+                echo "Notes cleared."
+            fi
+            return 0
+            ;;
+        -e|--edit)
+            "${EDITOR:-nvim}" "$NOTES_FILE"
+            return 0
+            ;;
+    esac
+    echo "[$(date '+%Y-%m-%d %H:%M')] $*" >> "$NOTES_FILE"
+    echo "Note saved."
+}
+
+_note_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -l --list -c --clear -e --edit" -- "$cur"))
+    fi
+}
+complete -F _note_completions note

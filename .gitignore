@@ -1,0 +1,29 @@
+# OS-specific
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Backups created during installation
+.bashrc.bak*
+.shell_functions.bak*
+
+# Build/temp files
+*.o
+*.so
+*.dylib
+*.exe
+.venv
+__pycache__
+node_modules
+
+# IDE
+.vscode
+.idea
+*.sublime-*
+.vim
+
+# Environment files
+.env
+.env.local
