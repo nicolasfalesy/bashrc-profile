@@ -1,13 +1,15 @@
 # bashrc-profile
 
-A fully-featured, well-organized bash configuration with 40+ aliases and 25+ custom functions designed for power users.
+A fully-featured, well-organized shell configuration with 40+ aliases and 25+ custom functions designed for power users. Supports both **bash** (Linux/Raspberry Pi) and **zsh** (TrueNAS).
 
 ## Quick Start
 
 ### One-Line Install
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/install.sh | bash
+bash <(curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/install.sh)
 ```
+
+The installer will ask if you're on TrueNAS — answer `y` for a zsh-compatible install, or `n` for the standard bash install.
 
 ### Manual Install
 ```bash
@@ -21,15 +23,15 @@ bash install.sh
 - **40+ carefully curated aliases** for common tasks (Docker, package management, SSH, Git, etc.)
 - **25+ custom shell functions** for navigation, file operations, networking, system info, and more
 - **Organized structure** with clear sections and comments
-- **Bash completions** for complex functions
 - **Color-coded output** for better readability
 - **Compatible with modern tools** (ripgrep, nala, starship, zoxide, ble.sh)
+- **TrueNAS / zsh support** — dedicated zshrc with zsh-native options and no apt/nala dependencies
 
 ## Installation Options
 
 ### Option 1: Curl Install (Recommended)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/install.sh | bash
+bash <(curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/install.sh)
 ```
 
 ### Option 2: Clone & Install
@@ -41,30 +43,44 @@ bash install.sh
 
 ### Option 3: Manual Install
 ```bash
-# Copy files to home directory
+# Standard bash
 cp bashrc ~/.bashrc
 cp shell_functions ~/.shell_functions
-
-# Reload shell
+cp starship.toml ~/.config/starship.toml
 source ~/.bashrc
+
+# TrueNAS / zsh
+cp zshrc ~/.zshrc
+cp shell_functions ~/.shell_functions
+cp starship.toml ~/.config/starship.toml
+source ~/.zshrc
 ```
+
+## TrueNAS Install
+
+When prompted `Are you installing on TrueNAS? [y/N]`, answer `y`. This will:
+
+- Install `zshrc` → `~/.zshrc` instead of `~/.bashrc`
+- Skip all `apt`/`nala` package manager steps (unsupported on TrueNAS)
+- Use `starship init zsh` and `zoxide init zsh`
 
 ## Install Script Features
 
 The `install.sh` script handles:
-- ✅ **Automatic backups** - Creates timestamped backups of existing `.bashrc` and `.shell_functions`
-- ✅ **Dry-run mode** - Preview changes before applying with `bash install.sh --dry-run`
-- ✅ **Fresh & update installs** - Supports both new installations and updates to existing setups
-- ✅ **Automatic reload** - Reloads your shell after installation (or notifies you to restart)
-- ✅ **Prerequisites check** - Verifies dependencies
+- ✅ **TrueNAS detection** — asks at startup and installs the right config for your system
+- ✅ **Automatic backups** — creates timestamped backups of existing config files
+- ✅ **Dry-run mode** — preview changes before applying with `bash install.sh --dry-run`
+- ✅ **Fresh & update installs** — supports both new installations and updates
+- ✅ **Automatic reload** — reloads your shell after installation (or notifies you to restart)
+- ✅ **Starship prompt** — installs the custom Aurora theme to `~/.config/starship.toml`
 
 ## What's Included
 
 ### Aliases
 - **Editor**: vim, vi, svim, svi, snvim
 - **Docker**: du, dd, dr
-- **Package Management**: apt, np, ni, nfi, nf, nu
-- **Config Shortcuts**: kt, bt, nt, notes
+- **Package Management**: apt, np, ni, nfi, nf, nu *(bash only — skipped on TrueNAS)*
+- **Config Shortcuts**: kt, bt, nt, notes, reload
 - **SSH**: uw, nas, pi
 - **Core Commands**: cp, mv, rm, mkdir, ps, ping, etc.
 - **Filesystem**: ll, l, tree, folders, mnts
@@ -74,27 +90,27 @@ The `install.sh` script handles:
 
 ### Functions
 - **Navigation**: cd (auto-ls), up, cpg, mvg, mkdirg
-- **File Operations**: extract, ftext, size (with completion)
+- **File Operations**: extract, ftext, size
 - **Networking**: whatsmyip, pubip, vpn
 - **Clipboard**: cpy, pst
 - **System**: sys, apps, install_app
 - **Theme Manager**: at (Alacritty themes)
 - **GRUB Management**: grub
-- **Minecraft RCON**: rcon, rc (with command completion)
+- **Minecraft RCON**: rcon, rc
 - **Cloudflare Tunnel**: cloud
-- **Prerequisites Installer**: install_prereqs, prereqs
+- **Prerequisites Installer**: install_prereqs, prereqs *(bash only)*
 - **Shell Functions**: mkcd, psg, port, weather, take, path, bak, diff2, tre, note
 
 ## Configuration
 
 ### Environment Variables
-Edit `.bashrc` to customize:
+Edit `~/.bashrc` (or `~/.zshrc` on TrueNAS) to customize:
 - `EDITOR` - Your preferred editor (default: nvim)
 - `RCON_IP`, `RCON_PORT`, `RCON_PASS` - Minecraft server settings
 - `TERMINAL` - Terminal application (default: alacritty)
 
 ### Aliases & Functions
-All aliases and functions are in the `.bashrc` and `.shell_functions` files. Edit them directly to customize for your workflow.
+All aliases and functions are in `~/.bashrc`/`~/.zshrc` and `~/.shell_functions`. Edit them directly to customize for your workflow.
 
 ## Dependencies
 
@@ -106,13 +122,13 @@ The profile works best with:
 - **ripgrep** - Fast grep alternative
 - **trash-cli** - Safe file deletion
 - **alacritty** - GPU-accelerated terminal
-- **ble.sh** - Enhanced readline
+- **ble.sh** - Enhanced readline *(bash only)*
 
-Run `install_prereqs` (or `prereqs`) to install missing dependencies.
+Run `install_prereqs` (or `prereqs`) to install missing dependencies. *(Not available on TrueNAS.)*
 
 ## Uninstall
 
-To restore your previous bash configuration:
+To restore your previous configuration:
 ```bash
 # Find your backup
 ls ~/.bashrc.bak.*
@@ -128,23 +144,23 @@ source ~/.bashrc
 
 ## Customization
 
-1. **Add new aliases**: Add them to the appropriate section in `.bashrc`
-2. **Add new functions**: Add them to `.shell_functions` or `.bashrc`
+1. **Add new aliases**: Add them to the appropriate section in `~/.bashrc` or `~/.zshrc`
+2. **Add new functions**: Add them to `~/.shell_functions` or `~/.bashrc`
 3. **Modify existing settings**: Edit the `ENVIRONMENT VARIABLES` section
-4. **Create custom themes**: Customize colors and prompt in `.bashrc`
+4. **Prompt**: Edit `~/.config/starship.toml` to customize the Starship prompt
 
 See [FEATURES.md](FEATURES.md) for detailed documentation of all aliases and functions.
 
 ## Troubleshooting
 
 ### Command not found errors
-- Run `install_prereqs` to install missing dependencies
+- Run `install_prereqs` to install missing dependencies (bash only)
 - Verify the command is in your PATH: `which command_name`
 
 ### Aliases/functions not working
-- Make sure `.shell_functions` is in your home directory
-- Verify `.bashrc` sources `.shell_functions` correctly
-- Reload with `source ~/.bashrc` or `reload` alias
+- Make sure `~/.shell_functions` is in your home directory
+- Verify your rc file sources `.shell_functions` correctly
+- Reload with `source ~/.bashrc` (or `source ~/.zshrc`) or use the `reload` alias
 
 ### Backup issues
 - Backups are saved with timestamp: `.bashrc.bak.YYYYMMDD-HHMMSS`
