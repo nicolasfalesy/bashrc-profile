@@ -24,7 +24,12 @@ fi
 
 # Enable zsh completions and bash completion compatibility
 autoload -Uz compinit && compinit
-autoload -Uz bashcompinit && bashcompinit
+if autoload -Uz bashcompinit 2>/dev/null; then
+    bashcompinit 2>/dev/null
+fi
+# Hard fallback: if complete is still not available, define it as a no-op
+# so shell_functions doesn't error on bash-style complete calls
+(( ${+functions[complete]} )) || complete() { :; }
 
 # Source additional shell functions
 if [ -f "$HOME/.shell_functions" ]; then
@@ -90,6 +95,7 @@ export RCON_PORT="${RCON_PORT:-25575}"
 export RCON_PASS="${RCON_PASS:-ADF3F9S3Lkvjv39lk39F}"
 
 # PATH
+mkdir -p "$HOME/.local/bin"
 export PATH=$PATH:"$HOME/.local/bin:$HOME/.cargo/bin:/var/lib/flatpak/exports/bin:/.local/share/flatpak/exports/bin"
 
 ###############################################################################
