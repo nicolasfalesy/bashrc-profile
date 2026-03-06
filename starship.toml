@@ -73,7 +73,6 @@ Fedora = "  "
 Windows = "  "
 Macos = "  "
 Linux = "  "
-TrueNAS = "󰒋  "
 
 [username]
 show_always = true
