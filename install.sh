@@ -30,10 +30,10 @@ DRY_RUN=false
 TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
 
 # Determine if running from file or pipe
-if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ "${BASH_SOURCE[0]}" != "-" ]]; then
+if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ "${BASH_SOURCE[0]}" != "-" ]] && [[ -f "$(dirname "${BASH_SOURCE[0]}")/bashrc" ]]; then
     REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 else
-    # Running from pipe (curl | bash), download from GitHub
+    # Running from pipe (curl | bash) or files not found, download from GitHub
     REPO_DIR="$(mktemp -d)"
     GITHUB_RAW="https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main"
 fi
