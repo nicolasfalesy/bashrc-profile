@@ -6,12 +6,12 @@ A fully-featured, well-organized bash configuration with 40+ aliases and 25+ cus
 
 ### One-Line Install
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/bashrc-profile/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/<USERNAME>/bashrc-profile/main/install.sh | bash
 ```
 
 ### Manual Install
 ```bash
-git clone https://github.com/YOUR_USERNAME/bashrc-profile.git
+git clone https://github.com/<USERNAME>/bashrc-profile.git
 cd bashrc-profile
 bash install.sh
 ```
@@ -29,12 +29,12 @@ bash install.sh
 
 ### Option 1: Curl Install (Recommended)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/bashrc-profile/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/<USERNAME>/bashrc-profile/main/install.sh | bash
 ```
 
 ### Option 2: Clone & Install
 ```bash
-git clone https://github.com/YOUR_USERNAME/bashrc-profile.git
+git clone https://github.com/<USERNAME>/bashrc-profile.git
 cd bashrc-profile
 bash install.sh
 ```

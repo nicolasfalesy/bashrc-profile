@@ -65,7 +65,7 @@ Complete reference for all 40+ aliases and 25+ custom functions.
 | `kt` | `vim ~/.config/alacritty/keybinds.toml` | Edit Alacritty keybinds |
 | `bt` | `vim +102 ~/.bashrc` | Edit bashrc (jumps to line 102) |
 | `nt` | `vim ~/.config/nvim/init.lua` | Edit Neovim config |
-| `notes` | `vim /home/nick/Nextcloud/constant\ notes.txt` | Edit notes file |
+| `notes` | `vim $HOME/Nextcloud/constant\ notes.txt` | Edit notes file |
 | `reload` | `source ~/.bashrc && echo "🚀 Bash config reloaded!"` | Reload shell config |
 | `e` | `exit` | Quick exit |
 | `c` | `clear` | Clear screen |
@@ -139,7 +139,7 @@ Complete reference for all 40+ aliases and 25+ custom functions.
 #### `cd [directory]`
 Automatically list directory contents after changing directory.
 ```bash
-cd /home/nick    # Changes to /home/nick and runs 'll'
+cd ~             # Changes to home and runs 'll'
 cd               # Changes to home and lists
 ```
 
