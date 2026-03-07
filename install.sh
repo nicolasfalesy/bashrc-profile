@@ -224,6 +224,49 @@ install_files() {
     fi
 }
 
+install_blesh() {
+    # ble.sh is bash-only — skip on TrueNAS/zsh
+    if [[ "$TRUENAS" == true ]]; then
+        return 0
+    fi
+
+    print_section "Installing ble.sh (enhanced readline)"
+
+    local blesh_dir="$HOME_DIR/.local/share/blesh"
+
+    if [[ -f "$blesh_dir/ble.sh" ]]; then
+        print_success "ble.sh already installed"
+        return 0
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would install ble.sh to $blesh_dir"
+        return 0
+    fi
+
+    # Check for build dependencies
+    if ! command -v make &>/dev/null || ! command -v git &>/dev/null; then
+        print_warning "ble.sh requires git and make — skipping (install them and re-run)"
+        return 0
+    fi
+
+    print_info "Cloning ble.sh..."
+    local tmp_blesh
+    tmp_blesh="$(mktemp -d)"
+    if git clone --recursive --depth 1 --shallow-submodules \
+        https://github.com/akinomyoga/ble.sh.git "$tmp_blesh/ble.sh" 2>/dev/null; then
+        print_info "Building and installing ble.sh..."
+        if make -C "$tmp_blesh/ble.sh" install PREFIX="$HOME_DIR/.local" &>/dev/null; then
+            print_success "Installed ble.sh"
+        else
+            print_warning "ble.sh build failed — skipping (you can install it manually later)"
+        fi
+    else
+        print_warning "Failed to clone ble.sh — skipping (you can install it manually later)"
+    fi
+    rm -rf "$tmp_blesh"
+}
+
 validate_installation() {
     print_section "Validating installation"
 
@@ -296,6 +339,7 @@ show_summary() {
         echo "  • ~/.zshrc"
     else
         echo "  • ~/.bashrc"
+        echo "  • ~/.local/share/blesh/ble.sh"
     fi
     echo "  • ~/.shell_functions"
     echo "  • ~/.config/starship.toml"
@@ -428,6 +472,7 @@ main() {
     # Run installation steps
     create_backups
     install_files
+    install_blesh
     validate_installation
     reload_shell
     show_summary
