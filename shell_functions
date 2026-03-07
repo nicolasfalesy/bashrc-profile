@@ -457,3 +457,355 @@ _note_completions() {
     fi
 }
 complete -F _note_completions note
+
+# ── CS136 C Programming & Test Suite ─────────────────────────────────
+# Requires: clang
+# Compiles and runs C programs using CS136 course conventions.
+# Test runner expects .in (stdin), .expect (expected output), and
+# optionally .args (command-line arguments) files per test stem.
+
+CS136_CFLAGS="-std=c99 -g -Wall -Wextra -Werror -I/u2/cs136l/pub/common -O2"
+
+# ru: compile main.c with CS136 flags
+ru() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Compile main.c with CS136 course flags.
+
+Usage: ru [-h|--help] [-f FILE]
+
+Options:
+  -h, --help, -H   Show this help message
+  -f FILE           Compile FILE instead of main.c
+
+Examples:
+  ru               Compile main.c
+  ru -f solution.c Compile solution.c
+EOF
+            return 0
+            ;;
+    esac
+
+    local src="main.c"
+    if [[ "$1" == "-f" ]]; then
+        if [[ -z "$2" ]]; then
+            echo "Error: -f requires a filename" >&2
+            return 1
+        fi
+        src="$2"
+    fi
+
+    if [[ ! -f "$src" ]]; then
+        echo "Error: '$src' not found" >&2
+        return 1
+    fi
+
+    if ! command -v clang &>/dev/null; then
+        echo "Error: clang not found. Install it with: sudo nala install clang" >&2
+        return 1
+    fi
+
+    # Word-splitting on CS136_CFLAGS is intentional here
+    # shellcheck disable=SC2086
+    clang $CS136_CFLAGS "$src" /u2/cs136l/pub/common/cs136.o -o myprogram
+}
+
+# run: compile and execute
+run() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Compile main.c and run the resulting program.
+
+Usage: run [-h|--help] [-f FILE]
+
+Options:
+  -h, --help, -H   Show this help message
+  -f FILE           Compile FILE instead of main.c
+
+Examples:
+  run               Compile and run main.c
+  run -f solution.c Compile and run solution.c
+EOF
+            return 0
+            ;;
+    esac
+    ru "$@" && ./myprogram
+}
+
+# _run_suite: inlined test-suite runner (replaces ~/testing/runSuite.sh)
+_run_suite() {
+    local RED='\033[0;31m'
+    local GREEN='\033[0;32m'
+    local YELLOW='\033[0;33m'
+    local BLUE='\033[0;34m'
+    local ITALIC='\033[3m'
+    local BOLD='\033[1m'
+    local UNDERLINE='\033[4m'
+    local RESET='\033[0m'
+
+    local total=0
+    local failed=0
+    local VERBOSE=0
+
+    if [[ "${1:-}" == "-v" ]]; then
+        VERBOSE=1
+        shift
+    fi
+
+    if [[ "$#" -ne 2 ]]; then
+        echo "Error: _run_suite expects 2 arguments: _run_suite [-v] <suite-file> <program>" >&2
+        return 1
+    fi
+
+    local SUITE_FILE="$1"
+    local PROGRAM="$2"
+
+    if [[ ! -r "$SUITE_FILE" ]]; then
+        echo "Error: suite file '$SUITE_FILE' not found or unreadable" >&2
+        return 1
+    fi
+
+    if [[ ! -x "$PROGRAM" ]]; then
+        echo "Error: program '$PROGRAM' not found or not executable" >&2
+        return 1
+    fi
+
+    local TEMPFILE
+    TEMPFILE="$(mktemp)"
+    # shellcheck disable=SC2064
+    trap "rm -f '$TEMPFILE'" RETURN
+
+    _run_suite_print_details() {
+        local stem="$1"
+        local args_file="${stem}.args"
+        local in_file="${stem}.in"
+        local expect_file="${stem}.expect"
+
+        echo -e "${YELLOW}Args:${RESET}"
+        if [[ -r "$args_file" ]]; then
+            cat "$args_file"
+            echo
+        else
+            echo -e "${ITALIC}(none)${RESET}"
+        fi
+
+        echo -e "${YELLOW}Input:${RESET}"
+        if [[ -r "$in_file" ]]; then
+            cat "$in_file"
+            echo
+        else
+            echo -e "${ITALIC}(none)${RESET}"
+        fi
+
+        echo -e "${BLUE}${BOLD}Expected:${RESET}"
+        cat "$expect_file"
+        echo
+
+        echo -e "${BLUE}${BOLD}Actual:${RESET}"
+        cat "$TEMPFILE"
+        echo
+    }
+
+    local stem expect_file args_file in_file
+    local -a argv
+    while IFS= read -r stem || [[ -n "$stem" ]]; do
+        # Skip blank lines
+        [[ -z "$stem" ]] && continue
+
+        (( total++ ))
+        expect_file="${stem}.expect"
+        args_file="${stem}.args"
+        in_file="${stem}.in"
+
+        if [[ ! -r "$expect_file" ]]; then
+            echo "Error: missing or unreadable expected output file: $expect_file" >&2
+            return 1
+        fi
+
+        # Build argv array from .args if readable
+        argv=()
+        if [[ -r "$args_file" ]]; then
+            # shellcheck disable=SC2207
+            argv=($(cat "$args_file"))
+        fi
+
+        # Run program with optional stdin redirection
+        if [[ -r "$in_file" ]]; then
+            "$PROGRAM" "${argv[@]}" < "$in_file" > "$TEMPFILE" 2>&1
+        else
+            "$PROGRAM" "${argv[@]}" > "$TEMPFILE" 2>&1
+        fi
+
+        if diff "$TEMPFILE" "$expect_file" > /dev/null 2>&1; then
+            echo -e "${GREEN}${BOLD}> Passed:${RESET} $stem"
+            if [[ "$VERBOSE" -eq 1 ]]; then
+                _run_suite_print_details "$stem"
+            fi
+        else
+            (( failed++ ))
+            echo -e "${RED}${BOLD}x Test failed:${RESET} ${UNDERLINE}$stem${RESET}"
+            _run_suite_print_details "$stem"
+        fi
+    done < "$SUITE_FILE"
+
+    echo -e "${BLUE}${BOLD}----------------------------${RESET}"
+    if [[ "$failed" -eq 0 ]]; then
+        echo -e "${GREEN}${BOLD}${UNDERLINE}All tests passed:${RESET} ${GREEN}${BOLD}$total/$total${RESET}"
+    else
+        echo -e "${RED}${BOLD}${UNDERLINE}Some tests failed:${RESET} ${RED}${BOLD}$failed/$total${RESET}"
+        return 1
+    fi
+}
+
+# rut: compile and run the test suite
+rut() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Compile main.c and run all test cases in the current directory.
+
+Test cases are defined by file stems: for a stem "foo", the runner looks for:
+  foo.in       (stdin input, optional)
+  foo.expect   (expected output, required)
+  foo.args     (command-line arguments, optional)
+
+Usage: rut [-h|--help] [-v] [-f FILE]
+
+Options:
+  -h, --help, -H   Show this help message
+  -v                Verbose: show details for passing tests too
+  -f FILE           Compile FILE instead of main.c
+
+Examples:
+  rut               Compile main.c and run all tests
+  rut -v            Verbose output for all tests
+  rut -v -f sol.c   Compile sol.c, verbose test run
+EOF
+            return 0
+            ;;
+    esac
+
+    local verbose_arg=""
+    local compile_args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -v)
+                verbose_arg="-v"
+                shift
+                ;;
+            -f)
+                compile_args+=("-f" "$2")
+                shift 2
+                ;;
+            *)
+                echo "Error: unknown option '$1'. Use -h for help." >&2
+                return 1
+                ;;
+        esac
+    done
+
+    # Compile
+    ru "${compile_args[@]}" || return 1
+
+    # Gather test stems from *.in files in the current directory
+    local stems
+    stems="$(compgen -G "*.in" 2>/dev/null | sed 's/\.in$//' | sort -u)"
+
+    if [[ -z "$stems" ]]; then
+        echo "Error: no *.in files found in $(pwd)" >&2
+        return 1
+    fi
+
+    # Build a temp suite file for _run_suite
+    local suite
+    suite="$(mktemp)"
+    printf '%s\n' $stems > "$suite"
+
+    _run_suite $verbose_arg "$suite" ./myprogram
+    local rc=$?
+
+    rm -f "$suite"
+    return "$rc"
+}
+
+# mkt: create test stem files (.in and .expect)
+mkt() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Create test case file pairs for the CS136 test runner.
+
+Usage: mkt <stem> [stem2...]
+
+Creates <stem>.in and <stem>.expect for each stem provided.
+
+Options:
+  -h, --help, -H   Show this help message
+  -a                Also create a <stem>.args file
+
+Examples:
+  mkt basic              Creates basic.in and basic.expect
+  mkt test1 test2        Creates files for both stems
+  mkt -a with-args       Creates .in, .expect, and .args
+EOF
+            return 0
+            ;;
+        "")
+            echo "Error: provide at least one test stem name" >&2
+            return 1
+            ;;
+    esac
+
+    local with_args=0
+    if [[ "$1" == "-a" ]]; then
+        with_args=1
+        shift
+    fi
+
+    if [[ $# -eq 0 ]]; then
+        echo "Error: provide at least one test stem name" >&2
+        return 1
+    fi
+
+    local stem count=0
+    for stem in "$@"; do
+        touch "${stem}.in" "${stem}.expect"
+        if [[ "$with_args" -eq 1 ]]; then
+            touch "${stem}.args"
+            echo "Created: ${stem}.in  ${stem}.expect  ${stem}.args"
+        else
+            echo "Created: ${stem}.in  ${stem}.expect"
+        fi
+        (( count++ ))
+    done
+
+    if (( count > 1 )); then
+        echo "--- $count test stems created ---"
+    fi
+}
+
+# Tab completions for CS136 functions
+_rut_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local prev="${COMP_WORDS[COMP_CWORD-1]}"
+    if [[ "$prev" == "-f" ]]; then
+        COMPREPLY=($(compgen -f -X '!*.c' -- "$cur"))
+        return
+    fi
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -v -f" -- "$cur"))
+        return
+    fi
+}
+complete -F _rut_completions rut run ru
+
+_mkt_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -a" -- "$cur"))
+    fi
+}
+complete -F _mkt_completions mkt

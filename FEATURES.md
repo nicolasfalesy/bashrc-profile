@@ -27,6 +27,7 @@ Complete reference for all 40+ aliases and 25+ custom functions.
   - [Cloudflare Tunnel](#cloudflare-tunnel)
   - [Prerequisites](#prerequisites)
   - [Shell Functions](#shell-functions-from-shell_functions-file)
+  - [CS136 C Programming & Test Suite](#cs136-c-programming--test-suite)
 
 ---
 
@@ -402,6 +403,44 @@ note -e                            # Edit notes
 note -c                            # Clear notes
 ```
 
+### CS136 C Programming & Test Suite
+
+> **Requires:** `clang` (install via `prereqs` or `sudo nala install clang`)
+
+#### `ru [-f FILE]`
+Compile `main.c` (or a specified file) with CS136 course flags.
+```bash
+ru                           # Compile main.c
+ru -f solution.c             # Compile solution.c
+```
+
+#### `run [-f FILE]`
+Compile and immediately run the program.
+```bash
+run                          # Compile and run main.c
+run -f solution.c            # Compile and run solution.c
+```
+
+#### `rut [-v] [-f FILE]`
+Compile and run all test cases in the current directory. Tests are defined by file stems with `.in`, `.expect`, and optional `.args` files.
+```bash
+rut                          # Compile and test
+rut -v                       # Verbose (show passing test details)
+rut -v -f sol.c              # Compile sol.c, verbose test run
+```
+**Test file format**: For a stem `foo`:
+- `foo.in` — stdin input (optional)
+- `foo.expect` — expected output (required)
+- `foo.args` — command-line arguments (optional)
+
+#### `mkt [-a] <stem> [stem2...]`
+Create test case file pairs for the test runner.
+```bash
+mkt basic                    # Creates basic.in, basic.expect
+mkt test1 test2              # Creates files for both stems
+mkt -a with-args             # Also creates .args file
+```
+
 ---
 
 ## Tips & Tricks
@@ -439,6 +478,8 @@ Many functions have tab completion:
 - `path` - options
 - `note` - options
 - `psg` - options
+- `rut` / `run` / `ru` - options, `.c` files
+- `mkt` - options
 
 ### Performance Tips
 - Use `rg` (ripgrep) for searching: it's ~3x faster than grep

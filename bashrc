@@ -969,6 +969,7 @@ HELP
     _prereq_apt   git              git
     _prereq_apt   make             make
     _prereq_apt   gawk             gawk
+    _prereq_apt   clang            clang
     echo ""
 
     # ── 3. Special installs ──────────────────────────────────────────────
