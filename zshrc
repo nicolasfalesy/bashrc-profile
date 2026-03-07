@@ -71,6 +71,7 @@ export XDG_CACHE_HOME="$HOME/.cache"
 # Editor
 export EDITOR=nvim
 export VISUAL=nvim
+export VIMRUNTIME="$HOME/nvim-linux-x86_64/share/nvim/runtime"
 
 # Seeing as other scripts will use it might as well export it
 export LINUXTOOLBOXDIR="$HOME/linuxtoolbox"
