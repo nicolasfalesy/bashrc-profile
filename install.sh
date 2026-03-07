@@ -267,6 +267,80 @@ install_blesh() {
     rm -rf "$tmp_blesh"
 }
 
+install_zsh_plugins() {
+    # zsh plugins are TrueNAS/zsh-only — skip on bash
+    if [[ "$TRUENAS" != true ]]; then
+        return 0
+    fi
+
+    print_section "Installing zsh plugins (autosuggestions, syntax highlighting, completions)"
+
+    local zsh_dir="$HOME_DIR/.zsh"
+    mkdir -p "$zsh_dir"
+
+    if ! command -v git &>/dev/null; then
+        print_warning "git is required for zsh plugins — skipping (install git and re-run)"
+        return 0
+    fi
+
+    # zsh-autosuggestions
+    local autosuggest_dir="$zsh_dir/zsh-autosuggestions"
+    if [[ -d "$autosuggest_dir" ]]; then
+        print_success "zsh-autosuggestions already installed"
+        if [[ "$DRY_RUN" != true ]]; then
+            print_info "Updating zsh-autosuggestions..."
+            git -C "$autosuggest_dir" pull --quiet 2>/dev/null || true
+        fi
+    elif [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would install zsh-autosuggestions to $autosuggest_dir"
+    else
+        print_info "Cloning zsh-autosuggestions..."
+        if git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions.git "$autosuggest_dir" 2>/dev/null; then
+            print_success "Installed zsh-autosuggestions"
+        else
+            print_warning "Failed to clone zsh-autosuggestions — skipping"
+        fi
+    fi
+
+    # zsh-syntax-highlighting
+    local syntax_dir="$zsh_dir/zsh-syntax-highlighting"
+    if [[ -d "$syntax_dir" ]]; then
+        print_success "zsh-syntax-highlighting already installed"
+        if [[ "$DRY_RUN" != true ]]; then
+            print_info "Updating zsh-syntax-highlighting..."
+            git -C "$syntax_dir" pull --quiet 2>/dev/null || true
+        fi
+    elif [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would install zsh-syntax-highlighting to $syntax_dir"
+    else
+        print_info "Cloning zsh-syntax-highlighting..."
+        if git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git "$syntax_dir" 2>/dev/null; then
+            print_success "Installed zsh-syntax-highlighting"
+        else
+            print_warning "Failed to clone zsh-syntax-highlighting — skipping"
+        fi
+    fi
+
+    # zsh-completions
+    local completions_dir="$zsh_dir/zsh-completions"
+    if [[ -d "$completions_dir" ]]; then
+        print_success "zsh-completions already installed"
+        if [[ "$DRY_RUN" != true ]]; then
+            print_info "Updating zsh-completions..."
+            git -C "$completions_dir" pull --quiet 2>/dev/null || true
+        fi
+    elif [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would install zsh-completions to $completions_dir"
+    else
+        print_info "Cloning zsh-completions..."
+        if git clone --depth 1 https://github.com/zsh-users/zsh-completions.git "$completions_dir" 2>/dev/null; then
+            print_success "Installed zsh-completions"
+        else
+            print_warning "Failed to clone zsh-completions — skipping"
+        fi
+    fi
+}
+
 validate_installation() {
     print_section "Validating installation"
 
@@ -301,6 +375,14 @@ validate_installation() {
         print_success ".bashrc sources .shell_functions"
     else
         print_warning ".bashrc doesn't seem to source .shell_functions"
+    fi
+
+    # Validate zsh plugins on TrueNAS
+    if [[ "$TRUENAS" == true ]]; then
+        local zsh_dir="$HOME_DIR/.zsh"
+        [[ -d "$zsh_dir/zsh-autosuggestions" ]] && print_success "zsh-autosuggestions installed" || print_warning "zsh-autosuggestions not found"
+        [[ -d "$zsh_dir/zsh-syntax-highlighting" ]] && print_success "zsh-syntax-highlighting installed" || print_warning "zsh-syntax-highlighting not found"
+        [[ -d "$zsh_dir/zsh-completions" ]] && print_success "zsh-completions installed" || print_warning "zsh-completions not found"
     fi
 }
 
@@ -337,6 +419,9 @@ show_summary() {
     echo "Files installed:"
     if [[ "$TRUENAS" == true ]]; then
         echo "  • ~/.zshrc"
+        echo "  • ~/.zsh/zsh-autosuggestions"
+        echo "  • ~/.zsh/zsh-syntax-highlighting"
+        echo "  • ~/.zsh/zsh-completions"
     else
         echo "  • ~/.bashrc"
         echo "  • ~/.local/share/blesh/ble.sh"
@@ -473,6 +558,7 @@ main() {
     create_backups
     install_files
     install_blesh
+    install_zsh_plugins
     validate_installation
     reload_shell
     show_summary
