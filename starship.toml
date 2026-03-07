@@ -57,7 +57,7 @@ $line_break\
 $character\
 """
 
-add_newline = false
+add_newline = true
 command_timeout = 5000
 
 # ── Left prompt segments ─────────────────────────────────────────────
