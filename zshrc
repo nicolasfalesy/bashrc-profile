@@ -39,6 +39,26 @@ if [ -f "$HOME/.shell_functions" ]; then
 fi
 
 ###############################################################################
+# ZSH PLUGINS (autosuggestions, syntax highlighting, completions)
+###############################################################################
+# zsh-completions (must be added to fpath before compinit, but loaded here for
+# extra completions — compinit is called above and handles core completions)
+if [ -d "$HOME/.zsh/zsh-completions/src" ]; then
+    fpath=("$HOME/.zsh/zsh-completions/src" $fpath)
+    autoload -Uz compinit && compinit
+fi
+
+# zsh-autosuggestions (fish-style inline suggestions)
+if [ -f "$HOME/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
+    . "$HOME/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh"
+fi
+
+# zsh-syntax-highlighting (must be sourced last among plugins)
+if [ -f "$HOME/.zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]; then
+    . "$HOME/.zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+fi
+
+###############################################################################
 # SHELL OPTIONS & INPUT
 ###############################################################################
 
