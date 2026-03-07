@@ -25,6 +25,7 @@ bash install.sh
 - **Organized structure** with clear sections and comments
 - **Color-coded output** for better readability
 - **Compatible with modern tools** (ripgrep, nala, starship, zoxide, ble.sh)
+- **Aurora prompt theme** — Tokyo Night palette with rounded pill-shaped powerline segments, git status, language detection, and right-aligned system info
 - **TrueNAS / zsh support** — dedicated zshrc with zsh-native options and no apt/nala dependencies
 
 ## Installation Options
@@ -115,7 +116,7 @@ The `install.sh` script handles:
 - ✅ **Dry-run mode** — preview changes before applying with `bash install.sh --dry-run`
 - ✅ **Fresh & update installs** — supports both new installations and updates
 - ✅ **Automatic reload** — reloads your shell after installation (or notifies you to restart)
-- ✅ **Starship prompt** — installs the custom Aurora theme to `~/.config/starship.toml`
+- ✅ **Starship prompt** — installs the custom Aurora theme to `~/.config/starship.toml` (Tokyo Night palette, rounded pill-shaped powerline segments)
 
 ## What's Included
 
@@ -190,7 +191,7 @@ source ~/.bashrc
 1. **Add new aliases**: Add them to the appropriate section in `~/.bashrc` or `~/.zshrc`
 2. **Add new functions**: Add them to `~/.shell_functions` or `~/.bashrc`
 3. **Modify existing settings**: Edit the `ENVIRONMENT VARIABLES` section
-4. **Prompt**: Edit `~/.config/starship.toml` to customize the Starship prompt
+4. **Prompt**: Edit `~/.config/starship.toml` to customize the Starship prompt. The Aurora theme uses rounded powerline caps (`\uE0B6` / `\uE0B4`) and a Tokyo Night palette — segments can be recolored by updating the hex values in each `[section]`.
 
 See [FEATURES.md](FEATURES.md) for detailed documentation of all aliases and functions.
 
