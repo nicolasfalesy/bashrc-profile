@@ -2,6 +2,7 @@
 # ║  Starship Prompt — "Aurora" theme                                   ║
 # ║  Two-line powerline with right-aligned info bar                     ║
 # ║  Palette: deep space blacks, aurora greens/purples, warm ambers     ║
+# ║  Rounded pill-shaped outer caps (U+E0B6 left, U+E0B4 right)        ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 #
 # Color reference (Tokyo Night inspired):
@@ -18,16 +19,16 @@
 #   #9ece6a  green_ok   — success / additions
 
 format = """
-[](fg:#1a1b26)\
+[](fg:#1a1b26)\
 $os\
 $username\
-[](bg:#7aa2f7 fg:#1a1b26)\
+[](bg:#7aa2f7 fg:#1a1b26)\
 $directory\
-[](bg:#bb9af7 fg:#7aa2f7)\
+[](bg:#bb9af7 fg:#7aa2f7)\
 $git_branch\
 $git_status\
 $git_metrics\
-[](bg:#73daca fg:#bb9af7)\
+[](bg:#73daca fg:#bb9af7)\
 $c\
 $elixir\
 $elm\
@@ -40,14 +41,14 @@ $nim\
 $python\
 $rust\
 $docker_context\
-[](bg:#ff9e64 fg:#73daca)\
+[](bg:#ff9e64 fg:#73daca)\
 $cmd_duration\
-[](bg:#1a1b26 fg:#ff9e64)\
+[](bg:#1a1b26 fg:#ff9e64)\
 $jobs\
 $sudo\
 $status\
 $time\
-[](fg:#1a1b26)\
+[](fg:#1a1b26)\
 $fill\
 $memory_usage\
 [ ]()\
@@ -236,7 +237,7 @@ symbol = " "
 disabled = false
 threshold = 60
 style = "fg:#e0af68"
-format = "[󰍛 ${ram_pct}]($style)"
+format = "[󰍛 ${ram_pct}%]($style)"
 
 # ── Battery (right-aligned, line 1) ──────────────────────────────────
 
