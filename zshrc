@@ -819,8 +819,9 @@ command_not_found_handler() {
 command -v starship &>/dev/null && eval "$(starship init zsh)"
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 
-# TrueNAS workaround: system /etc/zsh/zshrc may unset PROMPT_PERCENT after
-# our config loads, causing starship's %% escapes to render literally.
-# Re-enable it via precmd_functions (more reliable than add-zsh-hook).
-_fix_prompt_opts() { setopt PROMPT_PERCENT PROMPT_SUBST }
+# TrueNAS workaround: system zshrc may unset PROMPT_PERCENT, causing starship's
+# %% escapes to render literally. Set directly and via precmd hook.
+# NO_LOCAL_OPTIONS prevents LOCAL_OPTIONS from reverting setopt on function exit.
+setopt PROMPT_PERCENT PROMPT_SUBST
+_fix_prompt_opts() { setopt NO_LOCAL_OPTIONS PROMPT_PERCENT PROMPT_SUBST }
 precmd_functions=(_fix_prompt_opts ${precmd_functions[@]})
