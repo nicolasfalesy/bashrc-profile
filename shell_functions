@@ -923,6 +923,10 @@ HELPEOF
     done < "$tmpfile"
 
     printf "\nSummary: %s removed, %s failed/skipped out of %s found\n" "$removed" "$failed" "$count"
+    if [[ "$removed" -gt 0 ]]; then
+      printf "Clearing errors on porsche...\n"
+      sudo zpool clear porsche && printf "Pool errors cleared.\n"
+    fi
   fi
   rm -f "$tmpfile"
 }
