@@ -891,6 +891,17 @@ HELPEOF
       printf "  %s\n" "$file"
     done < "$tmpfile"
   else
+    printf "%s file(s) found matching '%s':\n" "$count" "$pattern"
+    while IFS= read -r file; do
+      printf "  %s\n" "$file"
+    done < "$tmpfile"
+    printf "\nAre you sure you want to permanently delete these %s file(s)? [y/N] " "$count"
+    local confirm
+    read -r confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+      printf "Aborted.\n"
+      return 0
+    fi
     printf "Removing %s file(s) matching '%s'...\n" "$count" "$pattern"
     local removed
     local failed
