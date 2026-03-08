@@ -396,9 +396,12 @@ reload_shell() {
 
     if [[ -n "${BASH_VERSION:-}" ]]; then
         print_info "Attempting to reload bash configuration..."
-        # Source in a subshell to avoid interfering with script execution
         ( source "$BASHRC_DEST" 2>/dev/null && print_success "Shell reloaded!" ) || \
             print_warning "Could not reload automatically. Restart your terminal or run: source ~/.bashrc"
+    elif [[ -n "${ZSH_VERSION:-}" ]]; then
+        print_info "Attempting to reload zsh configuration..."
+        ( source "$BASHRC_DEST" 2>/dev/null && print_success "Shell reloaded!" ) || \
+            print_warning "Could not reload automatically. Restart your terminal or run: source ~/.zshrc"
     fi
 }
 
