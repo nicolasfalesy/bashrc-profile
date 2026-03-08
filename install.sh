@@ -394,14 +394,14 @@ reload_shell() {
         return 0
     fi
 
-    if [[ -n "${BASH_VERSION:-}" ]]; then
+    if [[ "$TRUENAS" == true ]]; then
+        print_info "Attempting to reload zsh configuration..."
+        ( zsh -c "source '$BASHRC_DEST'" 2>/dev/null && print_success "Config verified — run: source ~/.zshrc" ) || \
+            print_warning "Could not reload automatically. Restart your terminal or run: source ~/.zshrc"
+    else
         print_info "Attempting to reload bash configuration..."
         ( source "$BASHRC_DEST" 2>/dev/null && print_success "Shell reloaded!" ) || \
             print_warning "Could not reload automatically. Restart your terminal or run: source ~/.bashrc"
-    elif [[ -n "${ZSH_VERSION:-}" ]]; then
-        print_info "Attempting to reload zsh configuration..."
-        ( source "$BASHRC_DEST" 2>/dev/null && print_success "Shell reloaded!" ) || \
-            print_warning "Could not reload automatically. Restart your terminal or run: source ~/.zshrc"
     fi
 }
 
