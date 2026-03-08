@@ -872,7 +872,6 @@ HELPEOF
 
   local tmpfile
   tmpfile="$(mktemp)" || { printf "dsv: failed to create temp file\n" >&2; return 1; }
-  trap 'rm -f "$tmpfile"' RETURN
 
   sudo zpool status -v porsche 2>/dev/null | grep "$pattern" | sed 's/^ *//' > "$tmpfile"
 
@@ -882,6 +881,7 @@ HELPEOF
 
   if [[ "$count" -eq 0 ]]; then
     printf "dsv: no files found matching '%s'\n" "$pattern"
+    rm -f "$tmpfile"
     return 0
   fi
 
@@ -900,6 +900,7 @@ HELPEOF
     read -r confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
       printf "Aborted.\n"
+      rm -f "$tmpfile"
       return 0
     fi
     printf "Removing %s file(s) matching '%s'...\n" "$count" "$pattern"
@@ -923,6 +924,7 @@ HELPEOF
 
     printf "\nSummary: %s removed, %s failed/skipped out of %s found\n" "$removed" "$failed" "$count"
   fi
+  rm -f "$tmpfile"
 }
 
 _dsv_completions() {
