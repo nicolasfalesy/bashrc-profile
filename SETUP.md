@@ -129,7 +129,7 @@ curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh 
 
 **Development Tools**:
 ```bash
-sudo nala install xclip wireguard-tools bc make gawk
+sudo nala install xclip wireguard-tools bc make gawk clang
 ```
 
 **Minecraft RCON**:
@@ -242,6 +242,8 @@ See [Starship docs](https://starship.rs/config/) for full options.
 ## TrueNAS Setup
 
 TrueNAS requires a few extra steps after installation due to its locked-down environment.
+
+> **Note:** If you used `install.sh` in TrueNAS mode, zsh plugins (zsh-autosuggestions, zsh-syntax-highlighting, zsh-completions) are installed automatically to `~/.zsh/`. The steps below are only needed if you installed manually.
 
 ### 1. Fix Shell Auto-Sourcing
 
