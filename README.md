@@ -1,6 +1,6 @@
 # bashrc-profile
 
-A fully-featured, well-organized shell configuration with 40+ aliases and 25+ custom functions designed for power users. Supports both **bash** (Linux/Raspberry Pi) and **zsh** (TrueNAS).
+A fully-featured, well-organized shell configuration with 60+ aliases and 35+ custom functions designed for power users. Supports both **bash** (Linux/Raspberry Pi) and **zsh** (TrueNAS).
 
 ## Quick Start
 
@@ -20,8 +20,8 @@ bash install.sh
 
 ## Features
 
-- **40+ carefully curated aliases** for common tasks (Docker, package management, SSH, Git, etc.)
-- **25+ custom shell functions** for navigation, file operations, networking, system info, and more
+- **60+ carefully curated aliases** for common tasks (Docker, package management, SSH, Git, etc.)
+- **35+ custom shell functions** for navigation, file operations, networking, system info, and more
 - **Organized structure** with clear sections and comments
 - **Color-coded output** for better readability
 - **Compatible with modern tools** (ripgrep, nala, starship, zoxide, ble.sh)
@@ -64,6 +64,7 @@ When prompted `Are you installing on TrueNAS? [y/N]`, answer `y`. This will:
 - Install `zshrc` → `~/.zshrc` instead of `~/.bashrc`
 - Skip all `apt`/`nala` package manager steps (unsupported on TrueNAS)
 - Use `starship init zsh` and `zoxide init zsh`
+- Install zsh plugins: zsh-autosuggestions, zsh-syntax-highlighting, zsh-completions
 
 ### Post-Install Steps for TrueNAS
 
@@ -117,6 +118,7 @@ The `install.sh` script handles:
 - ✅ **Fresh & update installs** — supports both new installations and updates
 - ✅ **Automatic reload** — reloads your shell after installation (or notifies you to restart)
 - ✅ **Starship prompt** — installs the custom Aurora theme to `~/.config/starship.toml` (Tokyo Night palette, rounded pill-shaped powerline segments)
+- ✅ **ZSH plugins** — installs zsh-autosuggestions, zsh-syntax-highlighting, and zsh-completions for TrueNAS
 
 ## What's Included
 
@@ -124,13 +126,15 @@ The `install.sh` script handles:
 - **Editor**: vim, vi, svim, svi, snvim
 - **Docker**: du, dd, dr
 - **Package Management**: apt, np, ni, nfi, nf, nu *(bash only — skipped on TrueNAS)*
-- **Config Shortcuts**: kt, bt, nt, notes, reload
+- **Config Shortcuts**: kt, bt, nt, notes, reload, e, c
+- **Scripts & Mounts**: mnt, umount, bk
 - **SSH**: uw, nas, pi
+- **Drive Management**: sv *(zsh/TrueNAS only)*
+- **NVIDIA**: wn *(zsh/TrueNAS only)*
 - **Core Commands**: cp, mv, rm, mkdir, ps, ping, etc.
-- **Filesystem**: ll, l, tree, folders, mnts
+- **Filesystem**: ll, l, tree, treed, folders, folderssort, mnts
 - **Permissions**: mx, 000, 600, 666, 700, 777
 - **Search**: grep, h, f, countfiles, ports
-- And more!
 
 ### Functions
 - **Navigation**: cd (auto-ls), up, cpg, mvg, mkdirg
@@ -144,6 +148,8 @@ The `install.sh` script handles:
 - **Cloudflare Tunnel**: cloud
 - **Prerequisites Installer**: install_prereqs, prereqs *(bash only)*
 - **Shell Functions**: mkcd, psg, port, weather, take, path, bak, diff2, tre, note
+- **CS136 C Programming**: ru, run, rut, mkt *(requires clang)*
+- **ZFS Utilities**: dsv *(requires zpool)*
 
 ## Configuration
 
@@ -167,6 +173,7 @@ The profile works best with:
 - **trash-cli** - Safe file deletion
 - **alacritty** - GPU-accelerated terminal
 - **ble.sh** - Enhanced readline *(bash only)*
+- **clang** - C compiler for CS136 functions
 
 Run `install_prereqs` (or `prereqs`) to install missing dependencies. *(Not available on TrueNAS.)*
 

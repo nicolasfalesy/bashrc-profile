@@ -1,6 +1,6 @@
 # bashrc-profile Features
 
-Complete reference for all 40+ aliases and 25+ custom functions.
+Complete reference for all 60+ aliases and 35+ custom functions.
 
 ## Table of Contents
 
@@ -9,7 +9,10 @@ Complete reference for all 40+ aliases and 25+ custom functions.
   - [Docker](#docker)
   - [Package Management](#package-management)
   - [Configuration Shortcuts](#configuration-shortcuts)
+  - [Scripts & Mounts](#scripts--mounts)
   - [SSH](#ssh)
+  - [Drive Management (zsh-only)](#drive-management-zsh-only)
+  - [NVIDIA (zsh-only)](#nvidia-zsh-only)
   - [Core Commands](#core-commands)
   - [Listing & Filesystem](#listing--filesystem)
   - [Permissions](#permissions)
@@ -28,6 +31,7 @@ Complete reference for all 40+ aliases and 25+ custom functions.
   - [Prerequisites](#prerequisites)
   - [Shell Functions](#shell-functions-from-shell_functions-file)
   - [CS136 C Programming & Test Suite](#cs136-c-programming--test-suite)
+  - [ZFS Utilities](#zfs-utilities)
 
 ---
 
@@ -50,6 +54,8 @@ Complete reference for all 40+ aliases and 25+ custom functions.
 | `dr` | `sudo docker compose down && sudo docker compose up -d` | Docker Compose restart |
 
 ### Package Management
+> **bash only** — skipped on TrueNAS (no apt/nala)
+
 | Alias | Command | Purpose |
 |-------|---------|---------|
 | `apt` | `sudo nala` | Apt using nala |
@@ -64,12 +70,21 @@ Complete reference for all 40+ aliases and 25+ custom functions.
 | Alias | Command | Purpose |
 |-------|---------|---------|
 | `kt` | `vim ~/.config/alacritty/keybinds.toml` | Edit Alacritty keybinds |
-| `bt` | `vim +102 ~/.bashrc` | Edit bashrc (jumps to line 102) |
+| `bt` | `vim +102 ~/.bashrc` / `vim ~/.zshrc` | Edit rc file (shell-dependent) |
 | `nt` | `vim ~/.config/nvim/init.lua` | Edit Neovim config |
-| `notes` | `vim $HOME/Nextcloud/constant\ notes.txt` | Edit notes file |
-| `reload` | `source ~/.bashrc && echo "🚀 Bash config reloaded!"` | Reload shell config |
+| `notes` | `vim $HOME/Nextcloud/constant notes.txt` | Edit notes file |
+| `reload` | `source ~/.bashrc` / `source ~/.zshrc` | Reload shell config |
 | `e` | `exit` | Quick exit |
 | `c` | `clear` | Clear screen |
+
+### Scripts & Mounts
+| Alias | Command | Purpose |
+|-------|---------|---------|
+| `mnt` | `~/Scripts/mnt.sh` | Mount NFS shares from porsche (192.168.2.182) |
+| `umount` | `~/Scripts/umount.sh` | Unmount all NFS shares |
+| `unmount` | `umount` | Alias for umount |
+| `bk` | `~/Scripts/backup.sh` | Run system backup to external drive |
+| `backup` | `bk` | Alias for bk |
 
 ### SSH
 | Alias | Command | Purpose |
@@ -77,6 +92,20 @@ Complete reference for all 40+ aliases and 25+ custom functions.
 | `uw` | `ssh nfalesy@ubuntu2404-010.student.cs.uwaterloo.ca` | UW student server |
 | `nas` | `ssh truenas_admin@192.168.2.182` | NAS server |
 | `pi` | `ssh raspby@192.168.2.181` | Raspberry Pi |
+
+### Drive Management (zsh-only)
+> Available on TrueNAS/zsh only.
+
+| Alias | Command | Purpose |
+|-------|---------|---------|
+| `sv` | `sudo zpool status -v` | Show verbose ZFS pool status |
+
+### NVIDIA (zsh-only)
+> Available on TrueNAS/zsh only.
+
+| Alias | Command | Purpose |
+|-------|---------|---------|
+| `wn` | `watch -n 0.1 nvidia-smi` | Live NVIDIA GPU monitoring (100ms refresh) |
 
 ### Core Commands
 | Alias | Command | Purpose |
@@ -188,7 +217,7 @@ ftext "function_name"        # Find function definitions
 ```
 
 #### `size [OPTIONS] [DIRECTORY...]`
-Show directory size with auto-unit detection.
+Show directory size with auto-unit detection and progress spinner.
 ```bash
 size                         # Size of current dir
 size /var/log                # Size of /var/log
@@ -282,8 +311,8 @@ grub -d                      # CD to GRUB themes dir
 
 ### Minecraft RCON
 
-#### `rcon <command> [args...]`
-Send commands to Minecraft server via RCON.
+#### `rcon <command> [args...]` / `rc`
+Send commands to Minecraft server via RCON. `rc` is a short alias for `rcon`.
 ```bash
 rcon list                    # List players
 rcon say Hello everyone!     # Broadcast message
@@ -314,8 +343,10 @@ prereqs                      # Same thing (alias)
 install_prereqs -h           # Show help
 ```
 
+> **bash only** — not available on TrueNAS (no apt/nala)
+
 **Installs**:
-- APT packages: fastfetch, neovim, trash-cli, ripgrep, xclip, alacritty, wireguard-tools, curl, net-tools, tree, bc, git, make, gawk
+- APT packages: fastfetch, neovim, trash-cli, ripgrep, xclip, alacritty, wireguard-tools, curl, net-tools, tree, bc, git, make, gawk, clang
 - Special: nala, starship, zoxide, mcrcon (from source), ble.sh (from source)
 
 ---
@@ -352,7 +383,7 @@ Show weather for a location (via wttr.in).
 ```bash
 weather                      # Waterloo, ON (default)
 weather Toronto              # Toronto weather
-weather -s                   # Short format (current location)
+weather -s                   # Short format (default location)
 weather -s Paris             # Short format (Paris)
 ```
 
@@ -387,7 +418,7 @@ diff2 ~/.bashrc ~/.bashrc.bak   # Compare bashrc
 ```
 
 #### `tre [DEPTH] [DIRECTORY]`
-Tree with ignores (.git, node_modules, etc.).
+Tree with ignores (.git, node_modules, __pycache__, .venv, etc.).
 ```bash
 tre                          # 3 levels, current dir
 tre 2                        # 2 levels deep
@@ -441,6 +472,19 @@ mkt test1 test2              # Creates files for both stems
 mkt -a with-args             # Also creates .args file
 ```
 
+### ZFS Utilities
+
+#### `dsv [-n] [PATTERN]`
+Delete files listed in `zpool status -v porsche` output. Useful for cleaning up files flagged by ZFS pool scrubs. Requires `zpool` (available on TrueNAS/ZFS systems).
+```bash
+dsv                          # Remove all files under /mnt/porsche/
+dsv /mnt/porsche/movies      # Only files matching that path
+dsv -n                       # Dry run (show what would be deleted)
+dsv -n /mnt/porsche/tv       # Dry run for specific path
+dsv /mnt/porsche/music -n    # Flags work in any order
+```
+**Default pattern**: `/mnt/porsche/`
+
 ---
 
 ## Tips & Tricks
@@ -470,22 +514,23 @@ source ~/.bashrc
 
 ### Tab Completion
 Many functions have tab completion:
-- `size` - directory names
-- `rcon` - minecraft commands
-- `bak` - filenames
-- `port` - port numbers
+- `size` - directory names, `--size` units
+- `rcon` / `rc` - Minecraft commands
+- `bak` - filenames, `-r` restore flag
+- `port` - port numbers, flags
 - `weather` - options
 - `path` - options
 - `note` - options
 - `psg` - options
 - `rut` / `run` / `ru` - options, `.c` files
 - `mkt` - options
+- `dsv` - options, common `/mnt/porsche/` paths
 
 ### Performance Tips
 - Use `rg` (ripgrep) for searching: it's ~3x faster than grep
 - Use `mkcd` instead of `mkdir` + `cd` separately
 - Use `take` for downloading archives (auto-extracts)
-- Use `tre` instead of `tree` (pre-filtered)
+- Use `tre` instead of `tree` (pre-filtered, ignores .git/node_modules)
 
 ---
 
@@ -495,7 +540,7 @@ Want to add your own aliases or functions?
 
 1. **Aliases**: Edit `.bashrc`, find appropriate section
 2. **Functions**: Add to `.shell_functions` for better organization
-3. **Settings**: Edit `ENVIRONMENT VARIABLES` section
+3. **Settings**: Edit the `ENVIRONMENT VARIABLES` section
 4. **Reload**: Run `reload` after changes
 
 ## Questions or Issues?
