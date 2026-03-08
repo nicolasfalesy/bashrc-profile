@@ -856,3 +856,16 @@ command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 setopt PROMPT_PERCENT PROMPT_SUBST
 _fix_prompt_opts() { setopt NO_LOCAL_OPTIONS PROMPT_PERCENT PROMPT_SUBST }
 precmd_functions=(_fix_prompt_opts ${precmd_functions[@]})
+
+###############################################################################
+# ZSH COMPLETIONS — SHELL FUNCTIONS
+###############################################################################
+
+# dsv completion (function lives in shell_functions)
+_dsv() {
+  _arguments \
+    '(-h --help -H)'{-h,--help,-H}'[Show help]' \
+    '-n[Dry run - show files without deleting]' \
+    '1:pattern:(/mnt/porsche/ /mnt/porsche/movies /mnt/porsche/tv /mnt/porsche/music)'
+}
+compdef _dsv dsv

@@ -809,3 +809,117 @@ _mkt_completions() {
     fi
 }
 complete -F _mkt_completions mkt
+
+# ── dsv: delete files from zpool status output ──────────────────────
+dsv() {
+  local dry_run=0
+  local pattern=""
+  local arg
+
+  for arg in "$@"; do
+    case "$arg" in
+      -h|--help|-H)
+        cat <<'HELPEOF'
+dsv - Delete files listed in zpool status output
+
+Usage: dsv [OPTIONS] [PATTERN]
+
+Scans `zpool status -v porsche` for file paths matching PATTERN,
+then removes them with `rm -v`.
+
+Options:
+  -n          Dry run — show files that would be deleted, but don't delete
+  -h, --help  Show this help message
+
+Arguments:
+  PATTERN     Grep pattern to match (default: /mnt/porsche/)
+
+Examples:
+  dsv                        # Remove all files under /mnt/porsche/
+  dsv /mnt/porsche/movies    # Remove only files matching /mnt/porsche/movies
+  dsv -n                     # Dry run with default pattern
+  dsv -n /mnt/porsche/tv     # Dry run for /mnt/porsche/tv
+  dsv /mnt/porsche/music -n  # Flags work in any order
+HELPEOF
+        return 0
+        ;;
+      -n)
+        dry_run=1
+        ;;
+      -*)
+        printf "dsv: unknown option '%s'\n" "$arg" >&2
+        printf "Try 'dsv --help' for usage information.\n" >&2
+        return 1
+        ;;
+      *)
+        if [[ -n "$pattern" ]]; then
+          printf "dsv: unexpected argument '%s' (pattern already set to '%s')\n" "$arg" "$pattern" >&2
+          return 1
+        fi
+        pattern="$arg"
+        ;;
+    esac
+  done
+
+  if [[ -z "$pattern" ]]; then
+    pattern="/mnt/porsche/"
+  fi
+
+  if ! command -v zpool &>/dev/null; then
+    printf "dsv: zpool command not found\n" >&2
+    return 1
+  fi
+
+  local tmpfile
+  tmpfile="$(mktemp)" || { printf "dsv: failed to create temp file\n" >&2; return 1; }
+  trap 'rm -f "$tmpfile"' RETURN
+
+  zpool status -v porsche 2>/dev/null | grep "$pattern" | sed 's/^ *//' > "$tmpfile"
+
+  local count
+  count="$(wc -l < "$tmpfile")"
+  count="$(echo "$count" | tr -d '[:space:]')"
+
+  if [[ "$count" -eq 0 ]]; then
+    printf "dsv: no files found matching '%s'\n" "$pattern"
+    return 0
+  fi
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    printf "[DRY RUN] %s file(s) would be removed:\n" "$count"
+    while IFS= read -r file; do
+      printf "  %s\n" "$file"
+    done < "$tmpfile"
+  else
+    printf "Removing %s file(s) matching '%s'...\n" "$count" "$pattern"
+    local removed
+    local failed
+    removed=0
+    failed=0
+
+    while IFS= read -r file; do
+      if [[ -e "$file" ]]; then
+        if rm -v "$file"; then
+          removed=$((removed + 1))
+        else
+          failed=$((failed + 1))
+        fi
+      else
+        printf "dsv: file not found, skipping: %s\n" "$file" >&2
+        failed=$((failed + 1))
+      fi
+    done < "$tmpfile"
+
+    printf "\nSummary: %s removed, %s failed/skipped out of %s found\n" "$removed" "$failed" "$count"
+  fi
+}
+
+_dsv_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -n" -- "$cur"))
+    else
+        COMPREPLY=($(compgen -W "/mnt/porsche/ /mnt/porsche/movies /mnt/porsche/tv /mnt/porsche/music" -- "$cur"))
+    fi
+}
+complete -F _dsv_completions dsv
