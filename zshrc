@@ -138,6 +138,11 @@ alias dd='sudo docker compose down'
 alias dr='sudo docker compose down && sudo docker compose up -d'
 
 ###############################################################################
+# ALIASES - DRIVE MANAGEMENT
+###############################################################################
+alias sv='sudo zpool status -v'
+
+###############################################################################
 # ALIASES — CONFIG FILES & SHORTCUTS
 ###############################################################################
 alias kt='vim ~/.config/alacritty/keybinds.toml'
