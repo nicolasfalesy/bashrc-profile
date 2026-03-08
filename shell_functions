@@ -874,7 +874,7 @@ HELPEOF
   tmpfile="$(mktemp)" || { printf "dsv: failed to create temp file\n" >&2; return 1; }
   trap 'rm -f "$tmpfile"' RETURN
 
-  zpool status -v porsche 2>/dev/null | grep "$pattern" | sed 's/^ *//' > "$tmpfile"
+  sudo zpool status -v porsche 2>/dev/null | grep "$pattern" | sed 's/^ *//' > "$tmpfile"
 
   local count
   count="$(wc -l < "$tmpfile")"
@@ -899,7 +899,7 @@ HELPEOF
 
     while IFS= read -r file; do
       if [[ -e "$file" ]]; then
-        if rm -v "$file"; then
+        if command rm -v "$file"; then
           removed=$((removed + 1))
         else
           failed=$((failed + 1))
