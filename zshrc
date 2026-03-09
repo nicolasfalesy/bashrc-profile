@@ -534,26 +534,38 @@ vpn() {
 
 # Clipboard copy — argument or stdin
 cpy() {
-    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-        echo "Usage: cpy [text] or echo 'text' | cpy"
-        echo "  Copies text to clipboard via xclip."
-        return 0
-    fi
-    if [[ -n "$1" ]]; then
-        printf '%s' "$*" | xclip -selection clipboard
-    else
-        xclip -selection clipboard
-    fi
+  local data
+  if [[ -p /dev/stdin ]]; then
+    data=$(cat)
+  else
+    data="$*"
+  fi
+
+  if command -v xclip &>/dev/null; then
+    printf '%s' "$data" | xclip -selection clipboard
+  elif command -v xsel &>/dev/null; then
+    printf '%s' "$data" | xsel --clipboard --input
+  elif command -v pbcopy &>/dev/null; then
+    printf '%s' "$data" | pbcopy
+  else
+    # OSC 52 — works over SSH in supported terminals
+    local encoded=$(printf '%s' "$data" | base64 | tr -d '\n')
+    printf '\033]52;c;%s\a' "$encoded"
+  fi
 }
 
 # Clipboard paste
 pst() {
-    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-        echo "Usage: pst"
-        echo "  Pastes clipboard contents to stdout."
-        return 0
-    fi
+  if command -v xclip &>/dev/null; then
     xclip -selection clipboard -o
+  elif command -v xsel &>/dev/null; then
+    xsel --clipboard --output
+  elif command -v pbpaste &>/dev/null; then
+    pbpaste
+  else
+    # OSC 52 paste — requires terminal to allow clipboard read
+    printf '\033]52;c;?\a'
+  fi
 }
 
 ###############################################################################
