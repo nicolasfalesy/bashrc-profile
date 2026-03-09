@@ -395,9 +395,9 @@ reload_shell() {
     fi
 
     if [[ "$TRUENAS" == true ]]; then
-        print_info "Attempting to reload zsh configuration..."
-        ( zsh -c "source '$BASHRC_DEST'" 2>/dev/null && print_success "Config verified — run: source ~/.zshrc" ) || \
-            print_warning "Could not reload automatically. Restart your terminal or run: source ~/.zshrc"
+        print_info "Verifying zsh configuration..."
+        ( zsh -c "source '$BASHRC_DEST'" 2>/dev/null && print_success "Config OK — launching new zsh session..." ) || \
+            print_warning "Config has errors. Restart your terminal or run: source ~/.zshrc"
     else
         print_info "Attempting to reload bash configuration..."
         ( source "$BASHRC_DEST" 2>/dev/null && print_success "Shell reloaded!" ) || \
@@ -572,6 +572,12 @@ main() {
     fi
 
     echo ""
+
+    # On TrueNAS, replace this bash process with a fresh zsh so ~/.zshrc
+    # is sourced automatically without any manual step
+    if [[ "$TRUENAS" == true && "$DRY_RUN" == false ]]; then
+        exec zsh
+    fi
 }
 
 # Run main function
