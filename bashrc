@@ -173,7 +173,7 @@ alias nu='nf'
 # ALIASES — CONFIG FILES & SHORTCUTS
 ###############################################################################
 alias kt='vim ~/.config/alacritty/keybinds.toml'
-alias bt='vim +102 ~/.bashrc'
+alias bt='vim +111 ~/.bashrc'
 alias nt='vim ~/.config/nvim/init.lua'
 alias notes='vim $HOME/Nextcloud/constant\ notes.txt'
 alias reload='source ~/.bashrc && echo "🚀 Bash config reloaded!"'
@@ -997,6 +997,7 @@ HELP
     _prereq_apt   make             make
     _prereq_apt   gawk             gawk
     _prereq_apt   clang            clang
+    _prereq_apt   tmux             tmux
     echo ""
 
     # ── 3. Special installs ──────────────────────────────────────────────
