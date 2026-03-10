@@ -65,9 +65,6 @@ fi
 # Case-insensitive completion
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
 
-# Ctrl+f to insert 'zi' followed by a newline (zoxide interactive)
-bindkey -s '^f' 'zi\n'
-
 ###############################################################################
 # ENVIRONMENT VARIABLES & EXPORTS
 ###############################################################################
@@ -244,7 +241,7 @@ alias linutil='curl -fsSL https://christitus.com/linux | sh'
 # FUNCTIONS — NAVIGATION
 ###############################################################################
 
-# Automatically do an ls after each cd, z, or zoxide
+# Automatically do an ls after each cd
 cd ()
 {
 	if [ -n "$1" ]; then
@@ -860,7 +857,6 @@ command_not_found_handler() {
 # PROMPT & SHELL INIT (must be last)
 ###############################################################################
 command -v starship &>/dev/null && eval "$(starship init zsh)"
-command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 
 # TrueNAS workaround: system zshrc may unset PROMPT_PERCENT, causing starship's
 # %% escapes to render literally. Set directly and via precmd hook.
