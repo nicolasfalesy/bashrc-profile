@@ -58,11 +58,6 @@ if [[ $- == *i* ]]; then
     bind '"\C-z": undo'
 fi
 
-# Bind Ctrl+f to insert 'zi' followed by a newline
-if [[ $- == *i* ]]; then
-    bind '"\C-f":"zi\n"'
-fi
-
 ###############################################################################
 # ENVIRONMENT VARIABLES & EXPORTS
 ###############################################################################
@@ -239,7 +234,7 @@ alias linutil='curl -fsSL https://christitus.com/linux | sh'
 # FUNCTIONS — NAVIGATION
 ###############################################################################
 
-# Automatically do an ls after each cd, z, or zoxide
+# Automatically do an ls after each cd
 cd ()
 {
 	if [ -n "$1" ]; then
@@ -879,7 +874,7 @@ Usage: install_prereqs [-h|--help]
        prereqs
 
 Checks each tool and skips anything already installed. Uses apt for standard
-packages, then handles special installs (nala, starship, zoxide, mcrcon, ble.sh).
+packages, then handles special installs (nala, starship, mcrcon, ble.sh).
 
 Options:
   -h, --help, -H   Show this help message
@@ -993,23 +988,6 @@ HELP
         fi
     fi
 
-    # zoxide
-    if command -v zoxide &>/dev/null; then
-        echo -e "  ${G}[skip]${NC} zoxide  (already installed)"
-        (( skipped++ ))
-        skipped_list+="  zoxide\n"
-    else
-        echo -e "  ${Y}[install]${NC} zoxide ..."
-        if curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh; then
-            echo -e "  ${G}[ok]${NC} zoxide installed"
-            (( installed++ ))
-            installed_list+="  zoxide\n"
-        else
-            echo -e "  ${R}[fail]${NC} zoxide" >&2
-            (( failed++ ))
-            failed_list+="  zoxide\n"
-        fi
-    fi
 
     # mcrcon
     if command -v mcrcon &>/dev/null; then
@@ -1090,5 +1068,4 @@ command_not_found_handle() {
 # PROMPT & SHELL INIT (must be last)
 ###############################################################################
 eval "$(starship init bash)"
-eval "$(zoxide init bash)"
 [[ ${BLE_VERSION-} ]] && ble-attach
