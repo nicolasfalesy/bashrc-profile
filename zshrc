@@ -135,6 +135,38 @@ alias dd='sudo docker compose down'
 alias dr='sudo docker compose down && sudo docker compose up -d'
 
 ###############################################################################
+# ALIASES — GIT
+###############################################################################
+alias gs='git status'
+alias ga='git add'
+alias gaa='git add -A'
+alias gc='git commit'
+alias gcm='git commit -m'
+alias gp='git push'
+alias gl='git pull'
+alias gd='git diff'
+alias gds='git diff --staged'
+alias gb='git branch'
+alias gco='git checkout'
+alias gsw='git switch'
+alias glog='git log --oneline --graph --decorate -20'
+alias gst='git stash'
+alias gstp='git stash pop'
+alias gcl='git clone'
+
+###############################################################################
+# ALIASES — SYSTEMCTL
+###############################################################################
+alias sc='systemctl'
+alias scs='systemctl status'
+alias scstart='sudo systemctl start'
+alias scstop='sudo systemctl stop'
+alias screstart='sudo systemctl restart'
+alias scenable='sudo systemctl enable'
+alias scdisable='sudo systemctl disable'
+alias sclog='journalctl -eu'
+
+###############################################################################
 # ALIASES - DRIVE MANAGEMENT
 ###############################################################################
 alias sv='sudo zpool status -v'
