@@ -940,3 +940,202 @@ _dsv_completions() {
     fi
 }
 complete -F _dsv_completions dsv
+
+# ── t: tmux session manager ────────────────────────────────────────────
+t() {
+    case "$1" in
+        -h|--help|-H|"")
+            cat <<'EOF'
+Tmux session manager.
+
+Usage: t <option> [name]
+
+Options:
+  -n <name>        Create (or attach to) a named session
+  -a <name>        Attach to an existing session
+  -p <name>        Purge (kill) a session
+  -l               List all sessions
+  -k               Kill the tmux server (all sessions)
+  -h, --help, -H   Show this help message
+
+Examples:
+  t -n dev         Create or attach to session "dev"
+  t -a dev         Attach to existing session "dev"
+  t -p dev         Kill session "dev"
+  t -l             List all sessions
+  t -k             Kill all tmux sessions
+EOF
+            return 0
+            ;;
+        -n)
+            if [ -z "$2" ]; then
+                echo "Error: session name required" >&2
+                return 1
+            fi
+            if tmux has-session -t "$2" 2>/dev/null; then
+                tmux attach-session -t "$2"
+            else
+                tmux new-session -s "$2"
+            fi
+            ;;
+        -a)
+            if [ -z "$2" ]; then
+                echo "Error: session name required" >&2
+                return 1
+            fi
+            tmux attach-session -t "$2" 2>/dev/null || {
+                echo "Error: session '$2' not found" >&2
+                return 1
+            }
+            ;;
+        -p)
+            if [ -z "$2" ]; then
+                echo "Error: session name required" >&2
+                return 1
+            fi
+            tmux kill-session -t "$2" 2>/dev/null || {
+                echo "Error: session '$2' not found" >&2
+                return 1
+            }
+            echo "Killed session '$2'"
+            ;;
+        -l)
+            tmux list-sessions 2>/dev/null || echo "No tmux sessions running."
+            ;;
+        -k)
+            tmux kill-server 2>/dev/null || echo "No tmux server running."
+            echo "All tmux sessions killed."
+            ;;
+        *)
+            # Bare name — create or attach
+            if tmux has-session -t "$1" 2>/dev/null; then
+                tmux attach-session -t "$1"
+            else
+                tmux new-session -s "$1"
+            fi
+            ;;
+    esac
+}
+
+_t_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    case "$prev" in
+        -n|-a|-p)
+            local sessions
+            sessions=$(tmux list-sessions -F '#{session_name}' 2>/dev/null)
+            COMPREPLY=($(compgen -W "$sessions" -- "$cur"))
+            return
+            ;;
+    esac
+
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -n -a -p -l -k" -- "$cur"))
+    else
+        local sessions
+        sessions=$(tmux list-sessions -F '#{session_name}' 2>/dev/null)
+        COMPREPLY=($(compgen -W "$sessions" -- "$cur"))
+    fi
+}
+complete -F _t_completions t
+
+# ── topp: top processes by CPU or memory ───────────────────────────────
+topp() {
+    local count=10
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Show top processes sorted by CPU or memory usage.
+
+Usage: topp [option] [count]
+
+Options:
+  -c, --cpu        Sort by CPU usage (default)
+  -m, --mem        Sort by memory usage
+  -h, --help, -H   Show this help message
+
+Examples:
+  topp               Top 10 by CPU
+  topp -m            Top 10 by memory
+  topp -c 20         Top 20 by CPU
+  topp -m 5          Top 5 by memory
+EOF
+            return 0
+            ;;
+        -m|--mem)
+            shift
+            [ -n "$1" ] && count="$1"
+            echo -e "\033[0;34m--- Top $count processes by memory ---\033[0m"
+            ps aux --sort=-%mem | head -n $(( count + 1 ))
+            ;;
+        -c|--cpu)
+            shift
+            [ -n "$1" ] && count="$1"
+            echo -e "\033[0;34m--- Top $count processes by CPU ---\033[0m"
+            ps aux --sort=-%cpu | head -n $(( count + 1 ))
+            ;;
+        ""|[0-9]*)
+            [ -n "$1" ] && count="$1"
+            echo -e "\033[0;34m--- Top $count processes by CPU ---\033[0m"
+            ps aux --sort=-%cpu | head -n $(( count + 1 ))
+            ;;
+    esac
+}
+
+_topp_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H -c --cpu -m --mem" -- "$cur"))
+    fi
+}
+complete -F _topp_completions topp
+
+# ── killport: kill process on a specific port ──────────────────────────
+killport() {
+    case "$1" in
+        -h|--help|-H)
+            cat <<'EOF'
+Kill the process listening on a specific port.
+
+Usage: killport <port> [port...]
+
+Options:
+  -h, --help, -H   Show this help message
+
+Examples:
+  killport 3000          Kill whatever is on port 3000
+  killport 3000 8080     Kill processes on both ports
+EOF
+            return 0
+            ;;
+        "")
+            echo "Error: port number required" >&2
+            return 1
+            ;;
+    esac
+
+    local p pid
+    for p in "$@"; do
+        if ! [[ "$p" =~ ^[0-9]+$ ]]; then
+            echo "Error: '$p' is not a valid port number" >&2
+            continue
+        fi
+        pid=$(sudo ss -tlnp "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
+        if [ -z "$pid" ]; then
+            echo "No process found on port $p"
+        else
+            local name
+            name=$(ps -p "$pid" -o comm= 2>/dev/null)
+            sudo kill "$pid" && echo "Killed $name (PID $pid) on port $p"
+        fi
+    done
+}
+
+_killport_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H" -- "$cur"))
+    fi
+}
+complete -F _killport_completions killport
