@@ -488,6 +488,16 @@ EOF
     esac
 
     local src="main.c"
+    local extra_cflags=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f) src="$2"; shift 2 ;;
+            -q) extra_cflags="-O1 -fsanitize=address -fno-omit-frame-pointer"; shift ;;
+            *)  echo "Error: unknown option '$1'" >&2; return 1 ;;
+        esac
+    done
+
     if [[ "$1" == "-f" ]]; then
         if [[ -z "$2" ]]; then
             echo "Error: -f requires a filename" >&2
@@ -699,6 +709,10 @@ EOF
             -f)
                 compile_args+=("-f" "$2")
                 shift 2
+                ;;
+            -q)
+                compile_args+=("q")
+                shift
                 ;;
             *)
                 echo "Error: unknown option '$1'. Use -h for help." >&2
