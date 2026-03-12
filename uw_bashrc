@@ -1,0 +1,476 @@
+#!/usr/bin/env bash
+
+###############################################################################
+# UW STUDENT MACHINE BASHRC
+###############################################################################
+# Stripped-down bashrc for UW CS student servers (no sudo, no nala, no trash)
+
+iatest=$(expr index "$-" i)
+
+###############################################################################
+# SOURCED FILES & COMPLETIONS
+###############################################################################
+if [ -f /usr/bin/fastfetch ]; then
+	fastfetch
+fi
+
+# Source global definitions
+if [ -f /etc/bashrc ]; then
+	. /etc/bashrc
+fi
+
+# Enable bash programmable completion features in interactive shells
+if [ -f /usr/share/bash-completion/bash_completion ]; then
+	. /usr/share/bash-completion/bash_completion
+elif [ -f /etc/bash_completion ]; then
+	. /etc/bash_completion
+fi
+
+# Source additional shell functions
+if [ -f "$HOME/.shell_functions" ]; then
+    . "$HOME/.shell_functions"
+fi
+
+###############################################################################
+# SHELL OPTIONS & INPUT
+###############################################################################
+
+# Disable the bell
+if [[ $iatest -gt 0 ]]; then bind "set bell-style visible"; fi
+
+# Check the window size after each command and, if necessary, update the values of LINES and COLUMNS
+shopt -s checkwinsize
+
+# Causes bash to append to history instead of overwriting it so if you start a new terminal, you have old session history
+shopt -s histappend
+
+# Allow ctrl-S for history navigation (with ctrl-R)
+[[ $- == *i* ]] && stty -ixon
+
+# Ignore case on auto-completion
+if [[ $iatest -gt 0 ]]; then bind "set completion-ignore-case on"; fi
+
+# Show auto-completion list automatically, without double tab
+if [[ $iatest -gt 0 ]]; then bind "set show-all-if-ambiguous On"; fi
+
+# Ctrl+z for undo (readline)
+if [[ $- == *i* ]]; then
+    bind '"\C-z": undo'
+fi
+
+###############################################################################
+# ENVIRONMENT VARIABLES & EXPORTS
+###############################################################################
+
+# History
+export HISTFILESIZE=10000
+export HISTSIZE=500
+export HISTTIMEFORMAT="%F %T" # add timestamp to history
+# Don't put duplicate lines in the history and do not add lines that start with a space
+export HISTCONTROL=erasedups:ignoredups:ignorespace
+PROMPT_COMMAND='history -a'
+
+# XDG directories
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_STATE_HOME="$HOME/.local/state"
+export XDG_CACHE_HOME="$HOME/.cache"
+
+# Editor
+export EDITOR=nvim
+export VISUAL=nvim
+
+# Colors for ls and all grep commands such as grep, egrep and zgrep
+export CLICOLOR=1
+export LS_COLORS='no=00:fi=00:di=00;34:ln=01;36:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arj=01;31:*.taz=01;31:*.lzh=01;31:*.zip=01;31:*.z=01;31:*.Z=01;31:*.gz=01;31:*.bz2=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.jpg=01;35:*.jpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.avi=01;35:*.fli=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.ogg=01;35:*.mp3=01;35:*.wav=01;35:*.xml=00;31:'
+
+# Color for manpages in less makes manpages a little easier to read
+export LESS_TERMCAP_mb=$'\E[01;31m'
+export LESS_TERMCAP_md=$'\E[01;31m'
+export LESS_TERMCAP_me=$'\E[0m'
+export LESS_TERMCAP_se=$'\E[0m'
+export LESS_TERMCAP_so=$'\E[01;44;33m'
+export LESS_TERMCAP_ue=$'\E[0m'
+export LESS_TERMCAP_us=$'\E[01;32m'
+
+# PATH
+export PATH=$PATH:"$HOME/.local/bin:$HOME/.cargo/bin"
+
+###############################################################################
+# ALIASES — EDITOR
+###############################################################################
+alias vim='nvim'
+alias vi='nvim'
+alias svim='sudo nvim'
+alias svi='sudo nvim'
+alias snvim='sudo nvim'
+
+###############################################################################
+# ALIASES — GIT
+###############################################################################
+alias gs='git status'
+alias ga='git add'
+alias gaa='git add -A'
+alias gc='git commit'
+alias gcm='git commit -m'
+alias gp='git push'
+alias gl='git pull'
+alias gd='git diff'
+alias gds='git diff --staged'
+alias gb='git branch'
+alias gco='git checkout'
+alias gsw='git switch'
+alias glog='git log --oneline --graph --decorate -20'
+alias gst='git stash'
+alias gstp='git stash pop'
+alias gcl='git clone'
+
+###############################################################################
+# ALIASES — CONFIG FILES & SHORTCUTS
+###############################################################################
+alias bt='vim ~/.bashrc'
+alias reload='source ~/.bashrc && echo "Bash config reloaded!"'
+alias e='exit'
+alias c='clear'
+
+###############################################################################
+# ALIASES — SSH
+###############################################################################
+alias home-pc='ssh nick@nicolasfalesy.com'
+
+###############################################################################
+# ALIASES — MODIFIED CORE COMMANDS
+###############################################################################
+alias cp='cp -i'
+alias mv='mv -i'
+alias rm='rm -iv'
+alias mkdir='mkdir -p'
+alias ps='ps auxf'
+alias ping='ping -c 10'
+alias home='cd ~'
+alias cd..='cd ..'
+alias bd='cd "$OLDPWD"'
+alias rmd='/bin/rm  --recursive --force --verbose '
+alias k9='pkill'
+alias da='date "+%Y-%m-%d %A %T %Z"'
+
+###############################################################################
+# ALIASES — LISTING & FILESYSTEM
+###############################################################################
+alias ll='ls -AFlsh --color=auto' # long listing format
+alias l='ll'
+alias tree='tree -CAhF --dirsfirst'
+alias treed='tree -CAFd'
+alias folders='du -h --max-depth=1'
+alias folderssort='find . -maxdepth 1 -type d -print0 | xargs -0 du -sk | sort -rn'
+alias mnts='df -hT'
+
+###############################################################################
+# ALIASES — PERMISSIONS
+###############################################################################
+alias mx='chmod a+x'
+
+###############################################################################
+# ALIASES — SEARCH & INFO
+###############################################################################
+# Check if ripgrep is installed
+if command -v rg &> /dev/null; then
+    alias grep='rg'
+else
+    alias grep="/usr/bin/grep $GREP_OPTIONS"
+fi
+unset GREP_OPTIONS
+
+# Search command line history
+alias h="history | grep "
+# Search files in the current folder
+alias f="find . | grep "
+# Count all files (recursively) in the current folder
+alias countfiles="for t in files links directories; do echo \`find . -type \${t:0:1} | wc -l\` \$t; done 2> /dev/null"
+
+###############################################################################
+# FUNCTIONS — NAVIGATION
+###############################################################################
+
+# Automatically do an ls after each cd
+cd ()
+{
+	if [ -n "$1" ]; then
+		builtin cd "$@" && ll
+	else
+		builtin cd ~ && ll
+	fi
+}
+
+# Goes up a specified number of directories  (i.e. up 4)
+up() {
+	local d=""
+	limit=$1
+	for ((i = 1; i <= limit; i++)); do
+		d=$d/..
+	done
+	d=$(echo $d | sed 's/^\///')
+	if [ -z "$d" ]; then
+		d=..
+	fi
+	cd $d
+}
+
+# Copy and go to the directory
+cpg() {
+	if [ -d "$2" ]; then
+		cp "$1" "$2" && cd "$2"
+	else
+		cp "$1" "$2"
+	fi
+}
+
+# Move and go to the directory
+mvg() {
+	if [ -d "$2" ]; then
+		mv "$1" "$2" && cd "$2"
+	else
+		mv "$1" "$2"
+	fi
+}
+
+# Create and go to the directory
+mkdirg() {
+	mkdir -p "$1"
+	cd "$1"
+}
+
+###############################################################################
+# FUNCTIONS — FILE OPERATIONS
+###############################################################################
+
+extract() {
+    case "$1" in
+        -h|--help|help|"")
+            echo "Usage: extract <file>"
+            echo "  Supports: .tar.bz2, .tar.gz, .bz2, .rar, .gz, .tar, .tbz2, .tgz, .zip, .Z, .7z"
+            return 0
+            ;;
+        *)
+            if [ -f "$1" ]; then
+                case "$1" in
+                    *.tar.bz2)   tar xjf "$1"     ;;
+                    *.tar.gz)    tar xzf "$1"     ;;
+                    *.bz2)       bunzip2 "$1"     ;;
+                    *.rar)       unrar x "$1"     ;;
+                    *.gz)        gunzip "$1"      ;;
+                    *.tar)       tar xf "$1"      ;;
+                    *.tbz2)      tar xjf "$1"     ;;
+                    *.tgz)       tar xzf "$1"     ;;
+                    *.zip)       unzip "$1"       ;;
+                    *.Z)         uncompress "$1"  ;;
+                    *.7z)        7z x "$1"        ;;
+                    *)           echo "'$1' cannot be extracted via extract()" ;;
+                esac
+            else
+                echo "'$1' is not a valid file"
+            fi
+            ;;
+    esac
+}
+
+# Searches for text in all files in the current folder
+ftext() {
+	grep -iIHrn --color=always "$1" . | less -r
+}
+
+# Show the size of one or more directories (defaults to current directory)
+size() {
+    local unit=""
+    local targets=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help|-H)
+                cat <<'EOF'
+Show the size of one or more directories (defaults to current directory).
+
+Usage: size [OPTIONS] [DIRECTORY...]
+
+Options:
+  -h, -H, --help       Show this help message
+  --size UNIT           Force unit: K (KiB), M (MiB), G (GiB), T (TiB)
+
+Examples:
+  size                  Size of current directory, auto units
+  size /var/log         Size of /var/log, auto units
+  size --size G /var    Size of /var in GiB
+EOF
+                return 0
+                ;;
+            --size)
+                shift
+                unit="${1^^}"
+                if [[ ! "$unit" =~ ^[KMGT]$ ]]; then
+                    echo "Error: --size requires K, M, G, or T" >&2
+                    return 1
+                fi
+                ;;
+            *)
+                targets+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    if (( ${#targets[@]} == 0 )); then
+        targets=(".")
+    fi
+
+    local grand_total=0
+    local tmpfile bytes result i idx du_pid
+    local spin='|/-\'
+
+    for target in "${targets[@]}"; do
+        if [[ ! -d "$target" ]]; then
+            echo "Error: '$target' is not a directory" >&2
+            continue
+        fi
+
+        tmpfile=$(mktemp)
+
+        set +m
+        { command du -sb "$target" > "$tmpfile" 2>/dev/null & } 2>/dev/null
+        du_pid=$!
+
+        i=0
+        while kill -0 "$du_pid" 2>/dev/null; do
+            idx=$(( i % ${#spin} ))
+            printf "\r  [%s] scanning %s..." "${spin:$idx:1}" "$target"
+            (( i++ ))
+            sleep 0.1
+        done
+        printf "\r\033[K"
+
+        wait "$du_pid" 2>/dev/null
+        set -m
+        bytes=$(awk '{print $1}' "$tmpfile")
+        command rm -f "$tmpfile"
+
+        if [[ -z "$bytes" ]]; then
+            echo "Error: couldn't read size of '$target'" >&2
+            continue
+        fi
+
+        (( grand_total += bytes ))
+
+        result=""
+        if [[ -n "$unit" ]]; then
+            case "$unit" in
+                K) result=$(awk "BEGIN {printf \"%.2f KiB\", $bytes / 1024}") ;;
+                M) result=$(awk "BEGIN {printf \"%.2f MiB\", $bytes / 1048576}") ;;
+                G) result=$(awk "BEGIN {printf \"%.2f GiB\", $bytes / 1073741824}") ;;
+                T) result=$(awk "BEGIN {printf \"%.2f TiB\", $bytes / 1099511627776}") ;;
+            esac
+        else
+            if (( bytes >= 1099511627776 )); then
+                result=$(awk "BEGIN {printf \"%.2f TiB\", $bytes / 1099511627776}")
+            elif (( bytes >= 1073741824 )); then
+                result=$(awk "BEGIN {printf \"%.2f GiB\", $bytes / 1073741824}")
+            elif (( bytes >= 1048576 )); then
+                result=$(awk "BEGIN {printf \"%.2f MiB\", $bytes / 1048576}")
+            elif (( bytes >= 1024 )); then
+                result=$(awk "BEGIN {printf \"%.2f KiB\", $bytes / 1024}")
+            else
+                result="${bytes} B"
+            fi
+        fi
+
+        echo "$result  $target"
+    done
+
+    if (( ${#targets[@]} > 1 )); then
+        local total=""
+        if [[ -n "$unit" ]]; then
+            case "$unit" in
+                K) total=$(awk "BEGIN {printf \"%.2f KiB\", $grand_total / 1024}") ;;
+                M) total=$(awk "BEGIN {printf \"%.2f MiB\", $grand_total / 1048576}") ;;
+                G) total=$(awk "BEGIN {printf \"%.2f GiB\", $grand_total / 1073741824}") ;;
+                T) total=$(awk "BEGIN {printf \"%.2f TiB\", $grand_total / 1099511627776}") ;;
+            esac
+        else
+            if (( grand_total >= 1099511627776 )); then
+                total=$(awk "BEGIN {printf \"%.2f TiB\", $grand_total / 1099511627776}")
+            elif (( grand_total >= 1073741824 )); then
+                total=$(awk "BEGIN {printf \"%.2f GiB\", $grand_total / 1073741824}")
+            elif (( grand_total >= 1048576 )); then
+                total=$(awk "BEGIN {printf \"%.2f MiB\", $grand_total / 1048576}")
+            elif (( grand_total >= 1024 )); then
+                total=$(awk "BEGIN {printf \"%.2f KiB\", $grand_total / 1024}")
+            else
+                total="${grand_total} B"
+            fi
+        fi
+        echo "---------------------"
+        echo "$total  total"
+    fi
+}
+
+# Tab completion for size
+_size_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    if [[ "$prev" == "--size" ]]; then
+        COMPREPLY=($(compgen -W "K M G T" -- "$cur"))
+        return
+    fi
+
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -H --size" -- "$cur"))
+        return
+    fi
+
+    # Default to directory completion
+    COMPREPLY=($(compgen -d -- "$cur"))
+}
+complete -F _size_completions size
+
+###############################################################################
+# FUNCTIONS — NETWORKING
+###############################################################################
+
+# IP address lookup
+alias whatismyip="whatsmyip"
+function whatsmyip () {
+    if command -v ip &> /dev/null; then
+        echo -n "Internal IP: "
+        ip addr show | grep "inet " | grep -v "127.0.0.1" | head -1 | awk '{print $2}' | cut -d/ -f1
+    fi
+
+    echo -n "External IP: "
+    curl -4 ifconfig.me
+}
+
+# Public IP lookup
+pubip() {
+    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        echo "Usage: pubip"
+        echo "  Prints your public IPv4 address."
+        return 0
+    fi
+    curl -s -4 ifconfig.me/ip
+    echo
+}
+
+###############################################################################
+# COMMAND STATUS INDICATORS
+###############################################################################
+
+# Red error message when a command is not found
+command_not_found_handle() {
+    printf '\033[0;31m%s\033[0m\n' "command not found: $1" >&2
+    return 127
+}
+
+###############################################################################
+# PROMPT & SHELL INIT (must be last)
+###############################################################################
+if command -v starship &>/dev/null; then
+    eval "$(starship init bash)"
+fi

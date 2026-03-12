@@ -90,6 +90,13 @@ download_from_github() {
             return 1
         fi
         print_success "Downloaded zshrc"
+    elif [[ "$UW_MACHINE" == true ]]; then
+        print_info "Downloading uw_bashrc..."
+        if ! curl -fsSL "$GITHUB_RAW/uw_bashrc" -o "$BASHRC_SRC"; then
+            print_error "Failed to download uw_bashrc"
+            return 1
+        fi
+        print_success "Downloaded uw_bashrc"
     else
         print_info "Downloading bashrc..."
         if ! curl -fsSL "$GITHUB_RAW/bashrc" -o "$BASHRC_SRC"; then
@@ -554,14 +561,17 @@ main() {
         echo ""
         if [[ "$uw_confirm" =~ ^[Yy]$ ]]; then
             UW_MACHINE=true
-            print_info "UW mode: will install Waterloo Gold starship theme"
+            print_info "UW mode: will install uw_bashrc and Waterloo Gold starship theme"
         fi
     fi
 
-    # Set RC source/dest based on TrueNAS flag
+    # Set RC source/dest based on TrueNAS/UW flag
     if [[ "$TRUENAS" == true ]]; then
         BASHRC_SRC="$REPO_DIR/zshrc"
         BASHRC_DEST="$HOME_DIR/.zshrc"
+    elif [[ "$UW_MACHINE" == true ]]; then
+        BASHRC_SRC="$REPO_DIR/uw_bashrc"
+        BASHRC_DEST="$HOME_DIR/.bashrc"
     else
         BASHRC_SRC="$REPO_DIR/bashrc"
         BASHRC_DEST="$HOME_DIR/.bashrc"
