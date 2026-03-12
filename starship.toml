@@ -67,7 +67,7 @@ disabled = false
 style = "bg:#1a1b26 fg:#7dcfff"
 
 [os.symbols]
-Ubuntu = "    "
+Ubuntu = "    "
 Arch = "    "
 Debian = "    "
 Fedora = "    "
@@ -125,8 +125,8 @@ up_to_date = "[](bg:#bb9af7 fg:#ffffff) "
 
 [git_metrics]
 disabled = false
-added_style = "bg:#bb9af7 fg:#ffffff bold"
-deleted_style = "bg:#bb9af7 fg:#ffffff bold"
+added_style = "bg:#bb9af7 fg:#39ff14 bold"
+deleted_style = "bg:#bb9af7 fg:#8b0000 bold"
 format = "([ +$added ]($added_style))([ -$deleted ]($deleted_style))"
 only_nonzero_diffs = true
 
