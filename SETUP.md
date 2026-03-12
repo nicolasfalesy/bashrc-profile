@@ -129,7 +129,7 @@ curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh 
 
 **Development Tools**:
 ```bash
-sudo nala install xclip wireguard-tools bc make gawk clang
+sudo nala install xclip wireguard-tools bc make gawk gcc valgrind
 ```
 
 **Minecraft RCON**:

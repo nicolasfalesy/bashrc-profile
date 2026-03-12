@@ -9,7 +9,7 @@ A fully-featured, well-organized shell configuration with 60+ aliases and 35+ cu
 bash <(curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/install.sh)
 ```
 
-The installer will ask if you're on TrueNAS — answer `y` for a zsh-compatible install, or `n` for the standard bash install.
+The installer will ask if you're on TrueNAS and/or a UW machine — answer accordingly for the right config.
 
 ### Manual Install
 ```bash
@@ -25,7 +25,7 @@ bash install.sh
 - **Organized structure** with clear sections and comments
 - **Color-coded output** for better readability
 - **Compatible with modern tools** (ripgrep, nala, starship, zoxide, ble.sh)
-- **Aurora prompt theme** — Tokyo Night palette with rounded pill-shaped powerline segments, git status, language detection, and right-aligned system info
+- **Two prompt themes** — Aurora (Tokyo Night palette, default) and Waterloo Gold (UW-themed, `--uw` flag) with rounded pill-shaped powerline segments, git status, language detection, and right-aligned system info
 - **TrueNAS / zsh support** — dedicated zshrc with zsh-native options and no apt/nala dependencies
 
 ## Installation Options
@@ -117,7 +117,7 @@ The `install.sh` script handles:
 - ✅ **Dry-run mode** — preview changes before applying with `bash install.sh --dry-run`
 - ✅ **Fresh & update installs** — supports both new installations and updates
 - ✅ **Automatic reload** — reloads your shell after installation (or notifies you to restart)
-- ✅ **Starship prompt** — installs the custom Aurora theme to `~/.config/starship.toml` (Tokyo Night palette, rounded pill-shaped powerline segments)
+- ✅ **Starship prompt** — installs the custom Aurora theme to `~/.config/starship.toml` (Tokyo Night palette, rounded pill-shaped powerline segments), or the Waterloo Gold theme for UW machines (`--uw`)
 - ✅ **ZSH plugins** — installs zsh-autosuggestions, zsh-syntax-highlighting, and zsh-completions for TrueNAS
 
 ## What's Included
@@ -148,7 +148,7 @@ The `install.sh` script handles:
 - **Cloudflare Tunnel**: cloud
 - **Prerequisites Installer**: install_prereqs, prereqs *(bash only)*
 - **Shell Functions**: mkcd, psg, port, weather, take, path, bak, diff2, tre, note
-- **CS136 C Programming**: ru, run, rut, mkt *(requires clang)*
+- **C Programming**: ru, run, rud, rund, rut, mkt *(requires gcc, valgrind for rund)*
 - **ZFS Utilities**: dsv *(requires zpool)*
 
 ## Configuration
@@ -173,7 +173,8 @@ The profile works best with:
 - **trash-cli** - Safe file deletion
 - **alacritty** - GPU-accelerated terminal
 - **ble.sh** - Enhanced readline *(bash only)*
-- **clang** - C compiler for CS136 functions
+- **gcc** - C compiler for C programming functions
+- **valgrind** - Memory checker for rund
 
 Run `install_prereqs` (or `prereqs`) to install missing dependencies. *(Not available on TrueNAS.)*
 
@@ -198,7 +199,7 @@ source ~/.bashrc
 1. **Add new aliases**: Add them to the appropriate section in `~/.bashrc` or `~/.zshrc`
 2. **Add new functions**: Add them to `~/.shell_functions` or `~/.bashrc`
 3. **Modify existing settings**: Edit the `ENVIRONMENT VARIABLES` section
-4. **Prompt**: Edit `~/.config/starship.toml` to customize the Starship prompt. The Aurora theme uses rounded powerline caps (`\uE0B6` / `\uE0B4`) and a Tokyo Night palette — segments can be recolored by updating the hex values in each `[section]`.
+4. **Prompt**: Edit `~/.config/starship.toml` to customize the Starship prompt. Two themes ship with this repo: Aurora (Tokyo Night palette, default) and Waterloo Gold (UW-themed). Both use rounded powerline caps (`\uE0B6` / `\uE0B4`) — segments can be recolored by updating the hex values in each `[section]`.
 
 See [FEATURES.md](FEATURES.md) for detailed documentation of all aliases and functions.
 

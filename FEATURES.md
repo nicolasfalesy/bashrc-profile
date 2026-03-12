@@ -30,7 +30,7 @@ Complete reference for all 60+ aliases and 35+ custom functions.
   - [Cloudflare Tunnel](#cloudflare-tunnel)
   - [Prerequisites](#prerequisites)
   - [Shell Functions](#shell-functions-from-shell_functions-file)
-  - [CS136 C Programming & Test Suite](#cs136-c-programming--test-suite)
+  - [C Programming & Test Suite](#c-programming--test-suite)
   - [ZFS Utilities](#zfs-utilities)
 
 ---
@@ -346,7 +346,7 @@ install_prereqs -h           # Show help
 > **bash only** — not available on TrueNAS (no apt/nala)
 
 **Installs**:
-- APT packages: fastfetch, neovim, trash-cli, ripgrep, xclip, alacritty, wireguard-tools, curl, net-tools, tree, bc, git, make, gawk, clang
+- APT packages: fastfetch, neovim, trash-cli, ripgrep, xclip, alacritty, wireguard-tools, curl, net-tools, tree, bc, git, make, gawk, gcc, valgrind
 - Special: nala, starship, zoxide, mcrcon (from source), ble.sh (from source)
 
 ---
@@ -434,30 +434,52 @@ note -e                            # Edit notes
 note -c                            # Clear notes
 ```
 
-### CS136 C Programming & Test Suite
+### C Programming & Test Suite
 
-> **Requires:** `clang` (install via `prereqs` or `sudo nala install clang`)
+> **Requires:** `gcc` (install via `prereqs` or `sudo nala install gcc`), `valgrind` for `rund`
 
-#### `ru [-f FILE]`
-Compile `main.c` (or a specified file) with CS136 course flags.
+#### `ru [OPTIONS] [-- EXTRA_GCC_FLAGS...]`
+Compile C source files with gcc (C99, all warnings by default). Auto-detects all `.c` files in the current directory, or specify one or more with `-f`.
 ```bash
-ru                           # Compile main.c
-ru -f solution.c             # Compile solution.c
+ru                           # Auto-detect .c files, compile with all warnings
+ru -f main.c utils.c         # Compile specific files
+ru -O2                       # Compile with -O2 instead of -O0
+ru -W                        # Compile with no warning flags
+ru -W all,error              # Compile with only -Wall -Werror
+ru -- -DDEBUG                # Pass extra flags to gcc
 ```
 
-#### `run [-f FILE]`
+#### `run [OPTIONS] [-- EXTRA_GCC_FLAGS...]`
 Compile and immediately run the program.
 ```bash
-run                          # Compile and run main.c
-run -f solution.c            # Compile and run solution.c
+run                          # Compile and run
+run -f main.c utils.c        # Compile specific files and run
 ```
 
-#### `rut [-v] [-f FILE]`
+#### `rud [OPTIONS] [-- EXTRA_GCC_FLAGS...]`
+Compile C source files for debugging (forces `-O0 -g`, debug symbols).
+```bash
+rud                          # Debug build of all .c files
+rud -f main.c utils.c        # Debug build of specific files
+rud -- -fsanitize=address    # Build with AddressSanitizer
+```
+
+#### `rund [OPTIONS] [-- PROGRAM_ARGS...]`
+Compile for debug and run under valgrind with full leak checking. Colorizes output and saves raw logs to `valgrind_YYYYMMDD-HHMMSS.log`.
+```bash
+rund                         # Build and valgrind
+rund -f main.c utils.c       # Build specific files and valgrind
+rund -- arg1 arg2            # Pass args to program
+rund -i input.txt            # Redirect stdin from file
+rund -i input.txt -- 5 10    # Stdin + program args
+```
+
+#### `rut [-v] [-f FILE...] [-- EXTRA_GCC_FLAGS...]`
 Compile and run all test cases in the current directory. Tests are defined by file stems with `.in`, `.expect`, and optional `.args` files.
 ```bash
 rut                          # Compile and test
 rut -v                       # Verbose (show passing test details)
-rut -v -f sol.c              # Compile sol.c, verbose test run
+rut -v -f main.c utils.c     # Compile specific files, verbose test run
 ```
 **Test file format**: For a stem `foo`:
 - `foo.in` — stdin input (optional)
@@ -522,7 +544,7 @@ Many functions have tab completion:
 - `path` - options
 - `note` - options
 - `psg` - options
-- `rut` / `run` / `ru` - options, `.c` files
+- `ru` / `run` / `rud` / `rund` / `rut` - options, `.c` files
 - `mkt` - options
 - `dsv` - options, common `/mnt/porsche/` paths
 
