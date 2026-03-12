@@ -109,24 +109,24 @@ truncation_length = 24
 truncation_symbol = "..."
 
 [git_status]
-style = "bg:#bb9af7 fg:#1a1b26"
+style = "bg:#bb9af7 fg:#ffffff"
 format = "[$all_status$ahead_behind]($style)"
-conflicted = "[  ${count}](bg:#bb9af7 fg:#f7768e bold) "
-ahead = "[󰜸 ${count}](bg:#bb9af7 fg:#1a1b26) "
-behind = "[󰜯 ${count}](bg:#bb9af7 fg:#1a1b26) "
-diverged = "[󰹺 ](bg:#bb9af7 fg:#f7768e bold) "
-untracked = "[? ${count}](bg:#bb9af7 fg:#e0af68) "
-stashed = "[󰏗 ${count}](bg:#bb9af7 fg:#7dcfff) "
-modified = "[~ ${count}](bg:#bb9af7 fg:#ff9e64) "
-staged = "[ ${count}](bg:#bb9af7 fg:#9ece6a bold) "
-renamed = "[» ${count}](bg:#bb9af7 fg:#7dcfff) "
-deleted = "[ ${count}](bg:#bb9af7 fg:#f7768e) "
-up_to_date = "[](bg:#bb9af7 fg:#9ece6a) "
+conflicted = "[  ${count}](bg:#bb9af7 fg:#ff4040 bold) "
+ahead = "[󰜸 ${count}](bg:#bb9af7 fg:#ffffff) "
+behind = "[󰜯 ${count}](bg:#bb9af7 fg:#ffffff) "
+diverged = "[󰹺 ](bg:#bb9af7 fg:#ff4040 bold) "
+untracked = "[? ${count}](bg:#bb9af7 fg:#ffffff bold) "
+stashed = "[󰏗 ${count}](bg:#bb9af7 fg:#ffffff) "
+modified = "[~ ${count}](bg:#bb9af7 fg:#ffffff bold) "
+staged = "[ ${count}](bg:#bb9af7 fg:#ffffff bold) "
+renamed = "[» ${count}](bg:#bb9af7 fg:#ffffff) "
+deleted = "[ ${count}](bg:#bb9af7 fg:#ff4040 bold) "
+up_to_date = "[](bg:#bb9af7 fg:#ffffff) "
 
 [git_metrics]
 disabled = false
-added_style = "bg:#bb9af7 fg:#1a1b26 bold"
-deleted_style = "bg:#bb9af7 fg:#1a1b26 bold"
+added_style = "bg:#bb9af7 fg:#ffffff bold"
+deleted_style = "bg:#bb9af7 fg:#ffffff bold"
 format = "([ +$added ]($added_style))([ -$deleted ]($deleted_style))"
 only_nonzero_diffs = true
 
