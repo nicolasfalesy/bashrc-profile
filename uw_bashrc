@@ -5,6 +5,7 @@
 ###############################################################################
 # Stripped-down bashrc for UW CS student servers (no sudo, no nala, no trash)
 
+[[ $- == *i* ]] && [[ -z ${BLE_VERSION-} ]] && [[ -f ~/.local/share/blesh/ble.sh ]] && source ~/.local/share/blesh/ble.sh --noattach
 iatest=$(expr index "$-" i)
 
 ###############################################################################
@@ -474,3 +475,4 @@ command_not_found_handle() {
 if command -v starship &>/dev/null; then
     eval "$(starship init bash)"
 fi
+[[ ${BLE_VERSION-} ]] && ble-attach
