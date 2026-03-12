@@ -102,7 +102,7 @@ fish_style_pwd_dir_length = 1
 "Code" = " "
 
 [git_branch]
-symbol = ""
+symbol = "  "
 style = "bg:#bb9af7 fg:#1a1b26"
 format = "[ $symbol $branch ]($style)"
 truncation_length = 24
@@ -127,7 +127,7 @@ up_to_date = "[](bg:#bb9af7 fg:#9ece6a) "
 disabled = false
 added_style = "bg:#bb9af7 fg:#9ece6a bold"
 deleted_style = "bg:#bb9af7 fg:#f7768e bold"
-format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
+format = "([ +$added ]($added_style))([ -$deleted ]($deleted_style))"
 only_nonzero_diffs = true
 
 # ── Language segments (aurora green band) ────────────────────────────

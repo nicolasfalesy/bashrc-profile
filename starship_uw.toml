@@ -131,7 +131,7 @@ up_to_date = "[](bg:#C9920A fg:#9ece6a) "
 disabled = false
 added_style = "bg:#C9920A fg:#9ece6a bold"
 deleted_style = "bg:#C9920A fg:#f7768e bold"
-format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
+format = "([ +$added ]($added_style))([ -$deleted ]($deleted_style))"
 only_nonzero_diffs = true
 
 # ── Language segments (deep gold band) ───────────────────────────────
