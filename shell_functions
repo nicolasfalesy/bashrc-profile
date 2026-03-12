@@ -1046,11 +1046,12 @@ Test cases are defined by file stems: for a stem "foo", the runner looks for:
   foo.expect   (expected output, required)
   foo.args     (command-line arguments, optional)
 
-Usage: rut [-h|--help] [-v] [-f FILE] [-- EXTRA_GCC_FLAGS...]
+Usage: rut [-h|--help] [-v] [-d DIR] [-f FILE...] [-- EXTRA_GCC_FLAGS...]
 
 Options:
   -h, --help, -H   Show this help message
   -v                Verbose: show details for passing tests too
+  -d DIR            Look for test files (.in/.expect) in DIR instead of cwd
   -f FILE [FILE2..] Compile specific .c/.o files
 
 Anything after -- is passed directly to gcc via ru.
@@ -1058,6 +1059,7 @@ Anything after -- is passed directly to gcc via ru.
 Examples:
   rut               Compile and run all tests
   rut -v            Verbose output for all tests
+  rut -d tests      Use test files from ./tests/
   rut -v -f main.c utils.c   Compile specific files, verbose test run
   rut -- -DDEBUG    Compile with -DDEBUG and run tests
 EOF
@@ -1067,12 +1069,20 @@ EOF
 
     local verbose_arg=""
     local compile_args=()
+    local test_dir="."
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -v)
                 verbose_arg="-v"
                 shift
+                ;;
+            -d)
+                if [[ -z "$2" || "$2" == -* ]]; then
+                    echo "Error: -d requires a directory" >&2
+                    return 1
+                fi
+                test_dir="$2"; shift 2
                 ;;
             -f)
                 compile_args+=(-f)
@@ -1093,15 +1103,20 @@ EOF
         esac
     done
 
+    if [[ ! -d "$test_dir" ]]; then
+        echo "Error: test directory '$test_dir' not found" >&2
+        return 1
+    fi
+
     # Compile
     ru "${compile_args[@]}" || return 1
 
-    # Gather test stems from *.in files in the current directory
+    # Gather test stems from *.in files in the test directory
     local stems
-    stems="$(compgen -G "*.in" 2>/dev/null | sed 's/\.in$//' | sort -u)"
+    stems="$(compgen -G "$test_dir/*.in" 2>/dev/null | sed 's/\.in$//' | sort -u)"
 
     if [[ -z "$stems" ]]; then
-        echo "Error: no *.in files found in $(pwd)" >&2
+        echo "Error: no *.in files found in $test_dir" >&2
         return 1
     fi
 
@@ -1195,12 +1210,12 @@ complete -F _ru_completions ru run
 _rut_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    if [[ "$prev" == "-f" ]]; then
-        COMPREPLY=($(compgen -f -X '!*.@(c|o)' -- "$cur"))
-        return
-    fi
+    case "$prev" in
+        -f) COMPREPLY=($(compgen -f -X '!*.@(c|o)' -- "$cur")); return ;;
+        -d) COMPREPLY=($(compgen -d -- "$cur")); return ;;
+    esac
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "-h --help -H -v -f --" -- "$cur"))
+        COMPREPLY=($(compgen -W "-h --help -H -v -d -f --" -- "$cur"))
         return
     fi
 }
