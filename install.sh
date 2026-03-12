@@ -28,6 +28,7 @@ NC='\033[0m'  # No Color
 HOME_DIR="${HOME:-$(eval echo ~)}"
 DRY_RUN=false
 TRUENAS=false
+UW_MACHINE=false
 TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
 
 # Determine if running from file or pipe
@@ -40,7 +41,8 @@ else
 fi
 
 SHELL_FUNCS_SRC="$REPO_DIR/shell_functions"
-STARSHIP_SRC="$REPO_DIR/starship.toml"
+STARSHIP_SRC="$REPO_DIR/starship.toml"       # default; overridden if UW_MACHINE
+STARSHIP_UW_SRC="$REPO_DIR/starship_uw.toml"
 SHELL_FUNCS_DEST="$HOME_DIR/.shell_functions"
 STARSHIP_DEST="${XDG_CONFIG_HOME:-$HOME_DIR/.config}/starship.toml"
 
@@ -104,12 +106,21 @@ download_from_github() {
     fi
     print_success "Downloaded shell_functions"
 
-    print_info "Downloading starship.toml..."
-    if ! curl -fsSL "$GITHUB_RAW/starship.toml" -o "$STARSHIP_SRC"; then
-        print_error "Failed to download starship.toml"
-        return 1
+    if [[ "$UW_MACHINE" == true ]]; then
+        print_info "Downloading starship_uw.toml (Waterloo Gold theme)..."
+        if ! curl -fsSL "$GITHUB_RAW/starship_uw.toml" -o "$STARSHIP_UW_SRC"; then
+            print_error "Failed to download starship_uw.toml"
+            return 1
+        fi
+        print_success "Downloaded starship_uw.toml"
+    else
+        print_info "Downloading starship.toml..."
+        if ! curl -fsSL "$GITHUB_RAW/starship.toml" -o "$STARSHIP_SRC"; then
+            print_error "Failed to download starship.toml"
+            return 1
+        fi
+        print_success "Downloaded starship.toml"
     fi
-    print_success "Downloaded starship.toml"
 }
 
 validate_files() {
@@ -130,11 +141,17 @@ validate_files() {
     fi
     print_success "Found shell_functions"
 
-    if [[ ! -f "$STARSHIP_SRC" ]]; then
-        print_error "Source starship.toml not found: $STARSHIP_SRC"
+    local starship_file="$STARSHIP_SRC"
+    local starship_label="starship.toml"
+    if [[ "$UW_MACHINE" == true ]]; then
+        starship_file="$STARSHIP_UW_SRC"
+        starship_label="starship_uw.toml"
+    fi
+    if [[ ! -f "$starship_file" ]]; then
+        print_error "Source $starship_label not found: $starship_file"
         return 1
     fi
-    print_success "Found starship.toml"
+    print_success "Found $starship_label"
 }
 
 check_existing_files() {
@@ -206,10 +223,17 @@ install_files() {
     local rc_dest_label
     [[ "$TRUENAS" == true ]] && rc_dest_label="~/.zshrc" || rc_dest_label="~/.bashrc"
 
+    local starship_install_src="$STARSHIP_SRC"
+    local starship_label="starship.toml (Aurora theme)"
+    if [[ "$UW_MACHINE" == true ]]; then
+        starship_install_src="$STARSHIP_UW_SRC"
+        starship_label="starship.toml (Waterloo Gold theme)"
+    fi
+
     if [[ "$DRY_RUN" == true ]]; then
         print_info "[DRY-RUN] Would install $(basename "$BASHRC_SRC") → $BASHRC_DEST"
         print_info "[DRY-RUN] Would install shell_functions → $SHELL_FUNCS_DEST"
-        print_info "[DRY-RUN] Would install starship.toml → $STARSHIP_DEST"
+        print_info "[DRY-RUN] Would install $starship_label → $STARSHIP_DEST"
         print_success "Dry-run complete (no changes made)"
     else
         cp "$BASHRC_SRC" "$BASHRC_DEST"
@@ -219,8 +243,8 @@ install_files() {
         print_success "Installed .shell_functions"
 
         mkdir -p "$(dirname "$STARSHIP_DEST")"
-        cp "$STARSHIP_SRC" "$STARSHIP_DEST"
-        print_success "Installed starship.toml"
+        cp "$starship_install_src" "$STARSHIP_DEST"
+        print_success "Installed $starship_label"
     fi
 }
 
@@ -458,11 +482,13 @@ OPTIONS:
   -h, --help      Show this help message
   -n, --dry-run   Preview changes without installing
   -f, --force     Force install (skip confirmations)
+  --uw            Install Waterloo Gold starship theme (for UW machines)
 
 EXAMPLES:
   bash install.sh              # Install with prompts
   bash install.sh --dry-run    # Preview what will happen
   bash install.sh --force      # Force install without asking
+  bash install.sh --uw         # Install with UW Waterloo Gold prompt theme
 
 FEATURES:
   • Creates timestamped backups of existing files
@@ -492,6 +518,9 @@ main() {
             -f|--force)
                 force_install=true
                 ;;
+            --uw)
+                UW_MACHINE=true
+                ;;
             *)
                 print_error "Unknown option: $1"
                 show_help
@@ -516,6 +545,16 @@ main() {
         if [[ "$truenas_confirm" =~ ^[Yy]$ ]]; then
             TRUENAS=true
             print_info "TrueNAS mode: will install zshrc → ~/.zshrc (no package manager installs)"
+        fi
+    fi
+
+    # Ask if this is a UW machine
+    if [[ "$force_install" == false ]]; then
+        read -rp "Are you installing on a UW machine? [y/N] " -n 1 uw_confirm
+        echo ""
+        if [[ "$uw_confirm" =~ ^[Yy]$ ]]; then
+            UW_MACHINE=true
+            print_info "UW mode: will install Waterloo Gold starship theme"
         fi
     fi
 
