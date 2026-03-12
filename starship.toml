@@ -67,13 +67,13 @@ disabled = false
 style = "bg:#1a1b26 fg:#7dcfff"
 
 [os.symbols]
-Ubuntu = "  "
-Arch = "  "
-Debian = "  "
-Fedora = "  "
-Windows = "  "
-Macos = "  "
-Linux = "  "
+Ubuntu = "    "
+Arch = "    "
+Debian = "    "
+Fedora = "    "
+Windows = "    "
+Macos = "    "
+Linux = "    "
 
 [username]
 show_always = true
@@ -125,8 +125,8 @@ up_to_date = "[](bg:#bb9af7 fg:#9ece6a) "
 
 [git_metrics]
 disabled = false
-added_style = "bg:#bb9af7 fg:#9ece6a bold"
-deleted_style = "bg:#bb9af7 fg:#f7768e bold"
+added_style = "bg:#bb9af7 fg:#1a1b26 bold"
+deleted_style = "bg:#bb9af7 fg:#1a1b26 bold"
 format = "([ +$added ]($added_style))([ -$deleted ]($deleted_style))"
 only_nonzero_diffs = true
 
