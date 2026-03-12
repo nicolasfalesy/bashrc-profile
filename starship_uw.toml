@@ -66,7 +66,7 @@ disabled = false
 style = "bg:#1a1400 fg:#FFD700"
 
 [os.symbols]
-Ubuntu = "    "
+Ubuntu = " 🍁🦆 "
 Arch = "    "
 Debian = "    "
 Fedora = "    "
