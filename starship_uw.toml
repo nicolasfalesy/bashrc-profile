@@ -230,7 +230,7 @@ recognize_signal_code = true
 
 [time]
 disabled = false
-time_format = "%H:%M"
+time_format = "%H:%M:%S"
 style = "bg:#1a1400 fg:#F5ECC8"
 format = "[  $time ]($style)"
 
