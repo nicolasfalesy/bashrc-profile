@@ -469,68 +469,75 @@ ru() {
     case "$1" in
         -h|--help|-H)
             cat <<'EOF'
-Compile C source files with gcc.
+Compile C source files with gcc (C99, all warnings by default).
 
-Auto-detects all .c files in the current directory, or specify a single
-source file with -f. Compiles to ./myprogram.
+Auto-detects all .c files in the current directory, or specify one or
+more source files with -f. Compiles to ./myprogram.
 
 Usage: ru [OPTIONS] [-- EXTRA_GCC_FLAGS...]
 
 Options:
   -h, --help, -H   Show this help message
-  -f FILE           Compile a single FILE instead of auto-detecting
+  -f FILE [FILE2..] Compile specific .c files (at least one required)
   -O LEVEL          Optimization level (default: 0)
-  -W FLAGS          Extra warning flags (comma-separated, e.g. extra,error)
-  -lm               Link the math library
+  -W [FLAGS]        Override warnings: empty = no warnings,
+                    comma-separated list = only those (e.g. all,extra)
   -o NAME           Output binary name (default: myprogram)
 
 Anything after -- is passed directly to gcc.
 
+Default warnings: -Wall -Wextra -Wpedantic
+
 Examples:
-  ru                          Auto-detect .c files, compile with -Wall -O0 -g
+  ru                          Auto-detect .c files, compile with all warnings
   ru -f main.c                Compile only main.c
+  ru -f main.c utils.c io.c   Compile specific files
   ru -O2                      Compile with -O2 instead of -O0
-  ru -W extra,error           Add -Wextra -Werror
-  ru -lm                      Link math library
-  ru -- -DDEBUG -std=c11      Pass extra flags to gcc
+  ru -W                       Compile with no warning flags
+  ru -W all,error             Compile with only -Wall -Werror
+  ru -- -DDEBUG               Pass extra flags to gcc
 EOF
             return 0
             ;;
     esac
 
-    local src=""
     local opt_level="0"
-    local extra_warnings=""
-    local link_math=0
+    local warnings="default"
     local output="myprogram"
+    local -a sources=()
     local -a extra_flags=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -f)
-                if [[ -z "$2" ]]; then
-                    echo "Error: -f requires a filename" >&2
+                shift
+                # Collect all following args that end in .c (until next flag or --)
+                while [[ $# -gt 0 && "$1" != -* ]]; do
+                    sources+=("$1"); shift
+                done
+                if [[ ${#sources[@]} -eq 0 ]]; then
+                    echo "Error: -f requires at least one .c file" >&2
                     return 1
                 fi
-                src="$2"; shift 2
                 ;;
             -O)
-                if [[ -z "$2" ]]; then
+                if [[ -z "$2" || "$2" == -* ]]; then
                     echo "Error: -O requires a level (0, 1, 2, 3, s, g)" >&2
                     return 1
                 fi
                 opt_level="$2"; shift 2
                 ;;
             -W)
-                if [[ -z "$2" ]]; then
-                    echo "Error: -W requires warning flags" >&2
-                    return 1
+                # -W with no argument or next arg is a flag = no warnings
+                if [[ -z "${2:-}" || "$2" == -* ]]; then
+                    warnings="none"
+                    shift
+                else
+                    warnings="$2"; shift 2
                 fi
-                extra_warnings="$2"; shift 2
                 ;;
-            -lm) link_math=1; shift ;;
             -o)
-                if [[ -z "$2" ]]; then
+                if [[ -z "$2" || "$2" == -* ]]; then
                     echo "Error: -o requires an output name" >&2
                     return 1
                 fi
@@ -553,16 +560,8 @@ EOF
         return 1
     fi
 
-    # Build the source file list
-    local -a sources=()
-    if [[ -n "$src" ]]; then
-        if [[ ! -f "$src" ]]; then
-            echo "Error: '$src' not found" >&2
-            return 1
-        fi
-        sources=("$src")
-    else
-        # Auto-detect all .c files in current directory
+    # Build the source file list (auto-detect if -f was not used)
+    if [[ ${#sources[@]} -eq 0 ]]; then
         local f
         for f in *.c; do
             [[ -f "$f" ]] && sources+=("$f")
@@ -571,28 +570,37 @@ EOF
             echo "Error: no .c files found in $(pwd)" >&2
             return 1
         fi
+    else
+        # Validate all specified files exist
+        local f
+        for f in "${sources[@]}"; do
+            if [[ ! -f "$f" ]]; then
+                echo "Error: '$f' not found" >&2
+                return 1
+            fi
+        done
     fi
 
     # Build gcc command
-    local -a cmd=(gcc -Wall "-O${opt_level}" -g)
+    local -a cmd=(gcc -std=c99 "-O${opt_level}" -g)
 
-    # Extra warnings
-    if [[ -n "$extra_warnings" ]]; then
-        local w
-        IFS=',' read -ra _warn_arr <<< "$extra_warnings"
-        for w in "${_warn_arr[@]}"; do
-            cmd+=("-W${w}")
-        done
-        unset _warn_arr
-    fi
+    # Warning flags
+    case "$warnings" in
+        default) cmd+=(-Wall -Wextra -Wpedantic) ;;
+        none)    ;;  # no warning flags
+        *)
+            local w
+            IFS=',' read -ra _warn_arr <<< "$warnings"
+            for w in "${_warn_arr[@]}"; do
+                cmd+=("-W${w}")
+            done
+            unset _warn_arr
+            ;;
+    esac
 
     cmd+=("${extra_flags[@]}")
     cmd+=("${sources[@]}")
     cmd+=(-o "$output")
-
-    if [[ "$link_math" -eq 1 ]]; then
-        cmd+=(-lm)
-    fi
 
     echo -e "\033[0;34m[compile]\033[0m ${cmd[*]}"
     "${cmd[@]}"
@@ -609,12 +617,12 @@ Usage: run [OPTIONS] [-- EXTRA_GCC_FLAGS...]
 
 Options:
   -h, --help, -H   Show this help message
-  -f FILE           Compile a single FILE instead of auto-detecting
+  -f FILE [FILE2..] Compile specific .c files
   (all other options are passed to ru)
 
 Examples:
-  run               Compile and run
-  run -f solution.c Compile and run solution.c
+  run                        Compile and run
+  run -f main.c utils.c      Compile specific files and run
 EOF
             return 0
             ;;
@@ -629,24 +637,22 @@ rud() {
             cat <<'EOF'
 Compile C source files for debugging (no optimization, debug symbols).
 
-Uses gcc -Wall -O0 -g by default. Supports extra flags like sanitizers.
+Uses gcc -std=c99 -O0 -g with all warnings by default.
 
 Usage: rud [OPTIONS] [-- EXTRA_GCC_FLAGS...]
 
 Options:
   -h, --help, -H   Show this help message
-  -f FILE           Compile a single FILE instead of auto-detecting
-  -W FLAGS          Extra warning flags (comma-separated, e.g. extra,error)
-  -lm               Link the math library
+  -f FILE [FILE2..] Compile specific .c files
+  -W [FLAGS]        Override warnings (see ru -h for details)
   -o NAME           Output binary name (default: myprogram)
 
 Anything after -- is passed directly to gcc.
 
 Examples:
   rud                                 Debug build of all .c files
-  rud -f main.c                       Debug build of main.c only
+  rud -f main.c utils.c               Debug build of specific files
   rud -- -fsanitize=address           Build with AddressSanitizer
-  rud -W extra -- -fsanitize=undefined  Extra warnings + UBSan
 EOF
             return 0
             ;;
@@ -679,17 +685,16 @@ Usage: rund [OPTIONS] [-- PROGRAM_ARGS...]
 
 Options:
   -h, --help, -H   Show this help message
-  -f FILE           Compile a single FILE instead of auto-detecting
+  -f FILE [FILE2..] Compile specific .c files
   -i INPUT          Redirect INPUT file to program's stdin
   -o NAME           Output binary name (default: myprogram)
-  -W FLAGS          Extra warning flags passed to rud
-  -lm               Link the math library
+  -W [FLAGS]        Override warnings (see ru -h for details)
 
 Program arguments go after --:
 
 Examples:
   rund                           Build and valgrind
-  rund -f main.c                 Build main.c and valgrind
+  rund -f main.c utils.c         Build specific files and valgrind
   rund -- arg1 arg2              Pass args to program
   rund -i input.txt              Redirect stdin from file
   rund -i input.txt -- 5 10      Stdin + program args
@@ -718,18 +723,29 @@ EOF
                 input_file="$2"; shift 2
                 ;;
             -o)
-                if [[ -z "$2" ]]; then
+                if [[ -z "$2" || "$2" == -* ]]; then
                     echo "Error: -o requires an output name" >&2
                     return 1
                 fi
                 output="$2"
                 compile_args+=(-o "$2"); shift 2
                 ;;
-            -f|-W)
-                compile_args+=("$1" "$2"); shift 2
+            -f)
+                compile_args+=(-f)
+                shift
+                # Pass all non-flag args as files
+                while [[ $# -gt 0 && "$1" != -* ]]; do
+                    compile_args+=("$1"); shift
+                done
                 ;;
-            -lm)
-                compile_args+=("$1"); shift
+            -W)
+                # -W with no argument or next arg is a flag = no warnings
+                if [[ -z "${2:-}" || "$2" == -* ]]; then
+                    compile_args+=(-W)
+                    shift
+                else
+                    compile_args+=(-W "$2"); shift 2
+                fi
                 ;;
             --)
                 shift; parsing_prog=1
@@ -1034,14 +1050,14 @@ Usage: rut [-h|--help] [-v] [-f FILE] [-- EXTRA_GCC_FLAGS...]
 Options:
   -h, --help, -H   Show this help message
   -v                Verbose: show details for passing tests too
-  -f FILE           Compile a single FILE instead of auto-detecting
+  -f FILE [FILE2..] Compile specific .c files
 
 Anything after -- is passed directly to gcc via ru.
 
 Examples:
   rut               Compile and run all tests
   rut -v            Verbose output for all tests
-  rut -v -f sol.c   Compile sol.c, verbose test run
+  rut -v -f main.c utils.c   Compile specific files, verbose test run
   rut -- -DDEBUG    Compile with -DDEBUG and run tests
 EOF
             return 0
@@ -1058,8 +1074,11 @@ EOF
                 shift
                 ;;
             -f)
-                compile_args+=("-f" "$2")
-                shift 2
+                compile_args+=(-f)
+                shift
+                while [[ $# -gt 0 && "$1" != -* ]]; do
+                    compile_args+=("$1"); shift
+                done
                 ;;
             --)
                 shift
@@ -1160,13 +1179,15 @@ _ru_completions() {
     case "$prev" in
         -f) COMPREPLY=($(compgen -f -X '!*.c' -- "$cur")); return ;;
         -O) COMPREPLY=($(compgen -W "0 1 2 3 s g" -- "$cur")); return ;;
-        -W) COMPREPLY=($(compgen -W "extra error extra,error pedantic" -- "$cur")); return ;;
+        -W) COMPREPLY=($(compgen -W "all extra error pedantic all,extra all,extra,error" -- "$cur")); return ;;
         -o) COMPREPLY=($(compgen -f -- "$cur")); return ;;
     esac
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "-h --help -H -f -O -W -lm -o --" -- "$cur"))
+        COMPREPLY=($(compgen -W "-h --help -H -f -O -W -o --" -- "$cur"))
         return
     fi
+    # Default to .c file completion
+    COMPREPLY=($(compgen -f -X '!*.c' -- "$cur"))
 }
 complete -F _ru_completions ru run
 
@@ -1189,13 +1210,14 @@ _rud_completions() {
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
         -f) COMPREPLY=($(compgen -f -X '!*.c' -- "$cur")); return ;;
-        -W) COMPREPLY=($(compgen -W "extra error extra,error pedantic" -- "$cur")); return ;;
+        -W) COMPREPLY=($(compgen -W "all extra error pedantic all,extra all,extra,error" -- "$cur")); return ;;
         -o) COMPREPLY=($(compgen -f -- "$cur")); return ;;
     esac
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "-h --help -H -f -W -lm -o --" -- "$cur"))
+        COMPREPLY=($(compgen -W "-h --help -H -f -W -o --" -- "$cur"))
         return
     fi
+    COMPREPLY=($(compgen -f -X '!*.c' -- "$cur"))
 }
 complete -F _rud_completions rud
 
@@ -1205,13 +1227,14 @@ _rund_completions() {
     case "$prev" in
         -f) COMPREPLY=($(compgen -f -X '!*.c' -- "$cur")); return ;;
         -i) COMPREPLY=($(compgen -f -- "$cur")); return ;;
-        -W) COMPREPLY=($(compgen -W "extra error extra,error pedantic" -- "$cur")); return ;;
+        -W) COMPREPLY=($(compgen -W "all extra error pedantic all,extra all,extra,error" -- "$cur")); return ;;
         -o) COMPREPLY=($(compgen -f -- "$cur")); return ;;
     esac
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "-h --help -H -f -i -o -W -lm --" -- "$cur"))
+        COMPREPLY=($(compgen -W "-h --help -H -f -i -o -W --" -- "$cur"))
         return
     fi
+    COMPREPLY=($(compgen -f -X '!*.c' -- "$cur"))
 }
 complete -F _rund_completions rund
 
