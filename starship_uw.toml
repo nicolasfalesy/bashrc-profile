@@ -1,6 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════════════╗
 # ║  Starship Prompt — "Waterloo Gold" theme                            ║
 # ║  Two-line powerline with right-aligned info bar                     ║
+# ║  Rounded pill-shaped outer caps (U+E0B6 left, U+E0B4 right)        ║
 # ║  Palette: warm blacks, UW gold tones, amber                         ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 #
@@ -17,17 +18,17 @@
 #   #9ece6a  green_ok   — success / additions
 
 format = """
-[](fg:#1a1400)\
+[](fg:#1a1400)\
 $os\
 $username\
 $hostname\
-[](bg:#FFC726 fg:#1a1400)\
+[](bg:#FFC726 fg:#1a1400)\
 $directory\
-[](bg:#C9920A fg:#FFC726)\
+[](bg:#C9920A fg:#FFC726)\
 $git_branch\
 $git_status\
 $git_metrics\
-[](bg:#9B6E00 fg:#C9920A)\
+[](bg:#9B6E00 fg:#C9920A)\
 $c\
 $elixir\
 $elm\
@@ -40,14 +41,14 @@ $nim\
 $python\
 $rust\
 $docker_context\
-[](bg:#7A5500 fg:#9B6E00)\
+[](bg:#7A5500 fg:#9B6E00)\
 $cmd_duration\
-[](bg:#1a1400 fg:#7A5500)\
+[](bg:#1a1400 fg:#7A5500)\
 $jobs\
 $sudo\
 $status\
 $time\
-[](fg:#1a1400)\
+[](fg:#1a1400)\
 $fill\
 $memory_usage\
 [ ]()\
