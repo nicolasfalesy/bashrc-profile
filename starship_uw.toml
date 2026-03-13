@@ -241,7 +241,7 @@ symbol = " "
 disabled = false
 threshold = 60
 style = "fg:#FFD700"
-format = "[󰍛 ${ram_pct}%]($style)"
+format = "[󰍛 ${ram_pct}]($style)"
 
 # ── Line 2: prompt character ─────────────────────────────────────────
 
