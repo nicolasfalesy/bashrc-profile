@@ -1363,7 +1363,7 @@ HELPEOF
 
     while IFS= read -r file; do
       if [[ -e "$file" ]]; then
-        if command rm -v "$file"; then
+        if sudo rm -v "$file"; then
           removed=$((removed + 1))
         else
           failed=$((failed + 1))
