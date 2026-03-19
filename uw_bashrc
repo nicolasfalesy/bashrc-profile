@@ -8,6 +8,8 @@
 [[ $- == *i* ]] && [[ -z ${BLE_VERSION-} ]] && [[ -f ~/.local/share/blesh/ble.sh ]] && source ~/.local/share/blesh/ble.sh --noattach
 iatest=$(expr index "$-" i)
 
+export PATH="$HOME/bin:$PATH"
+
 ###############################################################################
 # SOURCED FILES & COMPLETIONS
 ###############################################################################
