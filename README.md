@@ -15,7 +15,7 @@ Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for opt
 | Area | Highlights |
 |------|-----------|
 | Prompt | [starship](https://starship.rs) "Aurora" theme, [zoxide](https://github.com/ajeetdsouza/zoxide) `z`/`zi`, [fzf](https://github.com/junegunn/fzf) Ctrl-R / Ctrl-T / Alt-C, optional [ble.sh](https://github.com/akinomyoga/ble.sh) |
-| Speed | ~30 ms to a prompt on a Pi 4 (was ~80 ms): cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded |
+| Speed | ~30 ms to a prompt on a Pi 4, ~60 ms with ble.sh (was ~80 ms without it): cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded |
 | Navigation | `cd` auto-lists, `ll`, `up 3`, `mkcd`, `take <url>`, `tre` |
 | Files | `extract`, `ftext`, `size`, `bak`/`bak -r`, `diff2`, `path` |
 | System | `sys`, `psg`, `port`, `killport`, `topp`, `myip`, `weather`, `t` (tmux) |
@@ -58,7 +58,7 @@ edit later with `bt config`.
 |---|---|---|---|---|
 | System packages via apt/nala | ✓ | ✗ (read-only root) | ✓ | ✓ |
 | starship / zoxide / fzf | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback `~/.local/bin` | apt, fallback |
-| ble.sh | off (`--with-blesh`) | off | on | off |
+| ble.sh (syntax highlighting) | on | on (`~/.local/share/blesh`) | on | on |
 | fastfetch on new terminal | off | off | on | off |
 | Extras | raspi-utils, nala, wireguard | — | alacritty, clipboard, Nerd Font, wireguard | — |
 

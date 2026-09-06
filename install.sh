@@ -31,7 +31,7 @@ DEPS=1              # install dependencies during install
 DRY=0
 YES=0
 WITH_DEV=0          # gcc/make/gdb/valgrind/clang
-WITH_BLESH=auto     # auto = desktop only
+WITH_BLESH=1        # ble.sh on by default (--no-blesh to skip)
 WITH_MCRCON=0
 TARGET_DIR=''
 
@@ -80,8 +80,8 @@ Options
   --profile <p>        pi | nas | desktop | server | auto   (default: auto)
   --no-deps            skip dependency installation
   --with-dev           C toolchain: gcc make gdb valgrind clang
-  --with-blesh         install ble.sh and enable it (default: desktop only)
-  --no-blesh           never install/enable ble.sh
+  --with-blesh         install ble.sh and enable it (default)
+  --no-blesh           skip ble.sh (saves ~30 ms per shell start)
   --with-mcrcon        build mcrcon (Minecraft RCON client)
   --dir <path>         where to keep the repo when cloning (default: ~/.local/share/bashrc-profile)
   -n, --dry-run        show what would happen, change nothing
@@ -143,9 +143,6 @@ detect_system() {
     fi
     ARCH=$(uname -m)
     info "profile: $PROFILE   packages: $PKG   arch: $ARCH   home: $HOME"
-    if [[ $WITH_BLESH == auto ]]; then
-        [[ $PROFILE == desktop ]] && WITH_BLESH=1 || WITH_BLESH=0
-    fi
 }
 
 # ── 2. Locate or fetch the repo ──────────────────────────────────────────────
