@@ -39,9 +39,10 @@ tmux, htop, tree, archive tools) via **nala** (installed first if missing), plus
 `raspi-utils` for `vcgencmd` and `wireguard-tools`. Docker and cloudflared are *not*
 installed for you — the installer only warns if they are missing.
 
-Defaults: ble.sh on (syntax highlighting, ~30 ms), fastfetch off. Flip either in
-`bt config`; `~/.blerc` keeps the per-keystroke autosuggestions off on purpose
-because they are the part of ble.sh that hurts on a Pi over ssh.
+Defaults: ble.sh on (highlighting, autosuggestions, menu completion; ~30 ms at
+start), fastfetch off. Flip either in `bt config`. `blerc` delays suggestions by
+100 ms after a keystroke so a Pi over ssh does not recompute on every key; raise
+`complete_auto_delay` there if it ever feels laggy.
 
 `cloud <sub>` needs `CF_TUNNEL` and `CF_DOMAIN` in `~/.bashrc.local`.
 

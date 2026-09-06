@@ -13,6 +13,9 @@ that use them.
 | Ctrl-T | fuzzy file picker, inserts the path *(fzf)* |
 | Alt-C | fuzzy `cd` into a subdirectory *(fzf)* |
 | Ctrl-Z | undo on the command line |
+| → / End / Ctrl-F | accept the grey autosuggestion *(ble.sh)* |
+| Alt-F | accept one word of it *(ble.sh)* |
+| Tab / Shift-Tab, arrows, Enter, Esc | open, cycle, pick, close the completion menu; keep typing to filter *(ble.sh)* |
 
 ## Aliases (lib/aliases.sh)
 
@@ -189,7 +192,7 @@ Environment: `TERMINAL=alacritty`, `QT_QPA_PLATFORMTHEME=qt5ct`, fastfetch and b
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `BASHRC_PROFILE` | autodetect | pi / nas / desktop / server |
-| `BASHRC_BLESH` | 1 | load ble.sh (syntax highlighting; autosuggest tuned in `blerc`) |
+| `BASHRC_BLESH` | 1 | load ble.sh (highlighting, autosuggestions, menu completion — tuned in `blerc`) |
 | `BASHRC_FASTFETCH` | 0 (desktop 1) | fastfetch on new terminals |
 | `BASHRC_CD_LS_MAX` | 200 | `cd` lists directories up to this size |
 | `BASHRC_LAZY_COMPLETION` | 1 | bash-completion on first Tab instead of at startup |
