@@ -12,7 +12,7 @@
 #    6. lib/files.sh                extract, ftext, size, bak, diff2, path
 #    7. lib/system.sh               sys, psg, port, killport, topp, myip, weather, t (tmux), rcon
 #    8. lib/dev.sh                  C toolchain helpers — lazy-loaded on first use
-#    9. profiles/<profile>.sh       pi | nas | desktop | server
+#    9. profiles/<profile>.sh       pi | nas | desktop | uw | server
 #   10. ~/.bashrc.local             per-machine secrets, ssh aliases, overrides (never in git)
 #   11. lib/prompt.sh               fzf, starship, zoxide, ble.sh (must be last)
 # =============================================================================
@@ -26,14 +26,19 @@ BASHRC_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/bashrc-profile"
 BASHRC_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile"
 
 # 2. Feature toggles — defaults, overridden by the config file (bt config).
-BASHRC_PROFILE="${BASHRC_PROFILE:-}"        # pi | nas | desktop | server  (empty = autodetect)
+BASHRC_PROFILE="${BASHRC_PROFILE:-}"        # pi | nas | desktop | uw | server  (empty = autodetect)
 BASHRC_BLESH="${BASHRC_BLESH:-0}"           # 1 = load ble.sh (syntax highlighting, autosuggest)
 BASHRC_FASTFETCH="${BASHRC_FASTFETCH:-0}"   # 1 = run fastfetch on new terminals
 BASHRC_CD_LS_MAX="${BASHRC_CD_LS_MAX:-200}" # cd auto-lists dirs with at most this many entries
 BASHRC_LAZY_COMPLETION="${BASHRC_LAZY_COMPLETION:-1}"  # 1 = load bash-completion on first Tab
 BASHRC_FZF_COMPLETION="${BASHRC_FZF_COMPLETION:-0}"    # 1 = fzf **<Tab> fuzzy completion (slow)
+BASHRC_ZOXIDE="${BASHRC_ZOXIDE:-0}"         # 1 = zoxide z/zi (off: removed upstream Mar 2026; needs `prereqs --with-zoxide`)
 
+# An explicit BASHRC_PROFILE in the environment (testing: BASHRC_PROFILE=nas bash -i)
+# wins over the config file; everything else in the file overrides the defaults.
+_m=$BASHRC_PROFILE
 [[ -r "$BASHRC_CONFIG_DIR/config" ]] && . "$BASHRC_CONFIG_DIR/config"
+[[ -n $_m ]] && BASHRC_PROFILE=$_m
 
 # Where is the repo? The installer records it; otherwise resolve the ~/.bashrc symlink.
 if [[ -z ${BASHRC_PROFILE_DIR-} || ! -f $BASHRC_PROFILE_DIR/lib/core.sh ]]; then
@@ -42,6 +47,13 @@ fi
 export BASHRC_PROFILE_DIR
 
 # Autodetect the machine profile when nothing set one.
+# UW student servers: hostname or DNS search domain under uwaterloo.ca (no fork).
+_bashrc_is_uw() {
+    [[ $HOSTNAME == *uwaterloo* ]] && return 0
+    local l; [[ -r /etc/resolv.conf ]] || return 1
+    while read -r l; do [[ $l == search*uwaterloo.ca* || $l == domain*uwaterloo.ca* ]] && return 0; done < /etc/resolv.conf
+    return 1
+}
 if [[ -z $BASHRC_PROFILE ]]; then
     if [[ -r /proc/device-tree/model ]] && { read -r _m < /proc/device-tree/model; [[ $_m == *"Raspberry Pi"* ]]; }; then
         BASHRC_PROFILE=pi
@@ -49,10 +61,12 @@ if [[ -z $BASHRC_PROFILE ]]; then
         BASHRC_PROFILE=nas
     elif [[ -n ${DISPLAY-} || -n ${WAYLAND_DISPLAY-} ]]; then
         BASHRC_PROFILE=desktop
+    elif _bashrc_is_uw; then
+        BASHRC_PROFILE=uw
     else
         BASHRC_PROFILE=server
     fi
-    unset _m
+    unset _m; unset -f _bashrc_is_uw
 fi
 export BASHRC_PROFILE
 

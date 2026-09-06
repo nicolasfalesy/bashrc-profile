@@ -21,10 +21,10 @@ How the profile is put together, in the order things happen when a shell starts.
      ├── lib/system.sh        sys · psg · port · killport · topp · myip · weather · t · rcon
      ├── (lib/dev.sh)         ru run rud rund rut mkt   ← stubs only; loaded on first use
      │
-     ├── profiles/pi.sh | nas.sh | desktop.sh | server.sh
+     ├── profiles/pi.sh | nas.sh | desktop.sh | uw.sh | server.sh
      ├── ~/.bashrc.local      secrets, ssh hosts, per-machine overrides (never committed)
      │
-     └── lib/prompt.sh        fastfetch · fzf · starship · zoxide · ble-attach   (always last)
+     └── lib/prompt.sh        fastfetch · fzf · starship · (zoxide) · ble-attach   (always last)
 ```
 
 Three kinds of configuration, three places:
@@ -50,11 +50,13 @@ bug. Everything below this line is interactive-only.
 ```bash
 BASHRC_CONFIG_DIR=…/bashrc-profile ; BASHRC_CACHE_DIR=…
 BASHRC_PROFILE=… BASHRC_BLESH=0 BASHRC_FASTFETCH=0 BASHRC_CD_LS_MAX=200
-BASHRC_LAZY_COMPLETION=1 BASHRC_FZF_COMPLETION=0
+BASHRC_LAZY_COMPLETION=1 BASHRC_FZF_COMPLETION=0 BASHRC_ZOXIDE=0
 [[ -r "$BASHRC_CONFIG_DIR/config" ]] && . "$BASHRC_CONFIG_DIR/config"
 ```
 Defaults first, then the config file overrides them. The config file is plain bash
-(`BASHRC_PROFILE=pi`) so there is no parsing.
+(`BASHRC_PROFILE=pi`) so there is no parsing. One exception: a `BASHRC_PROFILE` that
+was already in the environment (`BASHRC_PROFILE=nas bash -i` to try another profile)
+is put back after the file is read, so it wins.
 
 ```bash
 if [[ -z ${BASHRC_PROFILE_DIR-} || ! -f $BASHRC_PROFILE_DIR/lib/core.sh ]]; then
@@ -68,7 +70,8 @@ strips the filename — a bash parameter expansion instead of a `dirname` fork.
 **Profile autodetection** (only when the config did not set one):
 `/proc/device-tree/model` contains "Raspberry Pi" → `pi`; `/usr/share/truenas` or
 `/usr/bin/midclt` (TrueNAS middleware client) → `nas`; `$DISPLAY`/`$WAYLAND_DISPLAY`
-set → `desktop`; else `server`.
+set → `desktop`; `$HOSTNAME` or a `search`/`domain` line in `/etc/resolv.conf` under
+`uwaterloo.ca` → `uw` (read with a `while read` loop — no fork); else `server`.
 
 **ble.sh** has to be sourced with `--noattach` *before* anything calls `bind`, and
 `ble-attach`ed at the very end — that is why it appears in both `bashrc` and
@@ -180,8 +183,9 @@ comes from `/proc/meminfo`; the primary interface from `ip route get 1.1.1.1` (t
 
 ## 5. `lib/prompt.sh` — why it is fast
 
-`starship init bash` and `zoxide init bash` are Rust binaries that print a shell
-script. Spawning them cost ~20 ms + ~35 ms on the Pi *every shell start*.
+`starship init bash` and `zoxide init bash` (zoxide only when `BASHRC_ZOXIDE=1`; it is
+off by default) are Rust binaries that print a shell script. Spawning them cost
+~20 ms + ~35 ms on the Pi *every shell start*.
 `_bashrc_cached_init` runs each once, saves the script to
 `~/.cache/bashrc-profile/<name>.bash`, and afterwards just sources the file. The
 binary's path comes from `${BASH_CMDS[name]}` (bash's own hash table — no fork) and

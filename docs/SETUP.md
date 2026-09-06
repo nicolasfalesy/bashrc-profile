@@ -12,13 +12,14 @@ The installer asks one question. Useful flags:
 
 | Flag | Effect |
 |------|--------|
-| `--profile pi\|nas\|desktop\|server` | skip autodetection |
+| `--profile pi\|nas\|desktop\|uw\|server` | skip autodetection |
 | `--dry-run` | print every step, change nothing |
 | `--yes` | no questions (piped installs on a box without a tty assume yes) |
 | `--no-deps` | just link files |
 | `--with-dev` | gcc, make, gdb, valgrind, clang (C course work) |
 | `--with-blesh` / `--no-blesh` | syntax highlighting + autosuggestions |
 | `--with-mcrcon` | build the Minecraft RCON client |
+| `--with-zoxide` | install zoxide and turn on `z` / `zi` (off by default) |
 | `--update` | pull + relink + clear caches (same as `bup`) |
 | `--uninstall` | remove links, restore backups |
 
@@ -34,7 +35,7 @@ Raspberry Pi OS / Debian, headless, reached over ssh. Detected from
 bash install.sh --profile pi          # or let it autodetect
 ```
 
-What is installed: the core list (starship, zoxide, fzf, ripgrep, neovim, trash-cli,
+What is installed: the core list (starship, fzf, ripgrep, neovim, trash-cli,
 tmux, htop, tree, archive tools) via **nala** (installed first if missing), plus
 `raspi-utils` for `vcgencmd` and `wireguard-tools`. Docker and cloudflared are *not*
 installed for you — the installer only warns if they are missing.
@@ -55,11 +56,13 @@ the starship icons (the font lives where the terminal runs, not on the Pi).
 Detected from `/usr/share/truenas` or `/usr/bin/midclt`. TrueNAS SCALE is Debian with:
 
 - `/` mounted **read-only** and `apt` deliberately disabled → the installer does not
-  touch system packages. Everything goes into your home: starship and zoxide into
-  `~/.local/bin` (upstream install scripts), fzf into `~/.fzf`, ble.sh (if asked) into
-  `~/.local/share/blesh` from the release tarball, so no `make`/`gawk` are needed.
-- No `nvim`, no `trash-cli`: `EDITOR` falls back to `vim`/`nano`, `rm` becomes `rm -I`.
-- Package aliases (`ni`, `nu`, …) are removed by the profile.
+  touch system packages. Everything goes into your home: starship into `~/.local/bin`
+  (upstream install script), fzf into `~/.fzf`, ble.sh into `~/.local/share/blesh`
+  from the release tarball, so no `make`/`gawk` are needed.
+- No `trash-cli`: `rm` becomes `rm -I`. `nvim` is not packaged either — unpack a release
+  into `~/nvim-linux-x86_64` and the profile puts it on `PATH` and sets `VIMRUNTIME`.
+- Package aliases (`ni`, `nu`, …) are removed by the profile. `wn` (`watch nvidia-smi`)
+  appears when the box has an NVIDIA GPU.
 
 ```bash
 # on the NAS, as your admin user
@@ -67,8 +70,8 @@ curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/i
 bt local            # set ZPOOL=porsche (and anything else)
 ```
 
-Notes / caveats (not verified on the box while this was written — the NAS's ssh host
-key had changed; see AUDIT.md):
+Verified on the real box (TrueNAS SCALE, login shell switched from zsh to bash with
+`sudo midclt call user.update <uid> '{"shell": "/usr/bin/bash"}'`). Notes:
 
 - Keep the admin user's **home directory on a dataset of your data pool** (Credentials →
   Users → Home Directory). A home on the boot pool can be lost on a TrueNAS upgrade,
@@ -77,7 +80,11 @@ key had changed; see AUDIT.md):
   cannot pull — re-run the curl line instead.
 - Nothing here changes middleware-managed files; TrueNAS may still regenerate
   `/etc/*` on upgrade, but `~/.bashrc` and `~/.profile` are yours.
-- `dsv` and the `z*` aliases use `sudo zpool`; the admin user has sudo on SCALE.
+- `dsv` and the `z*` aliases use `sudo zpool`, and `dsv` deletes with `sudo rm` because
+  the damaged files usually belong to other users or services.
+- Keep the repo on the data pool too (e.g. `/mnt/<pool>/configs/home/bashrc-profile`)
+  and point `BASHRC_PROFILE_DIR` at it in `bt config` for the same reason as the home.
+- The old zsh setup is kept in `legacy/zshrc` for reference; nothing loads it.
 
 ## Laptop / desktop (profile `desktop`)
 
@@ -93,6 +100,24 @@ terminal so the prompt glyphs render. ble.sh and fastfetch are on by default.
 
 `vpn` expects a WireGuard config at `/etc/wireguard/wg0.conf`. `note`/`notes` default to
 `~/Nextcloud/…`; change `NOTES_FILE` in `~/.bashrc.local`.
+
+## UW student servers (profile `uw`)
+
+`ubuntu2404-0xx.student.cs.uwaterloo.ca` and friends. Detected from a hostname or a
+`/etc/resolv.conf` search domain under `uwaterloo.ca`. You have no root there, so the
+installer never touches apt: starship, fzf and ble.sh go under your home exactly as
+on the NAS. Drop an nvim release into `~/.local` if you want it.
+
+```bash
+git clone https://github.com/nicolasfalesy/bashrc-profile ~/bashrc-profile
+bash ~/bashrc-profile/install.sh --profile uw
+```
+
+What is different: the **Waterloo Gold** starship theme (`starship_uw.toml`) is linked
+instead of Aurora, `~/bin` is on `PATH`, `rm` is `rm -iv` (no trash-cli), the package
+and `sudo` aliases are removed. The C helpers (`ru`, `run`, `rut`, `mkt`) work as
+everywhere else; `gcc`/`valgrind` are already on the school machines. Put the
+`home-pc` ssh alias in `~/.bashrc.local` (it is in the template).
 
 ## Generic server (profile `server`)
 
