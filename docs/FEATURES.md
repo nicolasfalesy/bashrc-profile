@@ -189,7 +189,7 @@ Environment: `TERMINAL=alacritty`, `QT_QPA_PLATFORMTHEME=qt5ct`, fastfetch and b
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `BASHRC_PROFILE` | autodetect | pi / nas / desktop / server |
-| `BASHRC_BLESH` | 0 (desktop 1) | load ble.sh |
+| `BASHRC_BLESH` | 1 | load ble.sh (syntax highlighting; autosuggest tuned in `blerc`) |
 | `BASHRC_FASTFETCH` | 0 (desktop 1) | fastfetch on new terminals |
 | `BASHRC_CD_LS_MAX` | 200 | `cd` lists directories up to this size |
 | `BASHRC_LAZY_COMPLETION` | 1 | bash-completion on first Tab instead of at startup |
