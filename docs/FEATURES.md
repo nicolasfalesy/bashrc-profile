@@ -1,0 +1,202 @@
+# Command reference
+
+Everything the profile defines, by module. Every function accepts `-h`.
+Tools in *(parentheses)* are required and installed by `install.sh` for the profiles
+that use them.
+
+## Keys (lib/core.sh, lib/prompt.sh)
+
+| Key | Action |
+|-----|--------|
+| Tab | complete; one Tab lists candidates; case-insensitive |
+| Ctrl-R / Ctrl-S | fuzzy history search backward / forward *(fzf)* |
+| Ctrl-T | fuzzy file picker, inserts the path *(fzf)* |
+| Alt-C | fuzzy `cd` into a subdirectory *(fzf)* |
+| Ctrl-Z | undo on the command line |
+
+## Aliases (lib/aliases.sh)
+
+**Editor**
+
+| Alias | Does |
+|-------|------|
+| `vim`, `vi` | `nvim` (only when nvim exists) |
+| `svim` | `sudo $EDITOR` |
+| `nt` | edit `~/.config/nvim/init.lua` |
+
+**Packages** (nala if present, else apt; absent on the NAS)
+
+| Alias | Does |
+|-------|------|
+| `apt` | `sudo nala` |
+| `ni <pkg>` | install |
+| `np <pkg>` | purge |
+| `ns <term>` | search |
+| `nu` | update lists + full-upgrade, no questions |
+| `nclean` | autoremove + clean cache |
+
+**Core commands**
+
+| Alias | Does |
+|-------|------|
+| `cp`, `mv` | with `-i` (ask before overwriting) |
+| `mkdir` | `mkdir -p` |
+| `rm` | `trash -v` (recover with `trash-restore`); `rm -I` where trash-cli is absent |
+| `rmd` | the real `rm -rfv` — no trash, no prompts |
+| `ping` | 10 packets then stop |
+| `mx` | `chmod a+x` |
+| `..`, `...`, `cd..` | up one / two levels |
+| `e`, `c` | exit, clear |
+| `h <text>` | search history |
+| `ports`, `openports` | everything listening (`ss -tulnp`) |
+
+**Listing**
+
+| Alias | Does |
+|-------|------|
+| `l` | `ll` |
+| `lt` | `ll` sorted by time, newest last |
+| `tree` | coloured, dirs first, human sizes |
+| `folders` | size of each subdirectory, sorted |
+| `mnts` | `df -hT` without tmpfs/overlay noise |
+
+**git**: `gs` status · `ga` add · `gaa` add -A · `gc` commit · `gcm` commit -m · `gp` push ·
+`gl` pull · `gd` diff · `gds` diff --staged · `gb` branch · `gco` checkout · `gsw` switch ·
+`glog` graph log · `gst` stash · `gstp` stash pop · `gcl` clone
+
+**systemd**: `sc` systemctl · `scs` status · `scf` --failed · `scstart` · `scstop` ·
+`screstart` · `scenable` (enable --now) · `scdisable` (disable --now) · `sclog <unit>`
+(journal, jump to end) · `sclogf <unit>` (follow)
+
+**Docker Compose** (run in the directory with the compose file; uses `sudo` unless you
+are in the docker group)
+
+| Alias | Does |
+|-------|------|
+| `dcu` | `compose up -d` |
+| `dcd` | `compose down` |
+| `dcr`, `dr` | down then up |
+| `dcl` | `compose logs -f --tail=100` |
+| `dcp` | `compose pull` |
+| `dps` | `docker ps` as a names/status/ports table |
+| `dprune` | `docker system prune -f` |
+
+**This profile**
+
+| Command | Does |
+|---------|------|
+| `bt` | edit `lib/aliases.sh` |
+| `bt <module>` | edit `lib/<module>.sh` or `profiles/<module>.sh` — `bt system`, `bt pi` |
+| `bt local` / `bt config` | edit `~/.bashrc.local` / `~/.config/bashrc-profile/config` |
+| `bt -l` | list modules |
+| `reload` | `source ~/.bashrc` |
+| `bup` | `git pull` the repo, clear caches, reload |
+| `prereqs [opts]` | `install.sh --deps-only` — e.g. `prereqs --with-dev` |
+| `fetch` | fastfetch |
+
+## Navigation (lib/navigation.sh)
+
+| Command | Does |
+|---------|------|
+| `ll [args]` | `ls -AFlsh --color --group-directories-first` |
+| `cd [dir]` | change directory, then `ll` (skipped above `BASHRC_CD_LS_MAX` entries, default 200) |
+| `z <hint>` / `zi` | zoxide jump / interactive pick — lists like `cd` *(zoxide)* |
+| `up [n]` | go up n levels |
+| `mkcd <dir>` | mkdir -p + cd |
+| `take <url\|dir>` | download an archive, extract it in a temp dir and cd in; or `mkcd` |
+| `tre [depth] [dir]` | tree, depth 3, ignoring .git/node_modules/__pycache__/.venv/.cache *(tree)* |
+
+## Files (lib/files.sh)
+
+| Command | Does |
+|---------|------|
+| `extract <archive>...` | tar.*/tgz/zip/7z/rar/gz/bz2/xz/zst/Z/deb *(unzip, p7zip-full, xz-utils, zstd)* |
+| `ftext <pattern>` | recursive case-insensitive text search, paged *(ripgrep, falls back to grep)* |
+| `size [--size K\|M\|G\|T] [dir...]` | directory sizes with a spinner and a total |
+| `bak <file>...` | copy to `file.bak.YYYYMMDD-HHMMSS` |
+| `bak -r <file.bak.TS>` | restore |
+| `diff2 <a> <b>` | side-by-side coloured diff in less |
+| `path [pattern]` / `path -c` | PATH one per line / count |
+
+## System (lib/system.sh)
+
+| Command | Does |
+|---------|------|
+| `sys` | CPU % (real 0.5 s delta) + load, memory, root disk, IP + interface, temperature, battery, uptime, then profile extras |
+| `psg <pattern>...` | processes matching, highlighted, with counts |
+| `port` / `port 80 443` | what listens where *(iproute2 `ss`)* |
+| `killport <port>...` | kill the listener |
+| `topp [-c\|-m] [n]` | top n by CPU or memory |
+| `myip` (`whatsmyip`) | LAN IP on the default-route interface + public IP |
+| `pubip` | public IP only |
+| `weather [-s] [place]` | wttr.in report; default `$WEATHER_LOCATION` |
+| `t <name>` | tmux: create or attach · `t -l` list · `t -a` attach · `t -p` kill one · `t -k` kill all *(tmux)* |
+| `rcon <cmd>` (`rc`) | Minecraft RCON via `mcrcon`; needs `RCON_IP/PORT/PASS` in `~/.bashrc.local` *(`install.sh --with-mcrcon`)* |
+
+## C toolchain (lib/dev.sh — lazy-loaded; `prereqs --with-dev`)
+
+| Command | Does |
+|---------|------|
+| `ru [-f files] [-O n] [-W flags] [-o name] [-- gcc-flags]` | compile with `gcc -std=c99 -g -Wall -Wextra -Wpedantic` → `./myprogram` |
+| `run …` | `ru` then execute |
+| `rud …` | debug build (`-O0`) |
+| `rund [-i input] [-- args]` | debug build, run under valgrind, colourised leak/error report, log saved |
+| `rut [-v] [-d dir] [-f files]` | compile, then run every `<stem>.in` against `<stem>.expect` (+ optional `<stem>.args`) |
+| `mkt [-a] <stem>...` | create empty `.in`/`.expect` (and `.args`) test files |
+
+## Profile: pi (profiles/pi.sh)
+
+| Command | Does |
+|---------|------|
+| `temp` | CPU temperature + decoded `vcgencmd get_throttled` bits (under-voltage, capped, throttled — now and since boot) *(raspi-utils)* |
+| `wt` | `watch` temperature + throttle flags every second |
+| `cloud <sub>` | edit `/etc/cloudflared/config.yml`, add DNS route `sub.$CF_DOMAIN` to tunnel `$CF_TUNNEL`, restart cloudflared |
+| `claude` | `claude --dangerously-skip-permissions` (headless box) |
+| `sys` extra | throttle status line |
+
+## Profile: nas (profiles/nas.sh — TrueNAS SCALE)
+
+`ZPOOL` (default `tank`) comes from `~/.bashrc.local`.
+
+| Command | Does |
+|---------|------|
+| `zs` / `zh` | `zpool status -v` / `zpool status -x` (health one-liner) |
+| `zl` | datasets with used/avail/mountpoint |
+| `zsnap` | snapshots by creation time |
+| `zio` | `zpool iostat -v 2` |
+| `smart <dev>` | `smartctl -a` |
+| `dsv [-n] [pattern]` | delete the files `zpool status -v` reports as damaged (default under `/mnt/$ZPOOL/`), confirm, then `zpool clear` |
+| `sys` extra | one line per pool: health, used/size, capacity |
+
+## Profile: desktop (profiles/desktop.sh)
+
+| Command | Does |
+|---------|------|
+| `cpy [text]` / `pst` | clipboard copy (arg or stdin) / paste — Wayland `wl-copy` or X11 `xclip` |
+| `vpn` / `vpn -s` / `vpn -d` | WireGuard `wg0` up / status / down *(wireguard-tools)* |
+| `note <text>` / `-l` / `-e` / `-c` | timestamped scratch notes in `$NOTES_FILE` |
+| `notes` | edit the "constant notes" file |
+| `kt` | edit Alacritty keybinds |
+| `at` / `at -l [q]` / `at -t <name>` | Alacritty config / list themes / activate theme |
+| `apps` / `apps -u` | cd to local .desktop files / refresh desktop database |
+| `install_app <file.desktop>` / `-l [q]` | symlink a launcher / list |
+| `grub` / `-e` / `-t <dir>` / `-d` | update-grub / edit config / install theme / cd themes |
+
+Environment: `TERMINAL=alacritty`, `QT_QPA_PLATFORMTHEME=qt5ct`, fastfetch and ble.sh on by default.
+
+## Environment variables you can set (bt config / bt local)
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `BASHRC_PROFILE` | autodetect | pi / nas / desktop / server |
+| `BASHRC_BLESH` | 0 (desktop 1) | load ble.sh |
+| `BASHRC_FASTFETCH` | 0 (desktop 1) | fastfetch on new terminals |
+| `BASHRC_CD_LS_MAX` | 200 | `cd` lists directories up to this size |
+| `BASHRC_LAZY_COMPLETION` | 1 | bash-completion on first Tab instead of at startup |
+| `BASHRC_FZF_COMPLETION` | 0 | fzf `**<Tab>` completion (+25 ms) |
+| `BASHRC_TIMING` | – | `=1` prints startup time |
+| `RCON_IP`, `RCON_PORT`, `RCON_PASS` | – | Minecraft RCON |
+| `CF_TUNNEL`, `CF_DOMAIN` | – | Cloudflare tunnel name and zone (`cloud`) |
+| `ZPOOL` | tank | pool for the nas profile |
+| `WEATHER_LOCATION` | – | default for `weather` |
+| `NOTES_FILE` | ~/Nextcloud/quick-notes.txt | `note` storage |

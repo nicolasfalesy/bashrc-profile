@@ -1,354 +1,487 @@
 #!/usr/bin/env bash
+# =============================================================================
+#  bashrc-profile — installer, updater, dependency manager
+#
+#  curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/install.sh | bash
+#  bash install.sh [options]              (from a clone)
+#
+#  What it does
+#    1. detects the machine profile (pi / nas / desktop / server) — or takes --profile
+#    2. gets the repo (uses the clone you ran it from, else clones to ~/.local/share/bashrc-profile)
+#    3. installs every dependency the profile uses (system packages where apt works,
+#       user-local binaries where it doesn't — e.g. TrueNAS)
+#    4. backs up and symlinks ~/.bashrc, ~/.config/starship.toml, ~/.blerc
+#    5. writes ~/.config/bashrc-profile/config and seeds ~/.bashrc.local
+#    6. verifies the result by starting a real interactive shell
+# =============================================================================
+set -uo pipefail
 
-###############################################################################
-# bashrc-profile Installer
-###############################################################################
-# Installs the bashrc-profile configuration with smart backups and updates.
-# Features:
-#   - Automatic timestamped backups of existing .bashrc & .shell_functions
-#   - Dry-run mode to preview changes (--dry-run or -n)
-#   - Handles both fresh installs and updates
-#   - Auto-reloads shell after installation (or notifies user)
-#   - Validates installation success
+REPO_URL='https://github.com/nicolasfalesy/bashrc-profile.git'
+TARBALL_URL='https://github.com/nicolasfalesy/bashrc-profile/archive/refs/heads/main.tar.gz'
+DEFAULT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/bashrc-profile"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/bashrc-profile"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile"
+TS=$(date +%Y%m%d-%H%M%S)
+PATH="$HOME/.local/bin:$HOME/.fzf/bin:$PATH"   # see tools installed for this user only
 
-set -euo pipefail
+# ── Options ──────────────────────────────────────────────────────────────────
+PROFILE=auto        # pi | nas | desktop | server | auto
+MODE=install        # install | deps | update | uninstall
+DEPS=1              # install dependencies during install
+DRY=0
+YES=0
+WITH_DEV=0          # gcc/make/gdb/valgrind/clang
+WITH_BLESH=auto     # auto = desktop only
+WITH_MCRCON=0
+TARGET_DIR=''
 
-###############################################################################
-# Colors for output
-###############################################################################
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'  # No Color
-
-###############################################################################
-# Configuration
-###############################################################################
-HOME_DIR="${HOME:-$(eval echo ~)}"
-DRY_RUN=false
-TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-
-# Determine if running from file or pipe
-if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ "${BASH_SOURCE[0]}" != "-" ]] && [[ -f "$(dirname "${BASH_SOURCE[0]}")/bashrc" ]]; then
-    REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ── Output helpers ───────────────────────────────────────────────────────────
+if [[ -t 1 ]]; then
+    R=$'\033[0;31m' G=$'\033[0;32m' Y=$'\033[1;33m' B=$'\033[0;34m' N=$'\033[0m'
 else
-    # Running from pipe (curl | bash) or files not found, download from GitHub
-    REPO_DIR="$(mktemp -d)"
-    GITHUB_RAW="https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main"
+    R='' G='' Y='' B='' N=''
 fi
+info()  { printf '%s·%s  %s\n' "$B" "$N" "$*"; }
+ok()    { printf '%s✓%s  %s\n' "$G" "$N" "$*"; }
+warn()  { printf '%s!%s  %s\n' "$Y" "$N" "$*"; }
+err()   { printf '%s✗%s  %s\n' "$R" "$N" "$*" >&2; }
+step()  { printf '\n%s--- %s ---%s\n' "$B" "$*" "$N"; }
+die()   { err "$*"; exit 1; }
+have()  { command -v "$1" >/dev/null 2>&1; }
 
-BASHRC_SRC="$REPO_DIR/bashrc"
-SHELL_FUNCS_SRC="$REPO_DIR/shell_functions"
-BASHRC_DEST="$HOME_DIR/.bashrc"
-SHELL_FUNCS_DEST="$HOME_DIR/.shell_functions"
-
-###############################################################################
-# Helper functions
-###############################################################################
-
-print_header() {
-    echo -e "${BLUE}=== bashrc-profile Installer ===${NC}"
-    echo ""
+# run <cmd...> — execute, or just print in dry-run mode
+run() {
+    if (( DRY )); then printf '%s[dry-run]%s %s\n' "$Y" "$N" "$*"; return 0; fi
+    "$@"
 }
 
-print_info() {
-    echo -e "${BLUE}ℹ${NC}  $*"
-}
-
-print_success() {
-    echo -e "${GREEN}✓${NC}  $*"
-}
-
-print_warning() {
-    echo -e "${YELLOW}⚠${NC}  $*"
-}
-
-print_error() {
-    echo -e "${RED}✗${NC}  $*" >&2
-}
-
-print_section() {
-    echo ""
-    echo -e "${BLUE}--- $1 ---${NC}"
-}
-
-download_from_github() {
-    print_section "Downloading files from GitHub"
-
-    print_info "Downloading bashrc..."
-    if ! curl -fsSL "$GITHUB_RAW/bashrc" -o "$BASHRC_SRC"; then
-        print_error "Failed to download bashrc"
-        return 1
-    fi
-    print_success "Downloaded bashrc"
-
-    print_info "Downloading shell_functions..."
-    if ! curl -fsSL "$GITHUB_RAW/shell_functions" -o "$SHELL_FUNCS_SRC"; then
-        print_error "Failed to download shell_functions"
-        return 1
-    fi
-    print_success "Downloaded shell_functions"
-}
-
-validate_files() {
-    print_section "Validating source files"
-
-    if [[ ! -f "$BASHRC_SRC" ]]; then
-        print_error "Source bashrc not found: $BASHRC_SRC"
-        return 1
-    fi
-    print_success "Found bashrc"
-
-    if [[ ! -f "$SHELL_FUNCS_SRC" ]]; then
-        print_error "Source shell_functions not found: $SHELL_FUNCS_SRC"
-        return 1
-    fi
-    print_success "Found shell_functions"
-}
-
-check_existing_files() {
-    print_section "Checking for existing files"
-
-    local has_bashrc=false
-    local has_shell_funcs=false
-
-    if [[ -f "$BASHRC_DEST" ]]; then
-        has_bashrc=true
-        print_info "Found existing .bashrc"
+# ask <question> — yes/no, honours --yes, reads from the terminal even when piped
+ask() {
+    (( YES )) && return 0
+    local reply
+    if [[ -r /dev/tty ]]; then
+        read -rp "$1 [Y/n] " reply < /dev/tty
     else
-        print_info "No existing .bashrc (fresh install)"
+        warn "no terminal to ask '$1' — assuming yes"; return 0
     fi
+    [[ -z $reply || $reply =~ ^[Yy] ]]
+}
 
-    if [[ -f "$SHELL_FUNCS_DEST" ]]; then
-        has_shell_funcs=true
-        print_info "Found existing .shell_functions"
+usage() {
+    cat <<'USAGE'
+Usage: install.sh [options]
+
+Modes (default: full install)
+  --deps-only          only install/refresh dependencies for the profile
+  --update             git pull the repo, relink, clear caches
+  --uninstall          remove symlinks, restore the newest ~/.bashrc backup
+
+Options
+  --profile <p>        pi | nas | desktop | server | auto   (default: auto)
+  --no-deps            skip dependency installation
+  --with-dev           C toolchain: gcc make gdb valgrind clang
+  --with-blesh         install ble.sh and enable it (default: desktop only)
+  --no-blesh           never install/enable ble.sh
+  --with-mcrcon        build mcrcon (Minecraft RCON client)
+  --dir <path>         where to keep the repo when cloning (default: ~/.local/share/bashrc-profile)
+  -n, --dry-run        show what would happen, change nothing
+  -y, --yes            no questions
+  -h, --help           this help
+USAGE
+}
+
+while (( $# )); do
+    case $1 in
+        --profile)      PROFILE=$2; shift ;;
+        --profile=*)    PROFILE=${1#*=} ;;
+        --deps-only)    MODE=deps ;;
+        --update)       MODE=update ;;
+        --uninstall)    MODE=uninstall ;;
+        --no-deps)      DEPS=0 ;;
+        --with-dev)     WITH_DEV=1 ;;
+        --with-blesh)   WITH_BLESH=1 ;;
+        --no-blesh)     WITH_BLESH=0 ;;
+        --with-mcrcon)  WITH_MCRCON=1 ;;
+        --dir)          TARGET_DIR=$2; shift ;;
+        --dir=*)        TARGET_DIR=${1#*=} ;;
+        -n|--dry-run)   DRY=1 ;;
+        -y|--yes)       YES=1 ;;
+        -h|--help)      usage; exit 0 ;;
+        *)              err "unknown option: $1"; usage; exit 1 ;;
+    esac
+    shift
+done
+case $PROFILE in pi|nas|desktop|server|auto) ;; *) die "--profile must be pi, nas, desktop, server or auto" ;; esac
+
+# ── 1. Detect environment ────────────────────────────────────────────────────
+detect_profile() {
+    [[ $PROFILE != auto ]] && return
+    if [[ -r "$CONFIG_DIR/config" ]] && grep -q '^BASHRC_PROFILE=' "$CONFIG_DIR/config"; then
+        PROFILE=$(sed -n 's/^BASHRC_PROFILE=//p' "$CONFIG_DIR/config" | tr -d '"'"'")
+        info "profile from existing config: $PROFILE"; return
+    fi
+    local model=''
+    [[ -r /proc/device-tree/model ]] && read -r model < /proc/device-tree/model
+    if [[ $model == *"Raspberry Pi"* ]]; then PROFILE=pi
+    elif [[ -d /usr/share/truenas || -x /usr/bin/midclt ]]; then PROFILE=nas
+    elif [[ -n ${DISPLAY-} || -n ${WAYLAND_DISPLAY-} ]]; then PROFILE=desktop
+    else PROFILE=server; fi
+}
+
+SUDO=''
+PKG=none        # nala | apt | dnf | pacman | none
+detect_system() {
+    if [[ $EUID -ne 0 ]]; then
+        if have sudo; then SUDO=sudo; else warn "no sudo — system packages will be skipped"; fi
+    fi
+    if [[ $PROFILE == nas ]]; then
+        PKG=none           # TrueNAS: read-only root, apt intentionally disabled
+    elif have nala && [[ -x $(command -v apt-get) ]]; then PKG=nala
+    elif [[ -x $(command -v apt-get 2>/dev/null || echo /nonexistent) ]]; then PKG=apt
+    elif have dnf; then PKG=dnf
+    elif have pacman; then PKG=pacman
+    fi
+    ARCH=$(uname -m)
+    info "profile: $PROFILE   packages: $PKG   arch: $ARCH   home: $HOME"
+    if [[ $WITH_BLESH == auto ]]; then
+        [[ $PROFILE == desktop ]] && WITH_BLESH=1 || WITH_BLESH=0
+    fi
+}
+
+# ── 2. Locate or fetch the repo ──────────────────────────────────────────────
+REPO_DIR=''
+locate_repo() {
+    step "Repository"
+    local here=''
+    if [[ -n ${BASH_SOURCE[0]-} && -f ${BASH_SOURCE[0]} ]]; then
+        here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    fi
+    if [[ -n $here && -f $here/bashrc && -d $here/lib ]]; then
+        REPO_DIR=$here
+        ok "using checkout at $REPO_DIR"
+        return
+    fi
+    REPO_DIR=${TARGET_DIR:-$DEFAULT_DIR}
+    if [[ -d $REPO_DIR/.git ]]; then
+        info "updating existing clone at $REPO_DIR"
+        run git -C "$REPO_DIR" pull --ff-only || warn "git pull failed — continuing with what is there"
+    elif have git; then
+        info "cloning to $REPO_DIR"
+        run git clone --depth 1 "$REPO_URL" "$REPO_DIR" || die "git clone failed"
     else
-        print_info "No existing .shell_functions (fresh install)"
+        info "git not available — downloading tarball to $REPO_DIR"
+        (( DRY )) && return
+        local tmp; tmp=$(mktemp -d)
+        curl -fsSL "$TARBALL_URL" | tar xz -C "$tmp" || die "download failed"
+        mkdir -p "$REPO_DIR" && cp -r "$tmp"/bashrc-profile-main/. "$REPO_DIR"/ && rm -rf "$tmp"
     fi
+    ok "repo: $REPO_DIR"
+}
 
+# ── 3. Dependencies ──────────────────────────────────────────────────────────
+# Package lists. Format: "package[:command-to-check]"
+CORE_PKGS=(bash-completion curl git wget tree ripgrep:rg neovim:nvim trash-cli:trash tmux htop
+           unzip p7zip-full:7z xz-utils:xz zstd gawk iproute2:ss fzf zoxide starship)
+PI_PKGS=(nala raspi-utils:vcgencmd wireguard-tools:wg)
+DESKTOP_PKGS=(alacritty xclip wl-clipboard:wl-copy wireguard-tools:wg fonts-noto-color-emoji desktop-file-utils:update-desktop-database)
+DEV_PKGS=(gcc make gdb valgrind clang)
+
+declare -a INSTALLED=() SKIPPED=() FAILED=()
+
+pkg_installed() {   # <pkg>
+    case $PKG in
+        nala|apt) dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed' ;;
+        dnf)      rpm -q "$1" >/dev/null 2>&1 ;;
+        pacman)   pacman -Q "$1" >/dev/null 2>&1 ;;
+        *)        return 1 ;;
+    esac
+}
+pkg_available() {   # <pkg>
+    case $PKG in
+        nala|apt) [[ -n $(apt-cache policy "$1" 2>/dev/null | sed -n 's/^  Candidate: //p' | grep -v '(none)') ]] ;;
+        dnf)      dnf list --available "$1" >/dev/null 2>&1 ;;
+        pacman)   pacman -Si "$1" >/dev/null 2>&1 ;;
+        *)        return 1 ;;
+    esac
+}
+pkg_install_many() {   # <pkg>...
+    (( $# )) || return 0
+    case $PKG in
+        nala)   run $SUDO nala install -y "$@" ;;
+        apt)    run $SUDO apt-get install -y "$@" ;;
+        dnf)    run $SUDO dnf install -y "$@" ;;
+        pacman) run $SUDO pacman -S --noconfirm --needed "$@" ;;
+    esac
+}
+pkg_update_lists() {
+    case $PKG in
+        nala) run $SUDO nala update ;;
+        apt)  run $SUDO apt-get update ;;
+    esac
+}
+
+# install_pkgs <label> <spec>... — skip what is present, install the rest in one go
+install_pkgs() {
+    local label=$1; shift
+    local spec pkg cmd want=() missing_repo=()
+    for spec in "$@"; do
+        pkg=${spec%%:*}; cmd=${spec#*:}; [[ $spec == *:* ]] || cmd=$pkg
+        if have "$cmd" || pkg_installed "$pkg"; then
+            SKIPPED+=("$pkg")
+        elif pkg_available "$pkg"; then
+            want+=("$pkg")
+        else
+            missing_repo+=("$pkg")
+        fi
+    done
+    for pkg in "${missing_repo[@]}"; do warn "$label: '$pkg' not in the package repos (will try a user-local fallback if one exists)"; done
+    if (( ${#want[@]} )); then
+        info "$label: installing ${want[*]}"
+        if pkg_install_many "${want[@]}"; then INSTALLED+=("${want[@]}"); else FAILED+=("${want[@]}"); fi
+    else
+        ok "$label: nothing to install"
+    fi
+}
+
+# ── user-local installers (no root, no apt): used on the NAS and as fallbacks ─
+LOCAL_BIN="$HOME/.local/bin"
+install_starship_local() {
+    have starship && return 0
+    info "starship → $LOCAL_BIN"
+    run mkdir -p "$LOCAL_BIN"
+    if (( DRY )); then return 0; fi
+    curl -sS https://starship.rs/install.sh | sh -s -- -y -b "$LOCAL_BIN" >/dev/null && INSTALLED+=(starship) || FAILED+=(starship)
+}
+install_zoxide_local() {
+    have zoxide && return 0
+    info "zoxide → $LOCAL_BIN"
+    if (( DRY )); then return 0; fi
+    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh >/dev/null && INSTALLED+=(zoxide) || FAILED+=(zoxide)
+}
+install_fzf_local() {
+    have fzf && return 0
+    if [[ -x $HOME/.fzf/bin/fzf ]]; then SKIPPED+=(fzf); return 0; fi
+    have git || { warn "fzf: git needed for the user-local install"; FAILED+=(fzf); return 1; }
+    info "fzf → ~/.fzf"
+    if (( DRY )); then return 0; fi
+    git clone --depth 1 -q https://github.com/junegunn/fzf.git "$HOME/.fzf" &&
+        "$HOME/.fzf/install" --bin >/dev/null && INSTALLED+=(fzf) || FAILED+=(fzf)
+}
+install_blesh() {
+    local dest="$HOME/.local/share/blesh"
+    if [[ -f $dest/ble.sh ]]; then SKIPPED+=(ble.sh); return 0; fi
+    info "ble.sh → $dest (nightly release tarball)"
+    if (( DRY )); then return 0; fi
+    local tmp; tmp=$(mktemp -d)
+    if curl -fsSL https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz | tar xJ -C "$tmp" &&
+       mkdir -p "$(dirname "$dest")" && rm -rf "$dest" && mv "$tmp"/ble-nightly "$dest"; then
+        INSTALLED+=(ble.sh)
+    else
+        FAILED+=(ble.sh)
+    fi
+    rm -rf "$tmp"
+}
+install_mcrcon() {
+    have mcrcon && { SKIPPED+=(mcrcon); return 0; }
+    info "mcrcon: building from source"
+    if (( DRY )); then return 0; fi
+    have gcc && have make || { warn "mcrcon needs gcc and make (--with-dev)"; FAILED+=(mcrcon); return 1; }
+    local tmp; tmp=$(mktemp -d)
+    if git clone -q --depth 1 https://github.com/Tiiffi/mcrcon.git "$tmp/mcrcon" && make -s -C "$tmp/mcrcon"; then
+        if [[ -n $SUDO || $EUID -eq 0 ]] && $SUDO make -s -C "$tmp/mcrcon" install; then INSTALLED+=(mcrcon)
+        else mkdir -p "$LOCAL_BIN" && cp "$tmp/mcrcon/mcrcon" "$LOCAL_BIN/" && INSTALLED+=("mcrcon (~/.local/bin)"); fi
+    else
+        FAILED+=(mcrcon)
+    fi
+    rm -rf "$tmp"
+}
+install_nerd_font() {
+    local dir="$HOME/.local/share/fonts/MesloLGS-NF"
+    if [[ -d $dir ]] || fc-list 2>/dev/null | grep -qi 'MesloLGS Nerd'; then SKIPPED+=("MesloLGS Nerd Font"); return 0; fi
+    info "MesloLGS Nerd Font → $dir (starship's icons need a Nerd Font in your terminal)"
+    if (( DRY )); then return 0; fi
+    local tmp; tmp=$(mktemp -d)
+    if curl -fsSL -o "$tmp/Meslo.zip" https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Meslo.zip &&
+       mkdir -p "$dir" && unzip -qo "$tmp/Meslo.zip" -d "$dir" '*.ttf' && fc-cache -f >/dev/null 2>&1; then
+        INSTALLED+=("MesloLGS Nerd Font")
+    else
+        FAILED+=("MesloLGS Nerd Font")
+    fi
+    rm -rf "$tmp"
+}
+
+install_dependencies() {
+    step "Dependencies ($PROFILE)"
+    if [[ $PKG == none ]]; then
+        if [[ $PROFILE == nas ]]; then
+            info "TrueNAS: apt is disabled and / is read-only — installing user-local tools only"
+        else
+            warn "no supported package manager found — installing user-local tools only"
+        fi
+    else
+        pkg_update_lists
+        install_pkgs "core" "${CORE_PKGS[@]}"
+        case $PROFILE in
+            pi)      install_pkgs "pi" "${PI_PKGS[@]}" ;;
+            desktop) install_pkgs "desktop" "${DESKTOP_PKGS[@]}" ;;
+        esac
+        (( WITH_DEV )) && install_pkgs "dev" "${DEV_PKGS[@]}"
+    fi
+    # Fallbacks / user-local installs for the things the prompt needs.
+    install_starship_local
+    install_zoxide_local
+    install_fzf_local
+    (( WITH_BLESH ))  && install_blesh
+    (( WITH_MCRCON )) && install_mcrcon
+    [[ $PROFILE == desktop ]] && install_nerd_font
+
+    # Things we do not install for you but the profile can use.
+    case $PROFILE in
+        pi)  have docker      || warn "docker not found — install with: curl -fsSL https://get.docker.com | sh"
+             have cloudflared || warn "cloudflared not found — see https://pkg.cloudflare.com" ;;
+        nas) have nvim || have vim || warn "no vim/nvim on this NAS — EDITOR will fall back to nano" ;;
+    esac
     return 0
 }
 
-create_backups() {
-    print_section "Creating backups"
-
-    if [[ -f "$BASHRC_DEST" ]]; then
-        local backup_file="$BASHRC_DEST.bak.$TIMESTAMP"
-        if [[ "$DRY_RUN" == true ]]; then
-            print_info "[DRY-RUN] Would backup: $BASHRC_DEST → $backup_file"
+# ── 4. Link files ────────────────────────────────────────────────────────────
+# link <source> <target> — back up whatever is at target, then symlink
+link() {
+    local src=$1 dst=$2 bak="$2.bak.$TS"
+    if [[ -L $dst && $(readlink -f "$dst") == "$(readlink -f "$src")" ]]; then
+        ok "$dst already → $src"; return 0
+    fi
+    if [[ -e $dst || -L $dst ]]; then
+        if [[ -L $dst ]]; then
+            run cp -L "$dst" "$bak" 2>/dev/null; run rm -f "$dst"
         else
-            cp "$BASHRC_DEST" "$backup_file"
-            print_success "Backed up .bashrc → $backup_file"
+            run mv "$dst" "$bak"
         fi
+        info "backed up $dst → $bak"
+    fi
+    run mkdir -p "$(dirname "$dst")"
+    run ln -s "$src" "$dst" && ok "$dst → $src"
+}
+
+link_files() {
+    step "Linking files"
+    link "$REPO_DIR/bashrc"        "$HOME/.bashrc"
+    link "$REPO_DIR/starship.toml" "$HOME/.config/starship.toml"
+    link "$REPO_DIR/blerc"         "$HOME/.blerc"
+
+    # Login shells must reach ~/.bashrc (ssh does a login shell).
+    if [[ -f $HOME/.bash_profile ]] && ! grep -q 'bashrc' "$HOME/.bash_profile"; then
+        warn "~/.bash_profile exists but never sources ~/.bashrc — add:  [ -f ~/.bashrc ] && . ~/.bashrc"
+    elif [[ ! -f $HOME/.bash_profile && ! -f $HOME/.profile ]]; then
+        info "creating ~/.profile so login shells load ~/.bashrc"
+        (( DRY )) || printf '# ~/.profile\n[ -n "$BASH_VERSION" ] && [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n' > "$HOME/.profile"
+    elif [[ -f $HOME/.profile ]] && ! grep -q 'bashrc' "$HOME/.profile"; then
+        warn "~/.profile never sources ~/.bashrc — add:  [ -f ~/.bashrc ] && . ~/.bashrc"
+    fi
+}
+
+write_config() {
+    step "Config"
+    local ff=0; [[ $PROFILE == desktop ]] && ff=1
+    info "writing $CONFIG_DIR/config  (profile=$PROFILE blesh=$WITH_BLESH fastfetch=$ff)"
+    (( DRY )) && return 0
+    mkdir -p "$CONFIG_DIR"
+    cat > "$CONFIG_DIR/config" <<CFG
+# bashrc-profile machine config — written by install.sh on $TS. Edit with: bt config
+BASHRC_PROFILE=$PROFILE      # pi | nas | desktop | server
+BASHRC_PROFILE_DIR=$REPO_DIR
+BASHRC_BLESH=$WITH_BLESH     # 1 = syntax highlighting + autosuggestions (ble.sh)
+BASHRC_FASTFETCH=$ff         # 1 = fastfetch on new terminals
+BASHRC_CD_LS_MAX=200         # cd auto-lists directories with at most this many entries
+BASHRC_LAZY_COMPLETION=1     # 1 = load bash-completion on first Tab (faster startup)
+BASHRC_FZF_COMPLETION=0      # 1 = fzf **<Tab> fuzzy path completion (+25 ms startup)
+CFG
+    if [[ ! -f $HOME/.bashrc.local ]]; then
+        cp "$REPO_DIR/bashrc.local.example" "$HOME/.bashrc.local"
+        chmod 600 "$HOME/.bashrc.local"
+        ok "seeded ~/.bashrc.local from the template — put secrets and ssh hosts there (bt local)"
     else
-        print_info "No .bashrc to backup"
+        ok "~/.bashrc.local kept"
     fi
-
-    if [[ -f "$SHELL_FUNCS_DEST" ]]; then
-        local backup_file="$SHELL_FUNCS_DEST.bak.$TIMESTAMP"
-        if [[ "$DRY_RUN" == true ]]; then
-            print_info "[DRY-RUN] Would backup: $SHELL_FUNCS_DEST → $backup_file"
-        else
-            cp "$SHELL_FUNCS_DEST" "$backup_file"
-            print_success "Backed up .shell_functions → $backup_file"
-        fi
-    else
-        print_info "No .shell_functions to backup"
-    fi
+    rm -f "$CACHE_DIR"/*.bash 2>/dev/null
 }
 
-install_files() {
-    print_section "Installing files"
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY-RUN] Would install bashrc → $BASHRC_DEST"
-        print_info "[DRY-RUN] Would install shell_functions → $SHELL_FUNCS_DEST"
-        print_success "Dry-run complete (no changes made)"
-    else
-        cp "$BASHRC_SRC" "$BASHRC_DEST"
-        print_success "Installed .bashrc"
-
-        cp "$SHELL_FUNCS_SRC" "$SHELL_FUNCS_DEST"
-        print_success "Installed .shell_functions"
-    fi
-}
-
-validate_installation() {
-    print_section "Validating installation"
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY-RUN] Skipping validation"
-        return 0
-    fi
-
-    if [[ ! -f "$BASHRC_DEST" ]]; then
-        print_error ".bashrc not found after installation"
-        return 1
-    fi
-    print_success ".bashrc installed correctly"
-
-    if [[ ! -f "$SHELL_FUNCS_DEST" ]]; then
-        print_error ".shell_functions not found after installation"
-        return 1
-    fi
-    print_success ".shell_functions installed correctly"
-
-    # Check if shell_functions is sourced in bashrc
-    if grep -q 'shell_functions' "$BASHRC_DEST"; then
-        print_success ".bashrc sources .shell_functions"
-    else
-        print_warning ".bashrc doesn't seem to source .shell_functions"
-    fi
-}
-
-reload_shell() {
-    print_section "Shell configuration"
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY-RUN] Would reload shell"
-        return 0
-    fi
-
-    if [[ -n "${BASH_VERSION:-}" ]]; then
-        print_info "Attempting to reload bash configuration..."
-        # Source in a subshell to avoid interfering with script execution
-        ( source "$BASHRC_DEST" 2>/dev/null && print_success "Shell reloaded!" ) || \
-            print_warning "Could not reload automatically. Restart your terminal or run: source ~/.bashrc"
-    fi
-}
-
-show_summary() {
-    print_section "Installation Summary"
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_warning "DRY-RUN MODE - No changes were made"
-        echo ""
-        echo "To proceed with actual installation, run:"
-        echo "  bash install.sh"
-        return 0
-    fi
-
-    echo ""
-    echo "✨ Installation complete!"
-    echo ""
-    echo "Files installed:"
-    echo "  • ~/.bashrc"
-    echo "  • ~/.shell_functions"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Restart your terminal or run: source ~/.bashrc"
-    echo "  2. Run 'install_prereqs' to install optional dependencies"
-    echo "  3. Check FEATURES.md for a complete list of aliases & functions"
-    echo ""
-    echo "To restore your previous config:"
-    echo "  cp ~/.bashrc.bak.$TIMESTAMP ~/.bashrc"
-    echo "  cp ~/.shell_functions.bak.$TIMESTAMP ~/.shell_functions"
-}
-
-show_help() {
-    cat <<'EOF'
-Usage: bash install.sh [OPTIONS]
-
-bashrc-profile installer with smart backups and validation.
-
-OPTIONS:
-  -h, --help      Show this help message
-  -n, --dry-run   Preview changes without installing
-  -f, --force     Force install (skip confirmations)
-
-EXAMPLES:
-  bash install.sh              # Install with prompts
-  bash install.sh --dry-run    # Preview what will happen
-  bash install.sh --force      # Force install without asking
-
-FEATURES:
-  • Creates timestamped backups of existing files
-  • Supports both fresh installs and updates
-  • Auto-reloads shell after installation
-  • Validates installation success
-EOF
-}
-
-###############################################################################
-# Main installation flow
-###############################################################################
-
-main() {
-    local force_install=false
-
-    # Parse arguments
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            -n|--dry-run)
-                DRY_RUN=true
-                ;;
-            -f|--force)
-                force_install=true
-                ;;
-            *)
-                print_error "Unknown option: $1"
-                show_help
-                exit 1
-                ;;
-        esac
-        shift
+# ── 5. Verify ────────────────────────────────────────────────────────────────
+verify() {
+    step "Verify"
+    local f bad=0
+    for f in "$REPO_DIR"/bashrc "$REPO_DIR"/lib/*.sh "$REPO_DIR"/profiles/*.sh; do
+        bash -n "$f" || { err "syntax error in $f"; bad=1; }
     done
-
-    print_header
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_warning "DRY-RUN MODE - No changes will be made"
-        echo ""
+    (( bad )) && return 1
+    ok "all files parse"
+    (( DRY )) && return 0
+    local out t0 t1
+    t0=$EPOCHREALTIME
+    out=$(BASHRC_PROFILE=$PROFILE bash --rcfile "$REPO_DIR/bashrc" -ic 'type ll cd sys size >/dev/null && echo BASHRC_OK' 2>&1 </dev/null)
+    t1=$EPOCHREALTIME
+    if [[ $out == *BASHRC_OK* ]]; then
+        ok "interactive shell starts cleanly ($(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%d", (b-a)*1000}') ms)"
+        out=${out//BASHRC_OK/}; out=$(grep -v 'Inappropriate ioctl\|no job control\|cannot set terminal' <<< "$out")
+        [[ -n $out ]] && warn "startup printed: $out"
+    else
+        err "test shell failed:"; echo "$out"; return 1
     fi
-
-    # Download files from GitHub if running from pipe
-    if [[ -n "${GITHUB_RAW:-}" ]]; then
-        if ! download_from_github; then
-            print_error "Installation failed: could not download files"
-            rm -rf "$REPO_DIR"
-            exit 1
-        fi
-    fi
-
-    # Validate source files exist
-    if ! validate_files; then
-        print_error "Installation failed: source files not found"
-        exit 1
-    fi
-
-    # Check for existing files
-    check_existing_files
-
-    # Confirm before proceeding (unless force flag)
-    if [[ "$force_install" == false && "$DRY_RUN" == false ]]; then
-        echo ""
-        read -rp "Continue with installation? [y/N] " -n 1 confirm
-        echo ""
-        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-            print_error "Installation cancelled"
-            exit 1
-        fi
-    fi
-
-    # Run installation steps
-    create_backups
-    install_files
-    validate_installation
-    reload_shell
-    show_summary
-
-    # Clean up temporary directory if we created one
-    if [[ -n "${GITHUB_RAW:-}" ]]; then
-        rm -rf "$REPO_DIR"
-    fi
-
-    echo ""
 }
 
-# Run main function
+summary() {
+    step "Summary"
+    (( ${#INSTALLED[@]} )) && printf '%s installed:%s %s\n' "$G" "$N" "${INSTALLED[*]}"
+    (( ${#SKIPPED[@]} ))   && printf '%s present:%s   %s\n' "$B" "$N" "${SKIPPED[*]}"
+    (( ${#FAILED[@]} ))    && printf '%s failed:%s    %s\n' "$R" "$N" "${FAILED[*]}"
+    (( DRY )) && { warn "dry run — nothing was changed"; return 0; }
+    cat <<DONE
+
+Done. Open a new terminal or run:  source ~/.bashrc
+
+  profile   $PROFILE          (bt config to change)
+  repo      $REPO_DIR
+  secrets   ~/.bashrc.local   (bt local — RCON password, ssh hosts…)
+  update    bup               (git pull + reload)
+  deps      prereqs           (re-run dependency install)
+DONE
+}
+
+uninstall() {
+    step "Uninstall"
+    local f newest
+    for f in "$HOME/.bashrc" "$HOME/.config/starship.toml" "$HOME/.blerc"; do
+        if [[ -L $f ]]; then
+            run rm -f "$f"; ok "removed link $f"
+            newest=$(ls -t "$f".bak.* 2>/dev/null | head -1)
+            if [[ -n $newest ]]; then run cp "$newest" "$f"; ok "restored $f from $newest"; fi
+        fi
+    done
+    run rm -rf "$CONFIG_DIR" "$CACHE_DIR"
+    info "kept: the repo, ~/.bashrc.local, and all installed packages"
+}
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+main() {
+    printf '%s=== bashrc-profile installer ===%s\n' "$B" "$N"
+    (( DRY )) && warn "DRY RUN — nothing will be changed"
+    detect_profile
+    detect_system
+
+    case $MODE in
+        uninstall) uninstall; return ;;
+        deps)      locate_repo; install_dependencies; rm -f "$CACHE_DIR"/*.bash 2>/dev/null; summary; return ;;
+        update)    locate_repo; link_files; rm -f "$CACHE_DIR"/*.bash 2>/dev/null; verify; summary; return ;;
+    esac
+
+    locate_repo
+    if (( ! YES && ! DRY )); then
+        ask "Install profile '$PROFILE' (deps: $DEPS, ble.sh: $WITH_BLESH, dev tools: $WITH_DEV)?" || die "cancelled"
+    fi
+    (( DEPS )) && install_dependencies
+    link_files
+    write_config
+    verify
+    summary
+}
 main "$@"

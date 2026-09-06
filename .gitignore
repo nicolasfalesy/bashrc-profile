@@ -1,29 +1,14 @@
-# OS-specific
-.DS_Store
-Thumbs.db
+# editor / OS noise
 *.swp
 *.swo
 *~
+.DS_Store
+.vscode/
+.idea/
 
-# Backups created during installation
-.bashrc.bak*
-.shell_functions.bak*
+# never commit machine-local secrets
+.bashrc.local
+bashrc.local
 
-# Build/temp files
-*.o
-*.so
-*.dylib
-*.exe
-.venv
-__pycache__
-node_modules
-
-# IDE
-.vscode
-.idea
-*.sublime-*
-.vim
-
-# Environment files
-.env
-.env.local
+# backups made by install.sh / bak
+*.bak.*

@@ -1,165 +1,85 @@
 # bashrc-profile
 
-A fully-featured, well-organized bash configuration with 40+ aliases and 25+ custom functions designed for power users.
+A modular bash configuration for every machine I touch — a Raspberry Pi 4 (Docker host),
+a TrueNAS SCALE box, a laptop, and the odd Debian server — with one installer that
+knows which machine it is on and what that machine needs.
 
-## Quick Start
-
-### One-Line Install
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/install.sh | bash
 ```
 
-### Manual Install
-```bash
-git clone https://github.com/nicolasfalesy/bashrc-profile.git
-cd bashrc-profile
-bash install.sh
+Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for options).
+
+## What you get
+
+| Area | Highlights |
+|------|-----------|
+| Prompt | [starship](https://starship.rs) "Aurora" theme, [zoxide](https://github.com/ajeetdsouza/zoxide) `z`/`zi`, [fzf](https://github.com/junegunn/fzf) Ctrl-R / Ctrl-T / Alt-C, optional [ble.sh](https://github.com/akinomyoga/ble.sh) |
+| Speed | ~30 ms to a prompt on a Pi 4 (was ~80 ms): cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded |
+| Navigation | `cd` auto-lists, `ll`, `up 3`, `mkcd`, `take <url>`, `tre` |
+| Files | `extract`, `ftext`, `size`, `bak`/`bak -r`, `diff2`, `path` |
+| System | `sys`, `psg`, `port`, `killport`, `topp`, `myip`, `weather`, `t` (tmux) |
+| Services | git (`gs`, `gcm`, `glog`…), systemd (`scs`, `screstart`, `sclog`…), Docker Compose (`dcu`, `dcd`, `dcr`, `dcl`, `dps`) |
+| C dev | `ru` / `run` / `rud` / `rund` (valgrind) / `rut` (test suite) / `mkt` — lazy-loaded |
+| Per machine | **pi**: `temp`, `wt`, `cloud` (Cloudflare tunnel) · **nas**: ZFS shortcuts, `dsv` · **desktop**: clipboard, `vpn`, `note`, Alacritty/GRUB helpers |
+| Housekeeping | `bt` (edit the profile), `bup` (git pull + reload), `prereqs` (install dependencies), `reload` |
+
+Full reference: [docs/FEATURES.md](docs/FEATURES.md).
+
+## Layout
+
+```
+bashrc                 entry point (~/.bashrc → this)
+lib/core.sh            options, history, PATH, env, readline, completion
+lib/aliases.sh         aliases + bt / bup / prereqs
+lib/navigation.sh      ll, cd, up, mkcd, take, tre
+lib/files.sh           extract, ftext, size, bak, diff2, path
+lib/system.sh          sys, psg, port, killport, topp, myip, weather, t, rcon
+lib/dev.sh             C toolchain (lazy-loaded)
+lib/prompt.sh          fzf, starship, zoxide, ble.sh (always last)
+profiles/{pi,nas,desktop,server}.sh
+starship.toml, blerc   linked into ~/.config/starship.toml and ~/.blerc
+bashrc.local.example   template for ~/.bashrc.local (secrets, ssh hosts — never committed)
+install.sh             install / --update / --deps-only / --uninstall
+docs/                  ARCHITECTURE, FEATURES, SETUP, AUDIT
 ```
 
-## Features
+How it fits together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Per-machine install notes (Pi, TrueNAS, laptop): [docs/SETUP.md](docs/SETUP.md).
 
-- **40+ carefully curated aliases** for common tasks (Docker, package management, SSH, Git, etc.)
-- **25+ custom shell functions** for navigation, file operations, networking, system info, and more
-- **Organized structure** with clear sections and comments
-- **Bash completions** for complex functions
-- **Color-coded output** for better readability
-- **Compatible with modern tools** (ripgrep, nala, starship, zoxide, ble.sh)
+## Machine profiles
 
-## Installation Options
+The installer detects the profile (`/proc/device-tree/model` → **pi**, TrueNAS
+middleware → **nas**, a display → **desktop**, else **server**) and writes it to
+`~/.config/bashrc-profile/config`. Override with `install.sh --profile nas` or
+edit later with `bt config`.
 
-### Option 1: Curl Install (Recommended)
+| | pi | nas | desktop | server |
+|---|---|---|---|---|
+| System packages via apt/nala | ✓ | ✗ (read-only root) | ✓ | ✓ |
+| starship / zoxide / fzf | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback `~/.local/bin` | apt, fallback |
+| ble.sh | off (`--with-blesh`) | off | on | off |
+| fastfetch on new terminal | off | off | on | off |
+| Extras | raspi-utils, nala, wireguard | — | alacritty, clipboard, Nerd Font, wireguard | — |
+
+## Daily use
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/install.sh | bash
+bt            # edit lib/aliases.sh        bt pi / bt system / bt local / bt config
+reload        # re-source ~/.bashrc
+bup           # git pull + reload
+prereqs       # (re)install this profile's dependencies    prereqs --with-dev
+BASHRC_TIMING=1 bash -i     # how long does startup take?
 ```
 
-### Option 2: Clone & Install
-```bash
-git clone https://github.com/nicolasfalesy/bashrc-profile.git
-cd bashrc-profile
-bash install.sh
-```
-
-### Option 3: Manual Install
-```bash
-# Copy files to home directory
-cp bashrc ~/.bashrc
-cp shell_functions ~/.shell_functions
-
-# Reload shell
-source ~/.bashrc
-```
-
-## Install Script Features
-
-The `install.sh` script handles:
-- ✅ **Automatic backups** - Creates timestamped backups of existing `.bashrc` and `.shell_functions`
-- ✅ **Dry-run mode** - Preview changes before applying with `bash install.sh --dry-run`
-- ✅ **Fresh & update installs** - Supports both new installations and updates to existing setups
-- ✅ **Automatic reload** - Reloads your shell after installation (or notifies you to restart)
-- ✅ **Prerequisites check** - Verifies dependencies
-
-## What's Included
-
-### Aliases
-- **Editor**: vim, vi, svim, svi, snvim
-- **Docker**: du, dd, dr
-- **Package Management**: apt, np, ni, nfi, nf, nu
-- **Config Shortcuts**: kt, bt, nt, notes
-- **SSH**: uw, nas, pi
-- **Core Commands**: cp, mv, rm, mkdir, ps, ping, etc.
-- **Filesystem**: ll, l, tree, folders, mnts
-- **Permissions**: mx, 000, 600, 666, 700, 777
-- **Search**: grep, h, f, countfiles, ports
-- And more!
-
-### Functions
-- **Navigation**: cd (auto-ls), up, cpg, mvg, mkdirg
-- **File Operations**: extract, ftext, size (with completion)
-- **Networking**: whatsmyip, pubip, vpn
-- **Clipboard**: cpy, pst
-- **System**: sys, apps, install_app
-- **Theme Manager**: at (Alacritty themes)
-- **GRUB Management**: grub
-- **Minecraft RCON**: rcon, rc (with command completion)
-- **Cloudflare Tunnel**: cloud
-- **Prerequisites Installer**: install_prereqs, prereqs
-- **Shell Functions**: mkcd, psg, port, weather, take, path, bak, diff2, tre, note
-
-## Configuration
-
-### Environment Variables
-Edit `.bashrc` to customize:
-- `EDITOR` - Your preferred editor (default: nvim)
-- `RCON_IP`, `RCON_PORT`, `RCON_PASS` - Minecraft server settings
-- `TERMINAL` - Terminal application (default: alacritty)
-
-### Aliases & Functions
-All aliases and functions are in the `.bashrc` and `.shell_functions` files. Edit them directly to customize for your workflow.
-
-## Dependencies
-
-The profile works best with:
-- **fastfetch** - System info display
-- **neovim** - Editor
-- **starship** - Shell prompt
-- **zoxide** - Smart directory navigation
-- **ripgrep** - Fast grep alternative
-- **trash-cli** - Safe file deletion
-- **alacritty** - GPU-accelerated terminal
-- **ble.sh** - Enhanced readline
-
-Run `install_prereqs` (or `prereqs`) to install missing dependencies.
+Secrets and host-specific aliases (ssh shortcuts, RCON password, Cloudflare tunnel
+name, pool name) live in `~/.bashrc.local`, seeded from `bashrc.local.example`.
 
 ## Uninstall
 
-To restore your previous bash configuration:
 ```bash
-# Find your backup
-ls ~/.bashrc.bak.*
-ls ~/.shell_functions.bak.*
-
-# Restore
-cp ~/.bashrc.bak.YYYYMMDD-HHMMSS ~/.bashrc
-cp ~/.shell_functions.bak.YYYYMMDD-HHMMSS ~/.shell_functions
-
-# Reload
-source ~/.bashrc
+bash ~/.local/share/bashrc-profile/install.sh --uninstall
 ```
+Removes the symlinks and restores the newest `~/.bashrc.bak.*`. Packages stay.
 
-## Customization
-
-1. **Add new aliases**: Add them to the appropriate section in `.bashrc`
-2. **Add new functions**: Add them to `.shell_functions` or `.bashrc`
-3. **Modify existing settings**: Edit the `ENVIRONMENT VARIABLES` section
-4. **Create custom themes**: Customize colors and prompt in `.bashrc`
-
-See [FEATURES.md](FEATURES.md) for detailed documentation of all aliases and functions.
-
-## Troubleshooting
-
-### Command not found errors
-- Run `install_prereqs` to install missing dependencies
-- Verify the command is in your PATH: `which command_name`
-
-### Aliases/functions not working
-- Make sure `.shell_functions` is in your home directory
-- Verify `.bashrc` sources `.shell_functions` correctly
-- Reload with `source ~/.bashrc` or `reload` alias
-
-### Backup issues
-- Backups are saved with timestamp: `.bashrc.bak.YYYYMMDD-HHMMSS`
-- Find them with: `ls -la ~/ | grep bak`
-
-## License
-
-MIT License - See [LICENSE](LICENSE) file for details
-
-## Contributing
-
-Found a bug or want to add a feature? Open an issue or pull request!
-
-## Support
-
-For detailed documentation on all aliases and functions, see [FEATURES.md](FEATURES.md).
-
-For setup and customization tips, see [SETUP.md](SETUP.md).
+MIT — see [LICENSE](LICENSE).
