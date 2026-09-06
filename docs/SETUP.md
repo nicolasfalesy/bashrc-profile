@@ -85,6 +85,11 @@ Verified on the real box (TrueNAS SCALE, login shell switched from zsh to bash w
 - Keep the repo on the data pool too (e.g. `/mnt/<pool>/configs/home/bashrc-profile`)
   and point `BASHRC_PROFILE_DIR` at it in `bt config` for the same reason as the home.
 - The old zsh setup is kept in `legacy/zshrc` for reference; nothing loads it.
+- If the repo sits on a dataset with NFSv4 ACLs and `aclmode=restricted` (the default for
+  SMB-shared datasets), `chmod` is refused: git then shows every file as modified and
+  `bup`/`git pull` abort, and even `git config` fails writing its lock. Fix once by
+  rewriting the config in place (no chmod involved):
+  `sed 's/filemode = true/filemode = false/' .git/config > .git/config.new && cat .git/config.new > .git/config && rm .git/config.new`
 
 ## Laptop / desktop (profile `desktop`)
 
