@@ -1,0 +1,29 @@
+# ~/.bashrc.local — machine-specific settings, sourced after the profile.
+# This file is NOT tracked in git. install.sh copies this template if the file
+# does not exist yet. Edit with: bt local
+
+# ── SSH shortcuts ────────────────────────────────────────────────────────────
+# Tip: ~/.ssh/config entries (Host nas / HostName … / User …) also give you
+# `scp file nas:` and tab completion. Aliases kept for muscle memory.
+alias uw='ssh nfalesy@ubuntu2404-010.student.cs.uwaterloo.ca'
+alias nas='ssh truenas_admin@192.168.2.182'
+alias pi='ssh raspby@192.168.2.181'
+
+# ── Minecraft RCON (rcon / rc) ───────────────────────────────────────────────
+export RCON_IP=192.168.2.182
+export RCON_PORT=25575
+export RCON_PASS='change-me'
+
+# ── Cloudflare tunnel (cloud, Pi profile) ────────────────────────────────────
+export CF_TUNNEL=rpi-adguard
+export CF_DOMAIN=nicolasfalesy.com
+
+# ── NAS (nas profile) ────────────────────────────────────────────────────────
+export ZPOOL=porsche
+
+# ── Misc ─────────────────────────────────────────────────────────────────────
+export WEATHER_LOCATION='Waterloo+Ontario+Canada'
+# export NOTES_FILE="$HOME/Nextcloud/quick-notes.txt"
+
+# ── Overrides (also settable in bt config) ───────────────────────────────────
+# BASHRC_CD_LS_MAX=200
