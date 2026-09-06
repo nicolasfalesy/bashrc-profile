@@ -29,6 +29,7 @@ $directory\
 [](bg:#bb9af7 fg:#7aa2f7)\
 $git_branch\
 $git_status\
+$git_metrics\
 [](bg:#73daca fg:#bb9af7)\
 $c\
 $elixir\
@@ -59,7 +60,7 @@ $character\
 """
 
 add_newline = true
-command_timeout = 500
+command_timeout = 5000
 
 # ── Left prompt segments ─────────────────────────────────────────────
 
@@ -125,7 +126,11 @@ deleted = "[ ${count}](bg:#bb9af7 fg:#ff4040 bold) "
 up_to_date = "[](bg:#bb9af7 fg:#ffffff) "
 
 [git_metrics]
-disabled = true
+disabled = false
+added_style = "bg:#bb9af7 fg:#39ff14 bold"
+deleted_style = "bg:#bb9af7 fg:#8b0000 bold"
+format = "([ +$added ]($added_style))([ -$deleted ]($deleted_style))"
+only_nonzero_diffs = true
 
 # ── Language segments (aurora green band) ────────────────────────────
 
@@ -205,7 +210,10 @@ number_threshold = 1
 symbol_threshold = 1
 
 [sudo]
-disabled = true
+disabled = false
+style = "bg:#1a1b26 fg:#f7768e bold"
+format = "[ 󰞀 ]($style)"
+symbol = ""
 
 [status]
 disabled = false
@@ -228,7 +236,10 @@ format = "[  $time ]($style)"
 symbol = " "
 
 [memory_usage]
-disabled = true
+disabled = false
+threshold = 60
+style = "fg:#e0af68"
+format = "[󰍛 ${ram_pct}]($style)"
 
 # ── Battery (right-aligned, line 1) ──────────────────────────────────
 

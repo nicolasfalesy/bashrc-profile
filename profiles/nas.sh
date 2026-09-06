@@ -3,12 +3,20 @@
 #
 # TrueNAS SCALE is Debian with a read-only root filesystem and apt disabled.
 # Nothing in this file needs a system package: everything the profile uses on
-# the NAS lives in ~/.local (starship, zoxide, fzf, optional ble.sh — see
-# install.sh --profile nas). Package aliases (ni/nu/…) are skipped automatically
-# because lib/aliases.sh only defines them when apt is executable.
+# the NAS lives in ~/.local (starship, fzf, ble.sh — see install.sh --profile nas).
+# Package aliases (ni/nu/…) are skipped automatically because lib/aliases.sh
+# only defines them when apt is executable.
 
 export ZPOOL="${ZPOOL:-tank}"          # override in ~/.bashrc.local
 unalias apt ni np ns nu nclean 2>/dev/null   # no package manager on TrueNAS
+
+# nvim unpacked by hand into ~/nvim-linux-x86_64 (no package manager on SCALE):
+# put it on PATH and point it at its runtime files.
+if [[ -d $HOME/nvim-linux-x86_64/bin ]]; then
+    _path_prepend "$HOME/nvim-linux-x86_64/bin"
+    export VIMRUNTIME="$HOME/nvim-linux-x86_64/share/nvim/runtime"
+fi
+hash nvidia-smi 2>/dev/null && alias wn='watch -n 0.1 nvidia-smi'   # live GPU monitor
 
 # ── ZFS shortcuts ────────────────────────────────────────────────────────────
 alias zs='sudo zpool status -v'                                      # full status
@@ -41,6 +49,7 @@ Usage: dsv [-n] [PATTERN]
   -n         dry run — list, don't delete
   PATTERN    only paths matching this (default: /mnt/$ZPOOL/)
 
+Files are removed with sudo (they usually belong to other users/services).
 After deleting, runs `zpool clear $ZPOOL`.
 HELP
                 return 0 ;;
@@ -65,7 +74,7 @@ HELP
 
     local f removed=0 failed=0
     for f in "${files[@]}"; do
-        if [[ -e $f ]] && command rm -v -- "$f"; then (( removed++ )); else echo "dsv: skipped $f" >&2; (( failed++ )); fi
+        if [[ -e $f ]] && sudo rm -v -- "$f"; then (( removed++ )); else echo "dsv: skipped $f" >&2; (( failed++ )); fi
     done
     printf '\nSummary: %d removed, %d failed/skipped\n' "$removed" "$failed"
     (( removed )) && sudo zpool clear "$ZPOOL" && echo "Pool errors cleared."

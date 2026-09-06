@@ -6,7 +6,7 @@
 #  bash install.sh [options]              (from a clone)
 #
 #  What it does
-#    1. detects the machine profile (pi / nas / desktop / server) — or takes --profile
+#    1. detects the machine profile (pi / nas / desktop / uw / server) — or takes --profile
 #    2. gets the repo (uses the clone you ran it from, else clones to ~/.local/share/bashrc-profile)
 #    3. installs every dependency the profile uses (system packages where apt works,
 #       user-local binaries where it doesn't — e.g. TrueNAS)
@@ -25,7 +25,7 @@ TS=$(date +%Y%m%d-%H%M%S)
 PATH="$HOME/.local/bin:$HOME/.fzf/bin:$PATH"   # see tools installed for this user only
 
 # ── Options ──────────────────────────────────────────────────────────────────
-PROFILE=auto        # pi | nas | desktop | server | auto
+PROFILE=auto        # pi | nas | desktop | uw | server | auto
 MODE=install        # install | deps | update | uninstall
 DEPS=1              # install dependencies during install
 DRY=0
@@ -33,6 +33,7 @@ YES=0
 WITH_DEV=0          # gcc/make/gdb/valgrind/clang
 WITH_BLESH=1        # ble.sh on by default (--no-blesh to skip)
 WITH_MCRCON=0
+WITH_ZOXIDE=0       # zoxide was removed upstream; --with-zoxide brings z/zi back
 TARGET_DIR=''
 
 # ── Output helpers ───────────────────────────────────────────────────────────
@@ -77,12 +78,14 @@ Modes (default: full install)
   --uninstall          remove symlinks, restore the newest ~/.bashrc backup
 
 Options
-  --profile <p>        pi | nas | desktop | server | auto   (default: auto)
+  --profile <p>        pi | nas | desktop | uw | server | auto   (default: auto)
+                       uw = UW CS student servers: no root, Waterloo Gold prompt
   --no-deps            skip dependency installation
   --with-dev           C toolchain: gcc make gdb valgrind clang
   --with-blesh         install ble.sh and enable it (default)
   --no-blesh           skip ble.sh (saves ~30 ms per shell start)
   --with-mcrcon        build mcrcon (Minecraft RCON client)
+  --with-zoxide        install zoxide and enable z / zi (off by default)
   --dir <path>         where to keep the repo when cloning (default: ~/.local/share/bashrc-profile)
   -n, --dry-run        show what would happen, change nothing
   -y, --yes            no questions
@@ -102,6 +105,7 @@ while (( $# )); do
         --with-blesh)   WITH_BLESH=1 ;;
         --no-blesh)     WITH_BLESH=0 ;;
         --with-mcrcon)  WITH_MCRCON=1 ;;
+        --with-zoxide)  WITH_ZOXIDE=1 ;;
         --dir)          TARGET_DIR=$2; shift ;;
         --dir=*)        TARGET_DIR=${1#*=} ;;
         -n|--dry-run)   DRY=1 ;;
@@ -111,7 +115,7 @@ while (( $# )); do
     esac
     shift
 done
-case $PROFILE in pi|nas|desktop|server|auto) ;; *) die "--profile must be pi, nas, desktop, server or auto" ;; esac
+case $PROFILE in pi|nas|desktop|uw|server|auto) ;; *) die "--profile must be pi, nas, desktop, uw, server or auto" ;; esac
 
 # ── 1. Detect environment ────────────────────────────────────────────────────
 detect_profile() {
@@ -125,6 +129,7 @@ detect_profile() {
     if [[ $model == *"Raspberry Pi"* ]]; then PROFILE=pi
     elif [[ -d /usr/share/truenas || -x /usr/bin/midclt ]]; then PROFILE=nas
     elif [[ -n ${DISPLAY-} || -n ${WAYLAND_DISPLAY-} ]]; then PROFILE=desktop
+    elif [[ $HOSTNAME == *uwaterloo* ]] || grep -qsE '^(search|domain).*uwaterloo\.ca' /etc/resolv.conf; then PROFILE=uw
     else PROFILE=server; fi
 }
 
@@ -136,6 +141,10 @@ detect_system() {
     fi
     if [[ $PROFILE == nas ]]; then
         PKG=none           # TrueNAS: read-only root, apt intentionally disabled
+    elif [[ $PROFILE == uw ]]; then
+        PKG=none           # student servers: sudo exists but you are not allowed to use it
+    elif [[ $EUID -ne 0 && -z $SUDO ]]; then
+        PKG=none           # no root at all → user-local installs only
     elif have nala && [[ -x $(command -v apt-get) ]]; then PKG=nala
     elif [[ -x $(command -v apt-get 2>/dev/null || echo /nonexistent) ]]; then PKG=apt
     elif have dnf; then PKG=dnf
@@ -178,7 +187,7 @@ locate_repo() {
 # ── 3. Dependencies ──────────────────────────────────────────────────────────
 # Package lists. Format: "package[:command-to-check]"
 CORE_PKGS=(bash-completion curl git wget tree ripgrep:rg neovim:nvim trash-cli:trash tmux htop
-           unzip p7zip-full:7z xz-utils:xz zstd gawk iproute2:ss fzf zoxide starship)
+           unzip p7zip-full:7z xz-utils:xz zstd gawk iproute2:ss fzf starship)
 PI_PKGS=(nala raspi-utils:vcgencmd wireguard-tools:wg)
 DESKTOP_PKGS=(alacritty xclip wl-clipboard:wl-copy wireguard-tools:wg fonts-noto-color-emoji desktop-file-utils:update-desktop-database)
 DEV_PKGS=(gcc make gdb valgrind clang)
@@ -312,6 +321,8 @@ install_dependencies() {
     if [[ $PKG == none ]]; then
         if [[ $PROFILE == nas ]]; then
             info "TrueNAS: apt is disabled and / is read-only — installing user-local tools only"
+        elif [[ $PROFILE == uw ]]; then
+            info "UW student server: no root — installing user-local tools only (~/.local/bin, ~/.fzf, ~/.local/share/blesh)"
         else
             warn "no supported package manager found — installing user-local tools only"
         fi
@@ -322,11 +333,12 @@ install_dependencies() {
             pi)      install_pkgs "pi" "${PI_PKGS[@]}" ;;
             desktop) install_pkgs "desktop" "${DESKTOP_PKGS[@]}" ;;
         esac
-        (( WITH_DEV )) && install_pkgs "dev" "${DEV_PKGS[@]}"
+        (( WITH_DEV ))    && install_pkgs "dev" "${DEV_PKGS[@]}"
+        (( WITH_ZOXIDE )) && install_pkgs "zoxide" zoxide
     fi
     # Fallbacks / user-local installs for the things the prompt needs.
     install_starship_local
-    install_zoxide_local
+    (( WITH_ZOXIDE )) && install_zoxide_local
     install_fzf_local
     (( WITH_BLESH ))  && install_blesh
     (( WITH_MCRCON )) && install_mcrcon
@@ -337,6 +349,8 @@ install_dependencies() {
         pi)  have docker      || warn "docker not found — install with: curl -fsSL https://get.docker.com | sh"
              have cloudflared || warn "cloudflared not found — see https://pkg.cloudflare.com" ;;
         nas) have nvim || have vim || warn "no vim/nvim on this NAS — EDITOR will fall back to nano" ;;
+        uw)  have nvim || warn "no nvim on this server — unpack a release into ~/.local (EDITOR falls back to vim)"
+             have gcc && have valgrind || warn "gcc/valgrind missing — the C helpers (ru/rut) need them" ;;
     esac
     return 0
 }
@@ -362,9 +376,11 @@ link() {
 
 link_files() {
     step "Linking files"
-    link "$REPO_DIR/bashrc"        "$HOME/.bashrc"
-    link "$REPO_DIR/starship.toml" "$HOME/.config/starship.toml"
-    link "$REPO_DIR/blerc"         "$HOME/.blerc"
+    local theme=starship.toml
+    [[ $PROFILE == uw ]] && theme=starship_uw.toml          # Waterloo Gold on the school servers
+    link "$REPO_DIR/bashrc"  "$HOME/.bashrc"
+    link "$REPO_DIR/$theme"  "$HOME/.config/starship.toml"
+    link "$REPO_DIR/blerc"   "$HOME/.blerc"
 
     # Login shells must reach ~/.bashrc (ssh does a login shell).
     if [[ -f $HOME/.bash_profile ]] && ! grep -q 'bashrc' "$HOME/.bash_profile"; then
@@ -381,18 +397,19 @@ link_files() {
 write_config() {
     step "Config"
     local ff=0; [[ $PROFILE == desktop ]] && ff=1
-    info "writing $CONFIG_DIR/config  (profile=$PROFILE blesh=$WITH_BLESH fastfetch=$ff)"
+    info "writing $CONFIG_DIR/config  (profile=$PROFILE blesh=$WITH_BLESH fastfetch=$ff zoxide=$WITH_ZOXIDE)"
     (( DRY )) && return 0
     mkdir -p "$CONFIG_DIR"
     cat > "$CONFIG_DIR/config" <<CFG
 # bashrc-profile machine config — written by install.sh on $TS. Edit with: bt config
-BASHRC_PROFILE=$PROFILE      # pi | nas | desktop | server
+BASHRC_PROFILE=$PROFILE      # pi | nas | desktop | uw | server
 BASHRC_PROFILE_DIR=$REPO_DIR
 BASHRC_BLESH=$WITH_BLESH     # 1 = syntax highlighting + autosuggestions (ble.sh)
 BASHRC_FASTFETCH=$ff         # 1 = fastfetch on new terminals
 BASHRC_CD_LS_MAX=200         # cd auto-lists directories with at most this many entries
 BASHRC_LAZY_COMPLETION=1     # 1 = load bash-completion on first Tab (faster startup)
 BASHRC_FZF_COMPLETION=0      # 1 = fzf **<Tab> fuzzy path completion (+25 ms startup)
+BASHRC_ZOXIDE=$WITH_ZOXIDE             # 1 = zoxide z/zi (install with: prereqs --with-zoxide)
 CFG
     if [[ ! -f $HOME/.bashrc.local ]]; then
         cp "$REPO_DIR/bashrc.local.example" "$HOME/.bashrc.local"

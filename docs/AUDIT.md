@@ -101,3 +101,21 @@ Where it went: bash-completion 35 ms → deferred to first Tab; `zoxide init` 35
 The starship "Aurora" theme and `blerc` tuning, the C toolchain (`ru`…`mkt`) verbatim,
 the git/systemd alias sets, `cd` auto-listing (now capped at 200 entries),
 `rm → trash`, the `claude --dangerously-skip-permissions` alias (Pi only).
+
+## Merged from GitHub afterwards (September 2026)
+
+The rewrite was done on a clone that turned out to be ~60 commits behind
+`origin/main`. Everything the remote had was folded in with a merge commit:
+
+| Upstream work | Where it went |
+|---------------|---------------|
+| `uw_bashrc` + `starship_uw.toml` ("Waterloo Gold"), `install.sh --uw` | `profiles/uw.sh`, `starship_uw.toml`, `install.sh --profile uw` (auto-detected from a `uwaterloo.ca` hostname/search domain) |
+| `zshrc` for TrueNAS + zsh plugin installer | superseded — the NAS runs bash now; file kept as `legacy/zshrc` |
+| `shell_functions` (C toolchain with multi-file `-f`, `.o` support, `rut -d`) | already identical to the Pi copy that `lib/dev.sh` was taken from; only the `dsv` change below was newer |
+| `dsv`: delete with `sudo rm` | `profiles/nas.sh` |
+| zshrc extras: `wn` (`watch nvidia-smi`), `VIMRUNTIME` for a hand-unpacked nvim | `profiles/nas.sh`, guarded by `nvidia-smi` / `~/nvim-linux-x86_64` |
+| "Remove zoxide from bashrc and zshrc" | honoured: zoxide is opt-in (`BASHRC_ZOXIDE=1`, `install.sh --with-zoxide`); the cached-init code stays for when it is on |
+| `starship.toml`: git metrics (neon green / dark red), sudo indicator, memory usage, seconds in the clock, `command_timeout = 5000` | taken as-is, plus `scan_timeout = 100` |
+| git / systemctl alias sets, `gcc valgrind clang tmux` in prereqs | already present in `lib/aliases.sh` / `install.sh` |
+| `.gitignore` additions (`CLAUDE.md`, build files, backups) | merged; `CLAUDE.md` is untracked again |
+| root `FEATURES.md` / `SETUP.md` | replaced by `docs/` |

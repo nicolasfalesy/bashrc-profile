@@ -168,8 +168,12 @@ are in the docker group)
 | `zsnap` | snapshots by creation time |
 | `zio` | `zpool iostat -v 2` |
 | `smart <dev>` | `smartctl -a` |
-| `dsv [-n] [pattern]` | delete the files `zpool status -v` reports as damaged (default under `/mnt/$ZPOOL/`), confirm, then `zpool clear` |
+| `dsv [-n] [pattern]` | delete (with sudo) the files `zpool status -v` reports as damaged (default under `/mnt/$ZPOOL/`), confirm, then `zpool clear` |
+| `wn` | `watch -n 0.1 nvidia-smi` — only defined when `nvidia-smi` exists |
 | `sys` extra | one line per pool: health, used/size, capacity |
+
+Environment: if `~/nvim-linux-x86_64` exists (a hand-unpacked nvim release) it is put on
+`PATH` and `VIMRUNTIME` is set.
 
 ## Profile: desktop (profiles/desktop.sh)
 
@@ -187,16 +191,31 @@ are in the docker group)
 
 Environment: `TERMINAL=alacritty`, `QT_QPA_PLATFORMTHEME=qt5ct`, fastfetch and ble.sh on by default.
 
+## Profile: uw (profiles/uw.sh — UW CS student servers)
+
+No root, so there is nothing to install system-wide. The installer links the
+**Waterloo Gold** theme (`starship_uw.toml`) as `~/.config/starship.toml`.
+
+| Change | Does |
+|--------|------|
+| `PATH` | `~/bin` first |
+| `rm` | `rm -iv` (no trash-cli on the servers) |
+| removed | `apt`, `ni`, `np`, `ns`, `nu`, `nclean`, `svim` |
+
+The C toolchain (`ru`… `mkt`) is the shared `lib/dev.sh`; put `alias home-pc=…` in
+`~/.bashrc.local`.
+
 ## Environment variables you can set (bt config / bt local)
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `BASHRC_PROFILE` | autodetect | pi / nas / desktop / server |
+| `BASHRC_PROFILE` | autodetect | pi / nas / desktop / uw / server |
 | `BASHRC_BLESH` | 1 | load ble.sh (highlighting, autosuggestions, menu completion — tuned in `blerc`) |
 | `BASHRC_FASTFETCH` | 0 (desktop 1) | fastfetch on new terminals |
 | `BASHRC_CD_LS_MAX` | 200 | `cd` lists directories up to this size |
 | `BASHRC_LAZY_COMPLETION` | 1 | bash-completion on first Tab instead of at startup |
 | `BASHRC_FZF_COMPLETION` | 0 | fzf `**<Tab>` completion (+25 ms) |
+| `BASHRC_ZOXIDE` | 0 | `1` = zoxide `z` / `zi` (install with `prereqs --with-zoxide`) |
 | `BASHRC_TIMING` | – | `=1` prints startup time |
 | `RCON_IP`, `RCON_PORT`, `RCON_PASS` | – | Minecraft RCON |
 | `CF_TUNNEL`, `CF_DOMAIN` | – | Cloudflare tunnel name and zone (`cloud`) |

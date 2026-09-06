@@ -3,8 +3,10 @@
 *.swo
 *~
 .DS_Store
+Thumbs.db
 .vscode/
 .idea/
+*.sublime-*
 
 # never commit machine-local secrets
 .bashrc.local
@@ -12,3 +14,15 @@ bashrc.local
 
 # backups made by install.sh / bak
 *.bak.*
+.bashrc.bak*
+.shell_functions.bak*
+
+# build / temp files (C course work run from the repo dir)
+*.o
+*.so
+*.exe
+.venv
+__pycache__
+
+# local AI-tooling notes
+CLAUDE.md

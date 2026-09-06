@@ -8,6 +8,7 @@
 alias uw='ssh nfalesy@ubuntu2404-010.student.cs.uwaterloo.ca'
 alias nas='ssh nasadmin@192.0.2.1'
 alias pi='ssh pi-host@192.0.2.1'
+alias home-pc='ssh nick@example.com'      # from the UW servers back home
 
 # ── Minecraft RCON (rcon / rc) ───────────────────────────────────────────────
 export RCON_IP=192.0.2.1

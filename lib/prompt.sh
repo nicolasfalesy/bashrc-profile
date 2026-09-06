@@ -61,8 +61,8 @@ if ! _bashrc_cached_init starship starship starship init bash --print-full-init;
     PS1='\[\e[01;32m\]\u@\h\[\e[0m\]:\[\e[01;34m\]\w\[\e[0m\]\$ '
 fi
 
-# ── zoxide: z <dir>, zi (interactive) ────────────────────────────────────────
-if _bashrc_cached_init zoxide zoxide zoxide init bash; then
+# ── zoxide: z <dir>, zi (interactive) — opt-in: BASHRC_ZOXIDE=1 in bt config ─
+if [[ $BASHRC_ZOXIDE == 1 ]] && _bashrc_cached_init zoxide zoxide zoxide init bash; then
     __zoxide_cd() { cd "$@"; }     # route z/zi through our auto-listing cd
 fi
 

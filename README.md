@@ -14,14 +14,14 @@ Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for opt
 
 | Area | Highlights |
 |------|-----------|
-| Prompt | [starship](https://starship.rs) "Aurora" theme, [zoxide](https://github.com/ajeetdsouza/zoxide) `z`/`zi`, [fzf](https://github.com/junegunn/fzf) Ctrl-R / Ctrl-T / Alt-C, optional [ble.sh](https://github.com/akinomyoga/ble.sh) |
+| Prompt | [starship](https://starship.rs) "Aurora" theme ("Waterloo Gold" on the UW servers), [fzf](https://github.com/junegunn/fzf) Ctrl-R / Ctrl-T / Alt-C, [ble.sh](https://github.com/akinomyoga/ble.sh) highlighting + autosuggestions, optional [zoxide](https://github.com/ajeetdsouza/zoxide) `z`/`zi` (`--with-zoxide`) |
 | Speed | ~30 ms to a prompt on a Pi 4, ~60 ms with ble.sh (was ~80 ms without it): cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded |
 | Navigation | `cd` auto-lists, `ll`, `up 3`, `mkcd`, `take <url>`, `tre` |
 | Files | `extract`, `ftext`, `size`, `bak`/`bak -r`, `diff2`, `path` |
 | System | `sys`, `psg`, `port`, `killport`, `topp`, `myip`, `weather`, `t` (tmux) |
 | Services | git (`gs`, `gcm`, `glog`…), systemd (`scs`, `screstart`, `sclog`…), Docker Compose (`dcu`, `dcd`, `dcr`, `dcl`, `dps`) |
 | C dev | `ru` / `run` / `rud` / `rund` (valgrind) / `rut` (test suite) / `mkt` — lazy-loaded |
-| Per machine | **pi**: `temp`, `wt`, `cloud` (Cloudflare tunnel) · **nas**: ZFS shortcuts, `dsv` · **desktop**: clipboard, `vpn`, `note`, Alacritty/GRUB helpers |
+| Per machine | **pi**: `temp`, `wt`, `cloud` (Cloudflare tunnel) · **nas**: ZFS shortcuts, `dsv`, `wn` · **desktop**: clipboard, `vpn`, `note`, Alacritty/GRUB helpers · **uw**: no-root student servers, Waterloo Gold prompt |
 | Housekeeping | `bt` (edit the profile), `bup` (git pull + reload), `prereqs` (install dependencies), `reload` |
 
 Full reference: [docs/FEATURES.md](docs/FEATURES.md).
@@ -36,9 +36,11 @@ lib/navigation.sh      ll, cd, up, mkcd, take, tre
 lib/files.sh           extract, ftext, size, bak, diff2, path
 lib/system.sh          sys, psg, port, killport, topp, myip, weather, t, rcon
 lib/dev.sh             C toolchain (lazy-loaded)
-lib/prompt.sh          fzf, starship, zoxide, ble.sh (always last)
-profiles/{pi,nas,desktop,server}.sh
+lib/prompt.sh          fzf, starship, ble.sh, optional zoxide (always last)
+profiles/{pi,nas,desktop,uw,server}.sh
 starship.toml, blerc   linked into ~/.config/starship.toml and ~/.blerc
+starship_uw.toml       "Waterloo Gold" theme, linked instead on the uw profile
+legacy/                the old single-file uw_bashrc and TrueNAS zshrc (reference only)
 bashrc.local.example   template for ~/.bashrc.local (secrets, ssh hosts — never committed)
 install.sh             install / --update / --deps-only / --uninstall
 docs/                  ARCHITECTURE, FEATURES, SETUP, AUDIT
@@ -50,17 +52,22 @@ Per-machine install notes (Pi, TrueNAS, laptop): [docs/SETUP.md](docs/SETUP.md).
 ## Machine profiles
 
 The installer detects the profile (`/proc/device-tree/model` → **pi**, TrueNAS
-middleware → **nas**, a display → **desktop**, else **server**) and writes it to
+middleware → **nas**, a display → **desktop**, a `uwaterloo.ca` hostname or DNS
+search domain → **uw**, else **server**) and writes it to
 `~/.config/bashrc-profile/config`. Override with `install.sh --profile nas` or
 edit later with `bt config`.
 
-| | pi | nas | desktop | server |
-|---|---|---|---|---|
-| System packages via apt/nala | ✓ | ✗ (read-only root) | ✓ | ✓ |
-| starship / zoxide / fzf | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback `~/.local/bin` | apt, fallback |
-| ble.sh (syntax highlighting) | on | on (`~/.local/share/blesh`) | on | on |
-| fastfetch on new terminal | off | off | on | off |
-| Extras | raspi-utils, nala, wireguard | — | alacritty, clipboard, Nerd Font, wireguard | — |
+| | pi | nas | desktop | uw | server |
+|---|---|---|---|---|---|
+| System packages via apt/nala | ✓ | ✗ (read-only root) | ✓ | ✗ (no root) | ✓ |
+| starship / fzf | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback |
+| ble.sh (syntax highlighting) | on | on (`~/.local/share/blesh`) | on | on | on |
+| fastfetch on new terminal | off | off | on | off | off |
+| starship theme | Aurora | Aurora | Aurora | Waterloo Gold | Aurora |
+| Extras | raspi-utils, nala, wireguard | GPU `wn`, hand-unpacked nvim | alacritty, clipboard, Nerd Font, wireguard | `rm -iv`, `~/bin` | — |
+
+zoxide (`z`, `zi`) is off everywhere unless you install with `--with-zoxide` or set
+`BASHRC_ZOXIDE=1` in `bt config`.
 
 ## Daily use
 
