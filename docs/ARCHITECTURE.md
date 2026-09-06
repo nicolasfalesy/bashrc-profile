@@ -288,7 +288,9 @@ in the file is touched), clear caches, verify. `--deps-only` is what `prereqs` c
 - `bash tests/smoke.sh` parses every file, runs shellcheck if present, checks that
   sourcing `bashrc` from a non-interactive shell prints nothing, then starts a real
   interactive shell per profile inside a throw-away `HOME` (own `HISTFILE`, no config,
-  no `~/.bashrc.local`, ble.sh off) and calls the functions. Run it before `bgit push`.
+  no `~/.bashrc.local`, ble.sh off) and calls the functions. Run it before `bgit push`;
+  GitHub Actions (`.github/workflows/smoke.yml`) runs the same script plus an
+  installer dry run on every push, so a red badge on the README means a broken push.
 - The code is shellcheck-clean with the repo's `.shellcheckrc`; the few deliberate
   exceptions carry an inline `# shellcheck disable=…` with the reason.
 - Things that bite:

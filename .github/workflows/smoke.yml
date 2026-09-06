@@ -1,0 +1,27 @@
+# CI: the same checks as `bash tests/smoke.sh` locally — parse, shellcheck, the
+# non-interactive guard, then a real interactive shell per profile in a sandbox —
+# plus a dry-run of the installer. Runs on every push and pull request to main.
+name: smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # tmux and tree are what the functions under test look for; shellcheck is
+      # picked up by tests/smoke.sh when it is on PATH.
+      - name: Install shellcheck, tmux, tree
+        run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck tmux tree
+
+      - name: Smoke test (every profile)
+        run: bash tests/smoke.sh
+
+      - name: Installer dry run
+        run: bash install.sh --profile server --dry-run --no-deps

@@ -200,4 +200,5 @@ versus `BASHRC_BLESH=0 BASHRC_TIMING=1 bash -i`.
 - The GitHub repo description is still "BASHRC PROFILE!!" with no topics (needs
   `gh auth login` on the NAS, then `gh repo edit`).
 - `CLAUDE.md` is gitignored; the quirks now live in tracked comments and docs instead.
-- No CI; `tests/smoke.sh` is run by hand before a push.
+- ~~No CI~~ — `.github/workflows/smoke.yml` runs `tests/smoke.sh` and an installer dry
+  run on every push (added the same day).
