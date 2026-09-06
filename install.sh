@@ -13,6 +13,16 @@
 #    4. backs up and symlinks ~/.bashrc, ~/.config/starship.toml, ~/.blerc
 #    5. writes ~/.config/bashrc-profile/config and seeds ~/.bashrc.local
 #    6. verifies the result by starting a real interactive shell
+#
+#  Modes: (default) install · --update (bup) · --deps-only (prereqs) · --uninstall
+#         --upgrade (prereqs --upgrade): refresh the user-local tools to their latest
+#  Quirks:
+#    • Executed, never sourced. `set -u` is on: every optional variable is read as
+#      ${var-}. There is no `set -e` on purpose — a failed optional install must
+#      not abort the run; failures are collected in FAILED and shown at the end.
+#    • `run` here is the dry-run wrapper, unrelated to lib/dev.sh's `run`.
+#    • --update never rewrites an existing config: it only appends toggles that
+#      did not exist when the file was written (refresh_config).
 # =============================================================================
 set -uo pipefail
 
@@ -34,6 +44,7 @@ WITH_DEV=0          # gcc/make/gdb/valgrind/clang
 WITH_BLESH=1        # ble.sh on by default (--no-blesh to skip)
 WITH_MCRCON=0
 WITH_ZOXIDE=0       # zoxide was removed upstream; --with-zoxide brings z/zi back
+UPGRADE=0           # --upgrade: reinstall the user-local tools (ble.sh, starship, fzf, zoxide) at their latest
 TARGET_DIR=''
 
 # ── Output helpers ───────────────────────────────────────────────────────────
@@ -74,7 +85,7 @@ Usage: install.sh [options]
 
 Modes (default: full install)
   --deps-only          only install/refresh dependencies for the profile
-  --update             git pull the repo, relink, clear caches
+  --update             git pull, relink, add new toggles to the config, clear caches (what bup runs)
   --uninstall          remove symlinks, restore the newest ~/.bashrc backup
 
 Options
@@ -86,6 +97,9 @@ Options
   --no-blesh           skip ble.sh (saves ~30 ms per shell start)
   --with-mcrcon        build mcrcon (Minecraft RCON client)
   --with-zoxide        install zoxide and enable z / zi (off by default)
+  --upgrade            refresh the user-local tools to their latest: ble.sh nightly, starship,
+                       fzf (~/.fzf), zoxide — apt-managed copies are left to apt (nu).
+                       Usually run as: prereqs --upgrade
   --dir <path>         where to keep the repo when cloning (default: ~/.local/share/bashrc-profile)
   -n, --dry-run        show what would happen, change nothing
   -y, --yes            no questions
@@ -95,7 +109,7 @@ USAGE
 
 while (( $# )); do
     case $1 in
-        --profile)      PROFILE=$2; shift ;;
+        --profile)      [[ -n ${2-} ]] || die "--profile needs a value (pi|nas|desktop|uw|server|auto)"; PROFILE=$2; shift ;;
         --profile=*)    PROFILE=${1#*=} ;;
         --deps-only)    MODE=deps ;;
         --update)       MODE=update ;;
@@ -106,7 +120,8 @@ while (( $# )); do
         --no-blesh)     WITH_BLESH=0 ;;
         --with-mcrcon)  WITH_MCRCON=1 ;;
         --with-zoxide)  WITH_ZOXIDE=1 ;;
-        --dir)          TARGET_DIR=$2; shift ;;
+        --upgrade)      UPGRADE=1; [[ $MODE == install ]] && MODE=deps ;;
+        --dir)          [[ -n ${2-} ]] || die "--dir needs a path"; TARGET_DIR=$2; shift ;;
         --dir=*)        TARGET_DIR=${1#*=} ;;
         -n|--dry-run)   DRY=1 ;;
         -y|--yes)       YES=1 ;;
@@ -122,7 +137,11 @@ detect_profile() {
     [[ $PROFILE != auto ]] && return
     if [[ -r "$CONFIG_DIR/config" ]] && grep -q '^BASHRC_PROFILE=' "$CONFIG_DIR/config"; then
         PROFILE=$(sed -n 's/^BASHRC_PROFILE=//p' "$CONFIG_DIR/config" | tr -d '"'"'")
-        info "profile from existing config: $PROFILE"; return
+        PROFILE=${PROFILE%%#*}; PROFILE=${PROFILE//[[:space:]]/}   # drop the trailing "# pi | nas | …" comment
+        case $PROFILE in
+            pi|nas|desktop|uw|server) info "profile from existing config: $PROFILE"; return ;;
+            *) warn "config has an unknown profile '$PROFILE' — autodetecting"; PROFILE=auto ;;
+        esac
     fi
     local model=''
     [[ -r /proc/device-tree/model ]] && read -r model < /proc/device-tree/model
@@ -156,6 +175,7 @@ detect_system() {
 
 # ── 2. Locate or fetch the repo ──────────────────────────────────────────────
 REPO_DIR=''
+REPO_FROM_CHECKOUT=0   # 1 = running from a clone (no pull here; update_repo does it in --update)
 locate_repo() {
     step "Repository"
     local here=''
@@ -163,7 +183,7 @@ locate_repo() {
         here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     fi
     if [[ -n $here && -f $here/bashrc && -d $here/lib ]]; then
-        REPO_DIR=$here
+        REPO_DIR=$here; REPO_FROM_CHECKOUT=1
         ok "using checkout at $REPO_DIR"
         return
     fi
@@ -184,6 +204,17 @@ locate_repo() {
     ok "repo: $REPO_DIR"
 }
 
+# update_repo — --update from a checkout: pull it (locate_repo only pulls the
+# clone it made itself under ~/.local/share).
+update_repo() {
+    (( REPO_FROM_CHECKOUT )) || return 0
+    if [[ -d $REPO_DIR/.git ]]; then
+        run git -C "$REPO_DIR" pull --ff-only || warn "git pull failed — continuing with what is there"
+    else
+        warn "$REPO_DIR is not a git clone (tarball install) — re-run the curl installer to update"
+    fi
+}
+
 # ── 3. Dependencies ──────────────────────────────────────────────────────────
 # Package lists. Format: "package[:command-to-check]"
 CORE_PKGS=(bash-completion curl git wget tree ripgrep:rg neovim:nvim trash-cli:trash tmux htop
@@ -192,7 +223,13 @@ PI_PKGS=(nala raspi-utils:vcgencmd wireguard-tools:wg)
 DESKTOP_PKGS=(alacritty xclip wl-clipboard:wl-copy wireguard-tools:wg fonts-noto-color-emoji desktop-file-utils:update-desktop-database)
 DEV_PKGS=(gcc make gdb valgrind clang)
 
-declare -a INSTALLED=() SKIPPED=() FAILED=()
+declare -a INSTALLED=() SKIPPED=() FAILED=() UPGRADED=()
+
+# is_user_local <command> — true when the binary lives under ~/.local/bin or ~/.fzf
+# (ours to upgrade); false for a package-manager copy (apt's job).
+is_user_local() { local p; p=$(command -v "$1" 2>/dev/null) && [[ $p == "$HOME"/.local/bin/* || $p == "$HOME"/.fzf/* ]]; }
+# note_upgrade <name> <old> <new> — record the result of a refresh for the summary
+note_upgrade() { if [[ $2 == "$3" ]]; then SKIPPED+=("$1 $3 (latest)"); else UPGRADED+=("$1 $2 → $3"); fi; }
 
 pkg_installed() {   # <pkg>
     case $PKG in
@@ -204,7 +241,7 @@ pkg_installed() {   # <pkg>
 }
 pkg_available() {   # <pkg>
     case $PKG in
-        nala|apt) [[ -n $(apt-cache policy "$1" 2>/dev/null | sed -n 's/^  Candidate: //p' | grep -v '(none)') ]] ;;
+        nala|apt) apt-cache policy "$1" 2>/dev/null | sed -n 's/^  Candidate: //p' | grep -qv '(none)' ;;
         dnf)      dnf list --available "$1" >/dev/null 2>&1 ;;
         pacman)   pacman -Si "$1" >/dev/null 2>&1 ;;
         *)        return 1 ;;
@@ -251,21 +288,58 @@ install_pkgs() {
 
 # ── user-local installers (no root, no apt): used on the NAS and as fallbacks ─
 LOCAL_BIN="$HOME/.local/bin"
+# Each user-local installer: skip when present — unless --upgrade, in which case
+# a copy under ~/.local/bin or ~/.fzf is refreshed and an apt copy is left alone.
 install_starship_local() {
-    have starship && return 0
-    info "starship → $LOCAL_BIN"
+    local old=''
+    if have starship; then
+        (( UPGRADE )) || return 0
+        is_user_local starship || { info "starship: package-manager copy, leave it to apt (nu)"; SKIPPED+=(starship); return 0; }
+        old=$(starship --version 2>/dev/null | head -1); old=${old#starship }
+        info "starship: refreshing (have $old)"
+    else
+        info "starship → $LOCAL_BIN"
+    fi
     run mkdir -p "$LOCAL_BIN"
     if (( DRY )); then return 0; fi
-    curl -sS https://starship.rs/install.sh | sh -s -- -y -b "$LOCAL_BIN" >/dev/null && INSTALLED+=(starship) || FAILED+=(starship)
+    if curl -sS https://starship.rs/install.sh | sh -s -- -y -f -b "$LOCAL_BIN" >/dev/null; then
+        if [[ -n $old ]]; then local new; new=$("$LOCAL_BIN/starship" --version | head -1); note_upgrade starship "$old" "${new#starship }"
+        else INSTALLED+=(starship); fi
+    else
+        FAILED+=(starship)
+    fi
 }
 install_zoxide_local() {
-    have zoxide && return 0
-    info "zoxide → $LOCAL_BIN"
+    local old=''
+    if have zoxide; then
+        (( UPGRADE )) || return 0
+        is_user_local zoxide || { info "zoxide: package-manager copy, leave it to apt (nu)"; SKIPPED+=(zoxide); return 0; }
+        old=$(zoxide --version 2>/dev/null); old=${old#zoxide }
+        info "zoxide: refreshing (have $old)"
+    else
+        info "zoxide → $LOCAL_BIN"
+    fi
     if (( DRY )); then return 0; fi
-    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh >/dev/null && INSTALLED+=(zoxide) || FAILED+=(zoxide)
+    if curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh >/dev/null; then
+        if [[ -n $old ]]; then local new; new=$("$LOCAL_BIN/zoxide" --version); note_upgrade zoxide "$old" "${new#zoxide }"
+        else INSTALLED+=(zoxide); fi
+    else
+        FAILED+=(zoxide)
+    fi
 }
 install_fzf_local() {
-    have fzf && return 0
+    if (( UPGRADE )) && [[ -d $HOME/.fzf/.git ]]; then
+        local old new; old=$("$HOME/.fzf/bin/fzf" --version 2>/dev/null); old=${old%% *}
+        info "fzf: refreshing ~/.fzf (have $old)"
+        if (( DRY )); then return 0; fi
+        if git -C "$HOME/.fzf" pull -q --ff-only && "$HOME/.fzf/install" --bin >/dev/null; then
+            new=$("$HOME/.fzf/bin/fzf" --version); note_upgrade fzf "$old" "${new%% *}"
+        else
+            FAILED+=(fzf)
+        fi
+        return 0
+    fi
+    if have fzf; then (( UPGRADE )) && { info "fzf: package-manager copy, leave it to apt (nu)"; SKIPPED+=(fzf); }; return 0; fi
     if [[ -x $HOME/.fzf/bin/fzf ]]; then SKIPPED+=(fzf); return 0; fi
     have git || { warn "fzf: git needed for the user-local install"; FAILED+=(fzf); return 1; }
     info "fzf → ~/.fzf"
@@ -274,14 +348,21 @@ install_fzf_local() {
         "$HOME/.fzf/install" --bin >/dev/null && INSTALLED+=(fzf) || FAILED+=(fzf)
 }
 install_blesh() {
-    local dest="$HOME/.local/share/blesh"
-    if [[ -f $dest/ble.sh ]]; then SKIPPED+=(ble.sh); return 0; fi
-    info "ble.sh → $dest (nightly release tarball)"
+    local dest="$HOME/.local/share/blesh" old=''
+    if [[ -f $dest/ble.sh ]]; then
+        (( UPGRADE )) || { SKIPPED+=(ble.sh); return 0; }
+        old=$(bash "$dest/ble.sh" --version 2>/dev/null); old=${old#*version }; old=${old%% *}   # "ble.sh (Bash Line Editor), version 0.4.0-nightly+5fe06d6"
+        info "ble.sh: refreshing nightly (have $old)"
+    else
+        info "ble.sh → $dest (nightly release tarball)"
+    fi
     if (( DRY )); then return 0; fi
     local tmp; tmp=$(mktemp -d)
     if curl -fsSL https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz | tar xJ -C "$tmp" &&
        mkdir -p "$(dirname "$dest")" && rm -rf "$dest" && mv "$tmp"/ble-nightly "$dest"; then
-        INSTALLED+=(ble.sh)
+        if [[ -n $old ]]; then local new; new=$(bash "$dest/ble.sh" --version 2>/dev/null); new=${new#*version }; new=${new%% *}
+            note_upgrade ble.sh "$old" "$new"
+        else INSTALLED+=(ble.sh); fi
     else
         FAILED+=(ble.sh)
     fi
@@ -291,7 +372,7 @@ install_mcrcon() {
     have mcrcon && { SKIPPED+=(mcrcon); return 0; }
     info "mcrcon: building from source"
     if (( DRY )); then return 0; fi
-    have gcc && have make || { warn "mcrcon needs gcc and make (--with-dev)"; FAILED+=(mcrcon); return 1; }
+    if ! { have gcc && have make; }; then warn "mcrcon needs gcc and make (--with-dev)"; FAILED+=(mcrcon); return 1; fi
     local tmp; tmp=$(mktemp -d)
     if git clone -q --depth 1 https://github.com/Tiiffi/mcrcon.git "$tmp/mcrcon" && make -s -C "$tmp/mcrcon"; then
         if [[ -n $SUDO || $EUID -eq 0 ]] && $SUDO make -s -C "$tmp/mcrcon" install; then INSTALLED+=(mcrcon)
@@ -337,10 +418,12 @@ install_dependencies() {
         (( WITH_ZOXIDE )) && install_pkgs "zoxide" zoxide
     fi
     # Fallbacks / user-local installs for the things the prompt needs.
+    # With --upgrade, whatever is already installed user-locally is refreshed too
+    # (zoxide only if it is there — it stays opt-in).
     install_starship_local
-    (( WITH_ZOXIDE )) && install_zoxide_local
+    if (( WITH_ZOXIDE )) || { (( UPGRADE )) && is_user_local zoxide; }; then install_zoxide_local; fi
     install_fzf_local
-    (( WITH_BLESH ))  && install_blesh
+    if (( WITH_BLESH )) || { (( UPGRADE )) && [[ -f $HOME/.local/share/blesh/ble.sh ]]; }; then install_blesh; fi
     (( WITH_MCRCON )) && install_mcrcon
     [[ $PROFILE == desktop ]] && install_nerd_font
 
@@ -350,7 +433,7 @@ install_dependencies() {
              have cloudflared || warn "cloudflared not found — see https://pkg.cloudflare.com" ;;
         nas) have nvim || have vim || warn "no vim/nvim on this NAS — EDITOR will fall back to nano" ;;
         uw)  have nvim || warn "no nvim on this server — unpack a release into ~/.local (EDITOR falls back to vim)"
-             have gcc && have valgrind || warn "gcc/valgrind missing — the C helpers (ru/rut) need them" ;;
+             { have gcc && have valgrind; } || warn "gcc/valgrind missing — the C helpers (ru/rut) need them" ;;
     esac
     return 0
 }
@@ -376,8 +459,12 @@ link() {
 
 link_files() {
     step "Linking files"
-    local theme=starship.toml
-    [[ $PROFILE == uw ]] && theme=starship_uw.toml          # Waterloo Gold on the school servers
+    # Starship theme: themes/aurora.toml everywhere, themes/waterloo-gold.toml on the
+    # UW servers. A theme already linked from themes/ is kept (you picked it by hand).
+    local theme=themes/aurora.toml current
+    [[ $PROFILE == uw ]] && theme=themes/waterloo-gold.toml
+    current=$(readlink -f "$HOME/.config/starship.toml" 2>/dev/null)
+    if [[ $current == "$REPO_DIR"/themes/*.toml && -f $current ]]; then theme=${current#"$REPO_DIR"/}; fi
     link "$REPO_DIR/bashrc"  "$HOME/.bashrc"
     link "$REPO_DIR/$theme"  "$HOME/.config/starship.toml"
     link "$REPO_DIR/blerc"   "$HOME/.blerc"
@@ -387,21 +474,21 @@ link_files() {
         warn "~/.bash_profile exists but never sources ~/.bashrc — add:  [ -f ~/.bashrc ] && . ~/.bashrc"
     elif [[ ! -f $HOME/.bash_profile && ! -f $HOME/.profile ]]; then
         info "creating ~/.profile so login shells load ~/.bashrc"
+        # shellcheck disable=SC2016  # the $ must reach the file unexpanded
         (( DRY )) || printf '# ~/.profile\n[ -n "$BASH_VERSION" ] && [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n' > "$HOME/.profile"
     elif [[ -f $HOME/.profile ]] && ! grep -q 'bashrc' "$HOME/.profile"; then
         info "~/.profile exists but never sources ~/.bashrc — appending the standard snippet"
+        # shellcheck disable=SC2016  # the $ must reach the file unexpanded
         (( DRY )) || printf '\n# added by bashrc-profile: login shells load ~/.bashrc\n[ -n "$BASH_VERSION" ] && [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n' >> "$HOME/.profile"
     fi
 }
 
-write_config() {
-    step "Config"
+# config_lines — the toggle lines both write_config and refresh_config use.
+# Add a new BASHRC_* toggle here (and its default in bashrc): --update then
+# appends it to existing configs without touching the values already there.
+config_lines() {
     local ff=0; [[ $PROFILE == desktop ]] && ff=1
-    info "writing $CONFIG_DIR/config  (profile=$PROFILE blesh=$WITH_BLESH fastfetch=$ff zoxide=$WITH_ZOXIDE)"
-    (( DRY )) && return 0
-    mkdir -p "$CONFIG_DIR"
-    cat > "$CONFIG_DIR/config" <<CFG
-# bashrc-profile machine config — written by install.sh on $TS. Edit with: bt config
+    cat <<CFG
 BASHRC_PROFILE=$PROFILE      # pi | nas | desktop | uw | server
 BASHRC_PROFILE_DIR=$REPO_DIR
 BASHRC_BLESH=$WITH_BLESH     # 1 = syntax highlighting + autosuggestions (ble.sh)
@@ -411,6 +498,18 @@ BASHRC_LAZY_COMPLETION=1     # 1 = load bash-completion on first Tab (faster sta
 BASHRC_FZF_COMPLETION=0      # 1 = fzf **<Tab> fuzzy path completion (+25 ms startup)
 BASHRC_ZOXIDE=$WITH_ZOXIDE             # 1 = zoxide z/zi (install with: prereqs --with-zoxide)
 CFG
+}
+
+write_config() {
+    step "Config"
+    info "writing $CONFIG_DIR/config  (profile=$PROFILE blesh=$WITH_BLESH zoxide=$WITH_ZOXIDE)"
+    (( DRY )) && return 0
+    mkdir -p "$CONFIG_DIR"
+    {
+        echo "# bashrc-profile machine config — written by install.sh on $TS. Edit with: bt config"
+        echo "# Environment beats this file: BASHRC_BLESH=0 bash -i tries a toggle without editing it."
+        config_lines
+    } > "$CONFIG_DIR/config"
     if [[ ! -f $HOME/.bashrc.local ]]; then
         cp "$REPO_DIR/bashrc.local.example" "$HOME/.bashrc.local"
         chmod 600 "$HOME/.bashrc.local"
@@ -419,6 +518,26 @@ CFG
         ok "~/.bashrc.local kept"
     fi
     rm -f "$CACHE_DIR"/*.bash 2>/dev/null
+}
+
+# refresh_config — --update: append toggles that did not exist when this config
+# was written. Existing lines (and their values/comments) are left alone.
+refresh_config() {
+    step "Config"
+    [[ -f $CONFIG_DIR/config ]] || { write_config; return; }
+    local line key added=0
+    while IFS= read -r line; do
+        key=${line%%=*}
+        grep -q "^${key}=" "$CONFIG_DIR/config" && continue
+        (( DRY )) || printf '%s\n' "$line" >> "$CONFIG_DIR/config"
+        info "config: added ${line%%#*}"; added=1
+    done < <(config_lines)
+    (( added )) || ok "config up to date"
+    # Keep BASHRC_PROFILE_DIR pointing at the repo we are running from.
+    if ! grep -q "^BASHRC_PROFILE_DIR=$REPO_DIR\$" "$CONFIG_DIR/config"; then
+        (( DRY )) || sed -i "s|^BASHRC_PROFILE_DIR=.*|BASHRC_PROFILE_DIR=$REPO_DIR|" "$CONFIG_DIR/config"
+        info "config: BASHRC_PROFILE_DIR → $REPO_DIR"
+    fi
 }
 
 # ── 5. Verify ────────────────────────────────────────────────────────────────
@@ -437,7 +556,7 @@ verify() {
     t1=$EPOCHREALTIME
     if [[ $out == *BASHRC_OK* ]]; then
         ok "interactive shell starts cleanly ($(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%d", (b-a)*1000}') ms)"
-        out=${out//BASHRC_OK/}; out=$(grep -v 'Inappropriate ioctl\|no job control\|cannot set terminal' <<< "$out")
+        out=${out//BASHRC_OK/}; out=$(grep -v 'Inappropriate ioctl\|no job control\|cannot set terminal\|cannot find a controlling TTY' <<< "$out")
         [[ -n $out ]] && warn "startup printed: $out"
     else
         err "test shell failed:"; echo "$out"; return 1
@@ -447,6 +566,7 @@ verify() {
 summary() {
     step "Summary"
     (( ${#INSTALLED[@]} )) && printf '%s installed:%s %s\n' "$G" "$N" "${INSTALLED[*]}"
+    (( ${#UPGRADED[@]} ))  && { printf '%s upgraded:%s  ' "$G" "$N"; printf '%s; ' "${UPGRADED[@]}"; echo; }
     (( ${#SKIPPED[@]} ))   && printf '%s present:%s   %s\n' "$B" "$N" "${SKIPPED[*]}"
     (( ${#FAILED[@]} ))    && printf '%s failed:%s    %s\n' "$R" "$N" "${FAILED[*]}"
     (( DRY )) && { warn "dry run — nothing was changed"; return 0; }
@@ -457,8 +577,8 @@ Done. Open a new terminal or run:  source ~/.bashrc
   profile   $PROFILE          (bt config to change)
   repo      $REPO_DIR
   secrets   ~/.bashrc.local   (bt local — RCON password, ssh hosts…)
-  update    bup               (git pull + reload)
-  deps      prereqs           (re-run dependency install)
+  update    bup               (git pull, relink, refresh config, reload)
+  deps      prereqs           (re-run dependency install;  prereqs --upgrade refreshes ble.sh/starship/fzf)
 DONE
 }
 
@@ -468,6 +588,7 @@ uninstall() {
     for f in "$HOME/.bashrc" "$HOME/.config/starship.toml" "$HOME/.blerc"; do
         if [[ -L $f ]]; then
             run rm -f "$f"; ok "removed link $f"
+            # shellcheck disable=SC2012  # backup names are ours (file.bak.TIMESTAMP), ls -t is fine
             newest=$(ls -t "$f".bak.* 2>/dev/null | head -1)
             if [[ -n $newest ]]; then run cp "$newest" "$f"; ok "restored $f from $newest"; fi
         fi
@@ -486,7 +607,7 @@ main() {
     case $MODE in
         uninstall) uninstall; return ;;
         deps)      locate_repo; install_dependencies; rm -f "$CACHE_DIR"/*.bash 2>/dev/null; summary; return ;;
-        update)    locate_repo; link_files; rm -f "$CACHE_DIR"/*.bash 2>/dev/null; verify; summary; return ;;
+        update)    locate_repo; update_repo; link_files; refresh_config; rm -f "$CACHE_DIR"/*.bash 2>/dev/null; verify; summary; return ;;
     esac
 
     locate_repo

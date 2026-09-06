@@ -12,6 +12,17 @@
 # Compiles and runs C programs using gcc.
 # Test runner expects .in (stdin), .expect (expected output), and
 # optionally .args (command-line arguments) files per test stem.
+#
+# Quirks:
+#   • This file is never sourced at startup: bashrc installs stubs for the six
+#     public functions and the first call (or Tab) sources it — see
+#     _bashrc_lazy in lib/core.sh. Adding a new public function here means adding
+#     it to that `_bashrc_lazy dev …` line too, or it will not exist until
+#     something else triggers the load.
+#   • `run` is also the name of a helper inside install.sh; they never meet
+#     (install.sh is executed, not sourced), but don't source install.sh.
+#   • Colour codes are locals per function, not globals — keeps `set | grep`
+#     and the environment clean.
 
 # ru: compile C source files with gcc
 ru() {
@@ -177,7 +188,10 @@ EOF
             return 0
             ;;
     esac
-    ru "$@" && ./myprogram
+    # honour -o NAME so we run what we just built
+    local a prev='' out=myprogram
+    for a in "$@"; do [[ $prev == -o ]] && out=$a; [[ $a == -- ]] && break; prev=$a; done
+    ru "$@" && "./$out"
 }
 
 # rud: compile C source files for debugging
@@ -321,7 +335,8 @@ EOF
     rud "${compile_args[@]}" || return 1
 
     # Prepare valgrind output
-    local logfile="valgrind_$(date +"%Y%m%d-%H%M%S").log"
+    local logfile
+    logfile="valgrind_$(date +"%Y%m%d-%H%M%S").log"
     local tmpfile
     tmpfile="$(mktemp)"
     # shellcheck disable=SC2064
@@ -361,87 +376,47 @@ EOF
     echo -e "${BLUE}${BOLD}  VALGRIND REPORT${RESET}"
     echo -e "${BLUE}${BOLD}════════════════════════════════════════════════════════${RESET}"
 
-    local line
-    local errors=0
-    local leaks=0
-    local in_section=""
+    # One pass over the report with bash pattern matching only — the previous
+    # version spawned echo|sed and up to nine greps per line (thousands of forks
+    # on a long report).
+    local line content errors=0 leaks=0
     while IFS= read -r line; do
-        # Strip the ==PID== prefix for cleaner display
-        local content
-        content="$(echo "$line" | sed 's/^==[0-9]*== //')"
+        content=${line#==*== }                       # strip the ==PID== prefix
 
-        # Section headers
-        if echo "$content" | grep -qE '^(HEAP SUMMARY|LEAK SUMMARY|ERROR SUMMARY)'; then
-            in_section="$content"
-            echo ""
-            echo -e "${CYAN}${BOLD}── ${content} ──${RESET}"
+        case $content in
+            'HEAP SUMMARY'*|'LEAK SUMMARY'*|'ERROR SUMMARY'*)
+                echo; echo -e "${CYAN}${BOLD}── ${content} ──${RESET}"; continue ;;
+        esac
+
+        # "N errors from M contexts"
+        if [[ $content =~ ^([0-9]+)\ errors?\ from\ [0-9]+\ contexts ]]; then
+            errors=${BASH_REMATCH[1]}
+            if (( errors == 0 )); then echo -e "  ${GREEN}${BOLD}${content}${RESET}"
+            else                       echo -e "  ${RED}${BOLD}${content}${RESET}"; fi
             continue
         fi
 
-        # Error summary count
-        if echo "$content" | grep -qE '^[0-9]+ errors? from [0-9]+ contexts'; then
-            local err_count
-            err_count="$(echo "$content" | grep -oE '^[0-9]+')"
-            errors="$err_count"
-            if [[ "$err_count" -eq 0 ]]; then
-                echo -e "  ${GREEN}${BOLD}${content}${RESET}"
-            else
-                echo -e "  ${RED}${BOLD}${content}${RESET}"
-            fi
+        # "definitely lost: 0 bytes in 0 blocks" (also indirectly / possibly)
+        if [[ ${content,,} =~ (definitely|indirectly|possibly)\ lost:\ *([0-9,]+)\ bytes ]]; then
+            if [[ ${BASH_REMATCH[2]} == 0 ]]; then echo -e "  ${GREEN}${content}${RESET}"
+            else echo -e "  ${RED}${BOLD}${content}${RESET}"; (( leaks++ )); fi
             continue
         fi
 
-        # Leak lines (definitely lost, indirectly lost, etc.)
-        if echo "$content" | grep -qiE '(definitely|indirectly|possibly) lost:'; then
-            local bytes
-            bytes="$(echo "$content" | grep -oE '[0-9,]+ bytes' | head -1)"
-            if echo "$bytes" | grep -qE '^0 '; then
-                echo -e "  ${GREEN}${content}${RESET}"
-            else
-                echo -e "  ${RED}${BOLD}${content}${RESET}"
-                leaks=$((leaks + 1))
-            fi
-            continue
-        fi
+        case ${content,,} in
+            *'still reachable:'*)          echo -e "  ${YELLOW}${content}${RESET}"; continue ;;
+            *'suppressed:'*)               echo -e "  ${DIM}${content}${RESET}"; continue ;;
+            *'invalid read'*|*'invalid write'*|*'invalid free'*)
+                                           echo -e "  ${RED}${BOLD}${content}${RESET}"; continue ;;
+            *uninitialised*|*uninitialized*)
+                                           echo -e "  ${MAGENTA}${content}${RESET}"; continue ;;
+            *'all heap blocks were freed'*) echo -e "  ${GREEN}${BOLD}${content}${RESET}"; continue ;;
+        esac
 
-        if echo "$content" | grep -qiE 'still reachable:'; then
-            echo -e "  ${YELLOW}${content}${RESET}"
-            continue
-        fi
+        # stack frames: "at 0x…" / "by 0x…"
+        if [[ $content =~ ^[[:space:]]*(at|by)\ 0x ]]; then echo -e "  ${DIM}${content}${RESET}"; continue; fi
 
-        if echo "$content" | grep -qiE 'suppressed:'; then
-            echo -e "  ${DIM}${content}${RESET}"
-            continue
-        fi
-
-        # Invalid read/write
-        if echo "$content" | grep -qiE 'Invalid (read|write|free)'; then
-            echo -e "  ${RED}${BOLD}${content}${RESET}"
-            continue
-        fi
-
-        # Use of uninitialised value
-        if echo "$content" | grep -qiE '(uninitialised|uninitialized)'; then
-            echo -e "  ${MAGENTA}${content}${RESET}"
-            continue
-        fi
-
-        # Source file references (at 0x... or by 0x...)
-        if echo "$content" | grep -qE '^\s*(at|by) 0x'; then
-            echo -e "  ${DIM}${content}${RESET}"
-            continue
-        fi
-
-        # "All heap blocks were freed" — good news
-        if echo "$content" | grep -qiE 'All heap blocks were freed'; then
-            echo -e "  ${GREEN}${BOLD}${content}${RESET}"
-            continue
-        fi
-
-        # Default: print dimmed
-        if [[ -n "$content" ]]; then
-            echo -e "  ${DIM}${content}${RESET}"
-        fi
+        [[ -n $content ]] && echo -e "  ${DIM}${content}${RESET}"
     done < "$tmpfile"
 
     # Summary
@@ -459,6 +434,37 @@ EOF
 }
 
 # _run_suite: inlined test-suite runner (replaces ~/testing/runSuite.sh)
+_run_suite_details() {   # <stem> — called from _run_suite; uses its locals (colours, TEMPFILE)
+    local stem="$1"
+    local args_file="${stem}.args"
+    local in_file="${stem}.in"
+    local expect_file="${stem}.expect"
+
+    echo -e "${YELLOW}Args:${RESET}"
+    if [[ -r "$args_file" ]]; then
+        cat "$args_file"
+        echo
+    else
+        echo -e "${ITALIC}(none)${RESET}"
+    fi
+
+    echo -e "${YELLOW}Input:${RESET}"
+    if [[ -r "$in_file" ]]; then
+        cat "$in_file"
+        echo
+    else
+        echo -e "${ITALIC}(none)${RESET}"
+    fi
+
+    echo -e "${BLUE}${BOLD}Expected:${RESET}"
+    cat "$expect_file"
+    echo
+
+    echo -e "${BLUE}${BOLD}Actual:${RESET}"
+    cat "$TEMPFILE"
+    echo
+}
+
 _run_suite() {
     local RED='\033[0;31m'
     local GREEN='\033[0;32m'
@@ -501,37 +507,6 @@ _run_suite() {
     # shellcheck disable=SC2064
     trap "rm -f '$TEMPFILE'" RETURN
 
-    _run_suite_print_details() {
-        local stem="$1"
-        local args_file="${stem}.args"
-        local in_file="${stem}.in"
-        local expect_file="${stem}.expect"
-
-        echo -e "${YELLOW}Args:${RESET}"
-        if [[ -r "$args_file" ]]; then
-            cat "$args_file"
-            echo
-        else
-            echo -e "${ITALIC}(none)${RESET}"
-        fi
-
-        echo -e "${YELLOW}Input:${RESET}"
-        if [[ -r "$in_file" ]]; then
-            cat "$in_file"
-            echo
-        else
-            echo -e "${ITALIC}(none)${RESET}"
-        fi
-
-        echo -e "${BLUE}${BOLD}Expected:${RESET}"
-        cat "$expect_file"
-        echo
-
-        echo -e "${BLUE}${BOLD}Actual:${RESET}"
-        cat "$TEMPFILE"
-        echo
-    }
-
     local stem expect_file args_file in_file
     local -a argv
     while IFS= read -r stem || [[ -n "$stem" ]]; do
@@ -565,12 +540,12 @@ _run_suite() {
         if diff "$TEMPFILE" "$expect_file" > /dev/null 2>&1; then
             echo -e "${GREEN}${BOLD}> Passed:${RESET} $stem"
             if [[ "$VERBOSE" -eq 1 ]]; then
-                _run_suite_print_details "$stem"
+                _run_suite_details "$stem"
             fi
         else
             (( failed++ ))
             echo -e "${RED}${BOLD}x Test failed:${RESET} ${UNDERLINE}$stem${RESET}"
-            _run_suite_print_details "$stem"
+            _run_suite_details "$stem"
         fi
     done < "$SUITE_FILE"
 
@@ -672,7 +647,7 @@ EOF
     # Build a temp suite file for _run_suite
     local suite
     suite="$(mktemp)"
-    printf '%s\n' $stems > "$suite"
+    printf '%s\n' "$stems" > "$suite"
 
     _run_suite $verbose_arg "$suite" ./myprogram
     local rc=$?

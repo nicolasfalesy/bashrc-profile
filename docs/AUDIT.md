@@ -119,3 +119,85 @@ The rewrite was done on a clone that turned out to be ~60 commits behind
 | git / systemctl alias sets, `gcc valgrind clang tmux` in prereqs | already present in `lib/aliases.sh` / `install.sh` |
 | `.gitignore` additions (`CLAUDE.md`, build files, backups) | merged; `CLAUDE.md` is untracked again |
 | root `FEATURES.md` / `SETUP.md` | replaced by `docs/` |
+
+## Second pass — 6 September 2026
+
+A full read of every file plus real measurements on the NAS (TrueNAS SCALE, bash 5.2)
+and a check of the Pi's clone. Everything below was verified by running it, not by
+reading alone.
+
+### Measured
+
+| | NAS |
+|---|---|
+| inside `bashrc` (`BASHRC_TIMING=1`), ble.sh off | 5–8 ms |
+| `bash -ic exit` wall | 7–9 ms (`bash --norc`: 2 ms) |
+| slowest single steps (trace) | `lib/core.sh` 2.1 ms, `lib/prompt.sh` 1.4 ms, `lib/aliases.sh` 1.1 ms, `ble.sh --noattach` 1.1 ms |
+
+There is nothing left to shave at startup; the profile is within ~5 ms of a bare
+shell. ble.sh's `ble-attach` cost could not be measured here (it needs a terminal
+that answers its queries — in a pty with no terminal behind it it waits ~200 ms for
+replies that never come). Measure it on a real terminal with `BASHRC_TIMING=1 bash -i`
+versus `BASHRC_BLESH=0 BASHRC_TIMING=1 bash -i`.
+
+### Bugs fixed
+
+| Finding | Fix |
+|---------|-----|
+| `BASHRC_BLESH=0 bash -i` (or any toggle in the environment) was overridden by the config file; only `BASHRC_PROFILE` won | environment now beats the config for every toggle (`bashrc` §2) |
+| `bashrc` defaulted `BASHRC_BLESH=0` while the installer, README and FEATURES all said ble.sh is on by default | default is 1 (guarded by the ble.sh file existing) |
+| `install.sh --update` from a checkout never pulled — `locate_repo` only pulls the clone it made itself — so `--update` was "relink + clear cache" | `update_repo` pulls the checkout in `--update`; `bup` now runs `install.sh --update` instead of its own pull |
+| the machine config was never refreshed: NAS and Pi configs still lacked `BASHRC_ZOXIDE` and listed `pi \| nas \| desktop \| server` (no `uw`) | `refresh_config` appends missing toggles on `--update`, leaves existing lines alone; `config_lines` is the single template for both |
+| `run -o NAME` compiled to `NAME` and then executed `./myprogram` | `run` honours `-o` |
+| `sys` showed 16.8 °C on the NAS: `thermal_zone0` is the ACPI board sensor; the CPU (`k10temp`) was at 68 °C | hwmon CPU sensors first (`coretemp`, `k10temp`, `zenpower`, `cpu_thermal`), `thermal_zone0` as fallback, sensor name shown |
+| `killport` only looked at TCP listeners (`ss -tlnp`) while `port` shows UDP too | `ss -tulnp` |
+| `tre` was unusable on the NAS and UW servers (no `tree`, no apt) | `find`-based fallback with the same ignores |
+| `_bashrc_is_uw` stayed defined whenever the config already named a profile | unset unconditionally |
+| `rund` coloured the valgrind report with `echo \| sed` and up to nine `grep`s per line — thousands of forks on a long report | pure bash `case` / `[[ =~ ]]`, same colours |
+| `_run_suite` redefined a nested helper as a global function on every call | hoisted to `_run_suite_details` |
+| `rut` word-split its stem list (`printf '%s\n' $stems`) | quoted |
+| `install.sh --profile` / `--dir` with no value died with an "unbound variable" trace | explicit `die` with a message |
+| `install.sh` read the profile back from the config *with its trailing comment* (`nas      # pi \| nas …`), so `[[ $PROFILE == nas ]]` was false and `prereqs` on the NAS chose `apt` as the package manager | comment stripped, value validated |
+| `lib/core.sh` overwrote an `EDITOR` that was already in the environment | respected when set; `VISUAL` follows `EDITOR` |
+| `install.sh` verify warned about ble.sh's "cannot find a controlling TTY" line on every run | filtered with the other harmless messages |
+| ShellCheck: 33× SC2207, 7× SC2139, 6× SC2164 and a dozen others | repo is shellcheck-clean; `.shellcheckrc` documents the three codes that are disabled globally and why, the rest are fixed or carry an inline reason |
+
+### Docs that had drifted
+
+- README "Speed" row described the Pi numbers in a confusing way ("~60 ms with ble.sh
+  (was ~80 ms without it)") → rewritten with both machines' numbers.
+- ARCHITECTURE listed `zoxide` in `CORE_PKGS` (it has been opt-in since the merge).
+- FEATURES said `BASHRC_BLESH` defaults to 1; the code said 0 (now 1 everywhere).
+- Nothing explained what happens to `PROMPT_COMMAND`/`history -a` under starship and
+  ble.sh (now ARCHITECTURE §5; verified: starship keeps `history -a` via
+  `STARSHIP_PROMPT_COMMAND`, ble.sh owns history when attached).
+
+### Added
+
+- `tests/smoke.sh` — parse, shellcheck, non-interactive silence check, then a real
+  interactive shell per profile in a throw-away HOME calling every function family.
+- `.shellcheckrc`.
+- `bt` syntax-checks and reloads on save; `bt readme` / `bt features` … open the docs.
+- `bgit` — `git -C $BASHRC_PROFILE_DIR`.
+- Quirk comments at the top of `bashrc`, `lib/prompt.sh`, `lib/dev.sh`, `install.sh`
+  and an "Editing safely" section in ARCHITECTURE.
+
+### Done the same day
+
+- zsh is gone from the NAS: `~/.zshrc` and `~/.shell_functions` (symlinks into
+  `configs/home/`), `~/.zsh/` (three plugin clones), both zsh histories, three
+  `.zcompdump*`, `~/.zprofile`, `~/.zshenv`, the June `.bak` files and two stale
+  `starship.toml.bak.*`. Everything was tarred to
+  `/mnt/porsche/configs/home/zsh-archive-20260906/` first; the live `.zshrc` (12 lines
+  newer) replaced `legacy/zshrc`. The Pi's dead `~/.shell_functions` went the same way.
+  Login shells were already bash on both machines; the `zsh` binary is part of the
+  TrueNAS image and stays.
+- `install.sh --upgrade` / `prereqs --upgrade` refreshes ble.sh, starship, fzf, zoxide.
+- Themes moved to `themes/aurora.toml` and `themes/waterloo-gold.toml`; `bt theme`.
+
+### Still open
+
+- The GitHub repo description is still "BASHRC PROFILE!!" with no topics (needs
+  `gh auth login` on the NAS, then `gh repo edit`).
+- `CLAUDE.md` is gitignored; the quirks now live in tracked comments and docs instead.
+- No CI; `tests/smoke.sh` is run by hand before a push.

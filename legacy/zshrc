@@ -128,6 +128,12 @@ alias svi='sudo nvim'
 alias snvim='sudo nvim'
 
 ###############################################################################
+# ALIASES — CLAUDE
+###############################################################################
+alias claude='claude --dangerously-skip-permissions'
+alias cladue='claude --dangerously-skip-permissions'
+
+###############################################################################
 # ALIASES — DOCKER
 ###############################################################################
 alias du='sudo docker compose up -d'
@@ -909,3 +915,9 @@ _dsv() {
     '1:pattern:(/mnt/porsche/ /mnt/porsche/movies /mnt/porsche/tv /mnt/porsche/music)'
 }
 compdef _dsv dsv
+
+export NVM_DIR="$HOME/.config/nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+
+. "$HOME/.local/share/../bin/env"

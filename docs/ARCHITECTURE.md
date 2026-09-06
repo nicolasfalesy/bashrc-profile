@@ -48,15 +48,21 @@ unconditionally, which is exactly the classic "scp hangs / rsync protocol error"
 bug. Everything below this line is interactive-only.
 
 ```bash
-BASHRC_CONFIG_DIR=…/bashrc-profile ; BASHRC_CACHE_DIR=…
-BASHRC_PROFILE=… BASHRC_BLESH=0 BASHRC_FASTFETCH=0 BASHRC_CD_LS_MAX=200
-BASHRC_LAZY_COMPLETION=1 BASHRC_FZF_COMPLETION=0 BASHRC_ZOXIDE=0
+_bashrc_toggles=(BASHRC_PROFILE BASHRC_BLESH BASHRC_FASTFETCH …)
+for _m in "${_bashrc_toggles[@]}"; do [[ -n ${!_m-} ]] && _bashrc_env+=("$_m=${!_m}"); done
 [[ -r "$BASHRC_CONFIG_DIR/config" ]] && . "$BASHRC_CONFIG_DIR/config"
+for _m in "${_bashrc_env[@]}"; do declare -g "$_m"; done
+BASHRC_PROFILE="${BASHRC_PROFILE:-}" BASHRC_BLESH="${BASHRC_BLESH:-1}" …
 ```
-Defaults first, then the config file overrides them. The config file is plain bash
-(`BASHRC_PROFILE=pi`) so there is no parsing. One exception: a `BASHRC_PROFILE` that
-was already in the environment (`BASHRC_PROFILE=nas bash -i` to try another profile)
-is put back after the file is read, so it wins.
+Precedence is **environment > config file > defaults**. Every toggle that is
+already in the environment is saved, the config file (plain bash written by the
+installer — no parsing) is sourced, and the saved values are put back. So
+`BASHRC_PROFILE=nas BASHRC_BLESH=0 bash -i` tries a combination without editing
+anything. `declare -g` matters because `bup` and `bt` re-source `bashrc` from
+inside a function, where a plain `declare` would be local.
+
+Adding a toggle = three places: the defaults block here, `_bashrc_toggles`, and
+`config_lines` in `install.sh` (so `bup` appends it to existing configs).
 
 ```bash
 if [[ -z ${BASHRC_PROFILE_DIR-} || ! -f $BASHRC_PROFILE_DIR/lib/core.sh ]]; then
@@ -80,7 +86,9 @@ set → `desktop`; `$HOSTNAME` or a `search`/`domain` line in `/etc/resolv.conf`
 **Modules** are sourced in a fixed list; `lib/dev.sh` is not sourced — instead
 `_bashrc_lazy dev ru run rud rund rut mkt` installs stubs (see §4).
 
-`BASHRC_TIMING=1 bash -i` prints the milliseconds the whole file took.
+`BASHRC_TIMING=1 bash -i` prints the milliseconds the whole file took, including
+`ble-attach`. Run it in a real terminal: ble.sh refuses to load in `bash -c …`
+shells, so `bash -ic exit` timings never include it.
 
 ## 3. `lib/core.sh` — every setting explained
 
@@ -126,8 +134,10 @@ already present, so re-sourcing never grows `$PATH`. User dirs (`~/.local/bin`,
 `~/.cargo/bin`, `~/.fzf/bin`) go first so user-installed tools win; flatpak and Go go
 last. (The old profile had `/.local/share/flatpak/…` — a typo for `$HOME/…`.)
 
-**EDITOR/VISUAL** — first available of `nvim`, `vim`, `nano`. Checked with `hash`,
-a builtin that also caches the lookup; no subprocess.
+**EDITOR/VISUAL** — first available of `nvim`, `vim`, `nano`, but only when the
+environment did not already provide one (`EDITOR=nano bt local` works; a permanent
+choice goes in `~/.bashrc.local`, which is sourced later). Checked with `hash`, a
+builtin that also caches the lookup; no subprocess.
 
 **LESS** — `-R` lets ANSI colour through (git, `diff2`, `ftext`). The `LESS_TERMCAP_*`
 variables recolour `man` pages: headings red, options green, search hits yellow-on-blue.
@@ -169,7 +179,8 @@ Shared conventions:
 
 `lib/navigation.sh` — `cd` wraps `builtin cd`, then counts entries with a glob (no
 `ls | wc` forks) and lists only if there are at most `BASHRC_CD_LS_MAX`. zoxide's
-`__zoxide_cd` is pointed at this `cd` so `z` lists too.
+`__zoxide_cd` is pointed at this `cd` so `z` lists too. `tre` falls back to an
+indented `find` listing where `tree` cannot be installed (TrueNAS, UW).
 
 `lib/files.sh` — `size` runs `du -sb` in the background and spins while waiting; the
 byte→unit formatting is one helper (`_size_fmt`) instead of two copies of the same
@@ -179,7 +190,13 @@ byte→unit formatting is one helper (`_size_fmt`) instead of two copies of the 
 `lib/system.sh` — `sys` reads `/proc/stat` twice, 0.5 s apart, and computes the
 *delta* (the old version divided cumulative counters, i.e. average since boot). Memory
 comes from `/proc/meminfo`; the primary interface from `ip route get 1.1.1.1` (the old
-`whatsmyip` hard-coded `wlan0`; the Pi is on `eth0`).
+`whatsmyip` hard-coded `wlan0`; the Pi is on `eth0`). Temperature comes from the first
+hwmon sensor named `coretemp`/`k10temp`/`zenpower`/`cpu_thermal`, falling back to
+`thermal_zone0` — on the NAS the ACPI zone reads 16 °C while the CPU is at 68 °C.
+
+`lib/dev.sh` — the valgrind report in `rund` is coloured with bash pattern matching
+only (`case`, `[[ =~ ]]`); the previous version forked `echo | sed` plus up to nine
+`grep`s *per line*.
 
 ## 5. `lib/prompt.sh` — why it is fast
 
@@ -204,6 +221,15 @@ want it. With ble.sh on, the ble contrib integrations are used instead.
 
 If starship is missing you get a plain green/blue `user@host:path$` prompt.
 
+**PROMPT_COMMAND and history.** `lib/core.sh` sets `PROMPT_COMMAND='history -a'`.
+starship's init replaces `PROMPT_COMMAND` with `starship_precmd` and stores the old
+value in `STARSHIP_PROMPT_COMMAND`, which `starship_precmd` evals every prompt — so
+each command still lands in the history file immediately (verified). With ble.sh
+attached, ble.sh takes over history entirely (`bleopt history_share=1` in `blerc`:
+other terminals' commands appear, and writes are ble.sh's), and it *unsets*
+`PROMPT_COMMAND` while a command runs. A function that reads `$PROMPT_COMMAND` at
+runtime under ble.sh sees it empty; that is normal.
+
 Measured on the Pi 4 (`BASHRC_TIMING=1`, warm cache): **~22 ms inside `bashrc`, ~30 ms
 wall for `bash -ic exit`**, down from ~80 ms.
 
@@ -218,7 +244,7 @@ Dependencies are declared as arrays of `package[:command]`:
 
 | List | Contents |
 |------|----------|
-| `CORE_PKGS` | bash-completion curl git wget tree ripgrep neovim trash-cli tmux htop unzip p7zip-full xz-utils zstd gawk iproute2 fzf zoxide starship |
+| `CORE_PKGS` | bash-completion curl git wget tree ripgrep neovim trash-cli tmux htop unzip p7zip-full xz-utils zstd gawk iproute2 fzf starship (zoxide only with `--with-zoxide`) |
 | `PI_PKGS` | nala raspi-utils (vcgencmd) wireguard-tools |
 | `DESKTOP_PKGS` | alacritty xclip wl-clipboard wireguard-tools fonts-noto-color-emoji desktop-file-utils |
 | `DEV_PKGS` (`--with-dev`) | gcc make gdb valgrind clang |
@@ -235,10 +261,42 @@ and disables apt, so only the user-local path runs.
 
 `link_files` backs up whatever is at `~/.bashrc`, `~/.config/starship.toml`, `~/.blerc`
 (following a symlink and copying its content) to `*.bak.<timestamp>` and symlinks the
-repo files. `write_config` records profile, repo dir and toggles, and seeds
+repo files. The starship link points at `themes/aurora.toml` (`themes/waterloo-gold.toml`
+on **uw**); a link that already points at some file in `themes/` is kept, so a theme
+chosen by hand survives `bup`.
+
+`--upgrade` (`prereqs --upgrade`) re-runs the user-local installers in refresh mode:
+ble.sh re-downloads the nightly tarball, starship and zoxide re-run their upstream
+installers with force, fzf does `git pull` in `~/.fzf` and rebuilds the binary. A copy
+that came from apt (`is_user_local` says no) is left to `nu`. Versions before/after are
+listed in the summary. `write_config` records profile, repo dir and toggles, and seeds
 `~/.bashrc.local` (mode 600) from the template if absent. `verify` parses every file
 with `bash -n`, then starts a real `bash --rcfile … -i` and checks the core functions
 exist.
 
-`--update` = pull + relink + clear caches; `--deps-only` is what `prereqs` calls;
+`--update` (what `bup` runs) = `git pull --ff-only` in the checkout (`update_repo`),
+relink, `refresh_config` (append any toggle from `config_lines` that the existing
+config lacks, and re-point `BASHRC_PROFILE_DIR` if the repo moved — nothing else
+in the file is touched), clear caches, verify. `--deps-only` is what `prereqs` calls;
 `--uninstall` removes the links and restores the newest backups.
+
+## 7. Editing safely
+
+- `bt <module>` opens a file; on save it runs `bash -n` and reloads the profile in
+  the current shell only if the file parses. `bt local`, `bt config`, `bt readme`,
+  `bt features` … work the same way (docs are just saved).
+- `bash tests/smoke.sh` parses every file, runs shellcheck if present, checks that
+  sourcing `bashrc` from a non-interactive shell prints nothing, then starts a real
+  interactive shell per profile inside a throw-away `HOME` (own `HISTFILE`, no config,
+  no `~/.bashrc.local`, ble.sh off) and calls the functions. Run it before `bgit push`.
+- The code is shellcheck-clean with the repo's `.shellcheckrc`; the few deliberate
+  exceptions carry an inline `# shellcheck disable=…` with the reason.
+- Things that bite:
+  - anything that prints before the interactive guard in `bashrc` breaks scp/rsync;
+  - a new function in `lib/dev.sh` must be added to the `_bashrc_lazy dev …` line;
+  - a new toggle goes in three places (see §2);
+  - inside functions, call tools an alias might shadow as `command x`;
+  - `ll` is a function, not an alias, so `cd`/`mkcd`/`take` can call it;
+  - keep `lib/prompt.sh` last and never `bind` after ble.sh is attached;
+  - a test shell must get its own `HISTFILE` or its commands end up in yours
+    (`tests/smoke.sh` does this; a hand-rolled `bash -i < script` does not).

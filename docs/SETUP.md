@@ -20,7 +20,8 @@ The installer asks one question. Useful flags:
 | `--with-blesh` / `--no-blesh` | syntax highlighting + autosuggestions |
 | `--with-mcrcon` | build the Minecraft RCON client |
 | `--with-zoxide` | install zoxide and turn on `z` / `zi` (off by default) |
-| `--update` | pull + relink + clear caches (same as `bup`) |
+| `--upgrade` | refresh the user-local tools (ble.sh nightly, starship, fzf, zoxide) — `prereqs --upgrade` |
+| `--update` | pull + relink + add new toggles to the config + clear caches (what `bup` runs) |
 | `--uninstall` | remove links, restore backups |
 
 Backups: `~/.bashrc.bak.<timestamp>`, `~/.config/starship.toml.bak.<timestamp>`,
@@ -118,7 +119,7 @@ git clone https://github.com/nicolasfalesy/bashrc-profile ~/bashrc-profile
 bash ~/bashrc-profile/install.sh --profile uw
 ```
 
-What is different: the **Waterloo Gold** starship theme (`starship_uw.toml`) is linked
+What is different: the **Waterloo Gold** starship theme (`themes/waterloo-gold.toml`) is linked
 instead of Aurora, `~/bin` is on `PATH`, `rm` is `rm -iv` (no trash-cli), the package
 and `sudo` aliases are removed. The C helpers (`ru`, `run`, `rut`, `mkt`) work as
 everywhere else; `gcc`/`valgrind` are already on the school machines. Put the
@@ -159,9 +160,19 @@ shells; scripts should call `ls` directly.
 bash-completion (lazy loading). Set `BASHRC_LAZY_COMPLETION=0` in `bt config` to load
 it at startup instead.
 
-**Startup got slow** — `BASHRC_TIMING=1 bash -i` for the total;
-`PS4='+ $EPOCHREALTIME ${BASH_SOURCE##*/}:$LINENO ' bash -xic exit 2>&1 | less` for a
-line-by-line trace. Stale caches: `rm ~/.cache/bashrc-profile/*.bash`.
+**Startup got slow** — `BASHRC_TIMING=1 bash -i` in a real terminal for the total
+(6–8 ms on the NAS, ~22 ms on the Pi, plus whatever ble.sh's attach costs on that
+terminal). `BASHRC_BLESH=0 bash -i` shows the number without ble.sh.
+`PS4='+ $EPOCHREALTIME ${BASH_SOURCE##*/}:$LINENO ' bash -xic exit 2>&1 | less` gives a
+line-by-line trace (ble.sh excluded — it refuses `bash -c`). Stale caches:
+`rm ~/.cache/bashrc-profile/*.bash`.
+
+**Something broke after an edit** — `bt` refuses to reload a file that does not
+parse and says so; fix it and save again. `bash "$BASHRC_PROFILE_DIR/tests/smoke.sh"`
+exercises every profile in a sandbox. An older `~/.bashrc.bak.*` is always there.
+
+**A toggle in `bt config` seems ignored** — the environment wins over the file:
+`env | grep BASHRC_` shows what is exported in this session.
 
 **Docker aliases missing** — `docker` is not in PATH, or you are not in the docker
 group (then they use `sudo`).

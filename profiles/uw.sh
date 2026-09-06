@@ -4,8 +4,8 @@
 #
 # Everything the profile needs lives in the home directory (install.sh --profile uw
 # puts starship, fzf and ble.sh under ~/.local; drop an nvim release into ~/.local
-# too). The installer links starship_uw.toml — the "Waterloo Gold" theme — instead
-# of the Aurora one. The C helpers (ru/run/rut/mkt) come from lib/dev.sh as usual.
+# too). The installer links themes/waterloo-gold.toml — the "Waterloo Gold" theme —
+# instead of themes/aurora.toml. The C helpers (ru/run/rut/mkt) come from lib/dev.sh as usual.
 
 _path_prepend "$HOME/bin"
 
