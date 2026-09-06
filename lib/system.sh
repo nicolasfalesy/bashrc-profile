@@ -39,11 +39,20 @@ sys() {
     read -r dev src < <(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++){if($i=="dev")d=$(i+1); if($i=="src")s=$(i+1)}; print d, s}')
     printf "${G}Network:${N}  %s %s\n" "${src:-?}" "${dev:+($dev)}"
 
-    # Temperature (Pi, most x86 laptops)
-    if [[ -r /sys/class/thermal/thermal_zone0/temp ]]; then
-        local t; read -r t < /sys/class/thermal/thermal_zone0/temp
+    # Temperature: a CPU sensor from hwmon first (coretemp = Intel, k10temp = AMD,
+    # cpu_thermal = Pi), thermal_zone0 as the fallback. thermal_zone0 alone is the
+    # ACPI/board reading on many x86 boards — it said 16 °C on the NAS while the
+    # CPU was at 68 °C.
+    local t='' h hn
+    for h in /sys/class/hwmon/hwmon*; do
+        [[ -r $h/name && -r $h/temp1_input ]] || continue
+        read -r hn < "$h/name"
+        case $hn in coretemp|k10temp|zenpower|cpu_thermal|cpu-thermal) read -r t < "$h/temp1_input"; break ;; esac
+    done
+    [[ -z $t && -r /sys/class/thermal/thermal_zone0/temp ]] && read -r t < /sys/class/thermal/thermal_zone0/temp
+    if [[ -n $t ]]; then
         col=$G; (( t > 70000 )) && col=$Y; (( t > 80000 )) && col=$R
-        printf "${G}Temp:${N}     ${col}%d.%d°C${N}\n" $(( t / 1000 )) $(( t % 1000 / 100 ))
+        printf "${G}Temp:${N}     ${col}%d.%d°C${N}${hn:+  ($hn)}\n" $(( t / 1000 )) $(( t % 1000 / 100 ))
     fi
 
     # Battery (laptops)
@@ -99,7 +108,7 @@ port() {
     done
 }
 
-# killport <port>... — kill whatever listens on a port.
+# killport <port>... — kill whatever listens on a port (TCP or UDP).
 killport() {
     case ${1-} in
         -h|--help|'') echo "Usage: killport <port> [port...]"; return 0 ;;
@@ -107,7 +116,7 @@ killport() {
     local p pid name
     for p in "$@"; do
         [[ $p =~ ^[0-9]+$ ]] || { echo "killport: '$p' is not a port number" >&2; continue; }
-        pid=$(sudo ss -tlnp "sport = :$p" 2>/dev/null | command grep -oP 'pid=\K[0-9]+' | head -1)
+        pid=$(sudo ss -tulnpH "sport = :$p" 2>/dev/null | command grep -oP 'pid=\K[0-9]+' | head -1)
         if [[ -z $pid ]]; then echo "No process on port $p"; continue; fi
         name=$(command ps -p "$pid" -o comm= 2>/dev/null)
         sudo kill "$pid" && echo "Killed $name (PID $pid) on port $p"

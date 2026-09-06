@@ -1,0 +1,9 @@
+# shellcheck config for the whole repo:  shellcheck bashrc lib/*.sh profiles/*.sh install.sh
+shell=bash
+external-sources=true
+# SC1090/SC1091: we source files whose path is only known at runtime
+disable=SC1090,SC1091
+# SC2207: COMPREPLY=($(compgen …)) is the standard completion idiom; compgen output is one word per line
+disable=SC2207
+# SC2088: "~/.bashrc.local" inside messages is meant to be read by a human, not expanded
+disable=SC2088

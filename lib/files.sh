@@ -85,6 +85,7 @@ HELP
     done
     (( ${#targets[@]} )) || targets=(.)
 
+    # shellcheck disable=SC1003  # the spinner really is the four characters | / - \
     local total=0 bytes tmp pid i spin='|/-\'
     for t in "${targets[@]}"; do
         [[ -d $t ]] || { echo "size: '$t' is not a directory" >&2; continue; }

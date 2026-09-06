@@ -5,16 +5,34 @@
 #
 #  Load order (see docs/ARCHITECTURE.md):
 #    1. interactive guard           non-interactive shells (scp, rsync, ssh cmd) stop here
-#    2. ~/.config/bashrc-profile/config   machine profile + feature toggles (written by installer)
-#    3. lib/core.sh                 shell options, history, PATH, env, readline, completion
-#    4. lib/aliases.sh              aliases (editor, packages, git, docker, systemd, listing…) + bt/bup/prereqs
+#    2. toggles                     defaults ← ~/.config/bashrc-profile/config ← environment
+#    3. lib/core.sh                 shell options, history, PATH, env, readline, completion, lazy loader
+#    4. lib/aliases.sh              aliases (editor, packages, git, docker, systemd, listing…) + bt/bup/bgit/prereqs
 #    5. lib/navigation.sh           ll, cd (auto-list), up, mkcd, take, tre
 #    6. lib/files.sh                extract, ftext, size, bak, diff2, path
 #    7. lib/system.sh               sys, psg, port, killport, topp, myip, weather, t (tmux), rcon
 #    8. lib/dev.sh                  C toolchain helpers — lazy-loaded on first use
 #    9. profiles/<profile>.sh       pi | nas | desktop | uw | server
 #   10. ~/.bashrc.local             per-machine secrets, ssh aliases, overrides (never in git)
-#   11. lib/prompt.sh               fzf, starship, zoxide, ble.sh (must be last)
+#   11. lib/prompt.sh               fzf, starship, zoxide, ble-attach (must be last)
+#
+#  Quirks to keep in mind when editing (the long version is docs/ARCHITECTURE.md):
+#    • Nothing below the interactive guard may print in a non-interactive shell —
+#      scp/rsync/sftp break on stray output.
+#    • ble.sh is sourced here with --noattach, *before* any `bind`, and attached at
+#      the very end of lib/prompt.sh. Sourcing or attaching it anywhere else breaks
+#      readline. It refuses to load in `bash -c …` shells (so `bash -ic exit`
+#      timings never include it; use BASHRC_TIMING=1 in a real terminal).
+#    • Aliases expand when a function is *parsed*. Inside functions call shadowed
+#      tools as `command ls`, `command grep`, `command rm`…, and keep lib/aliases.sh
+#      ahead of the function modules.
+#    • Every module must be safe to source twice: `reload`, `bup` and `bt` re-source
+#      this file in the running shell (ble.sh stays loaded; the BLE_VERSION guard
+#      below skips it the second time).
+#    • Try a different profile or toggle without editing anything:
+#      BASHRC_PROFILE=pi BASHRC_BLESH=0 bash -i     (environment beats the config file)
+#    • Helpers named _bashrc_* and _path_* are internal; the startup-only ones are
+#      unset at the end of lib/prompt.sh.
 # =============================================================================
 
 # 1. Interactive shells only.
@@ -25,20 +43,25 @@ case $- in *i*) ;; *) return ;; esac
 BASHRC_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/bashrc-profile"
 BASHRC_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile"
 
-# 2. Feature toggles — defaults, overridden by the config file (bt config).
+# 2. Feature toggles.  Precedence: environment > config file > defaults below.
+#    The config file is plain bash written by install.sh (edit: bt config). Any
+#    toggle already exported in the environment is put back after the file is
+#    read, so `BASHRC_BLESH=0 bash -i` works even when the config says 1.
+_bashrc_toggles=(BASHRC_PROFILE BASHRC_BLESH BASHRC_FASTFETCH BASHRC_CD_LS_MAX
+                 BASHRC_LAZY_COMPLETION BASHRC_FZF_COMPLETION BASHRC_ZOXIDE)
+_bashrc_env=()
+for _m in "${_bashrc_toggles[@]}"; do [[ -n ${!_m-} ]] && _bashrc_env+=("$_m=${!_m}"); done
+[[ -r "$BASHRC_CONFIG_DIR/config" ]] && . "$BASHRC_CONFIG_DIR/config"
+for _m in "${_bashrc_env[@]}"; do declare -g "$_m"; done   # -g: bup sources this from inside a function
+unset _bashrc_env _bashrc_toggles
+
 BASHRC_PROFILE="${BASHRC_PROFILE:-}"        # pi | nas | desktop | uw | server  (empty = autodetect)
-BASHRC_BLESH="${BASHRC_BLESH:-0}"           # 1 = load ble.sh (syntax highlighting, autosuggest)
+BASHRC_BLESH="${BASHRC_BLESH:-1}"           # 1 = ble.sh (syntax highlighting, autosuggestions) when installed
 BASHRC_FASTFETCH="${BASHRC_FASTFETCH:-0}"   # 1 = run fastfetch on new terminals
 BASHRC_CD_LS_MAX="${BASHRC_CD_LS_MAX:-200}" # cd auto-lists dirs with at most this many entries
 BASHRC_LAZY_COMPLETION="${BASHRC_LAZY_COMPLETION:-1}"  # 1 = load bash-completion on first Tab
-BASHRC_FZF_COMPLETION="${BASHRC_FZF_COMPLETION:-0}"    # 1 = fzf **<Tab> fuzzy completion (slow)
-BASHRC_ZOXIDE="${BASHRC_ZOXIDE:-0}"         # 1 = zoxide z/zi (off: removed upstream Mar 2026; needs `prereqs --with-zoxide`)
-
-# An explicit BASHRC_PROFILE in the environment (testing: BASHRC_PROFILE=nas bash -i)
-# wins over the config file; everything else in the file overrides the defaults.
-_m=$BASHRC_PROFILE
-[[ -r "$BASHRC_CONFIG_DIR/config" ]] && . "$BASHRC_CONFIG_DIR/config"
-[[ -n $_m ]] && BASHRC_PROFILE=$_m
+BASHRC_FZF_COMPLETION="${BASHRC_FZF_COMPLETION:-0}"    # 1 = fzf **<Tab> fuzzy completion (+25 ms)
+BASHRC_ZOXIDE="${BASHRC_ZOXIDE:-0}"         # 1 = zoxide z/zi (needs `prereqs --with-zoxide`)
 
 # Where is the repo? The installer records it; otherwise resolve the ~/.bashrc symlink.
 if [[ -z ${BASHRC_PROFILE_DIR-} || ! -f $BASHRC_PROFILE_DIR/lib/core.sh ]]; then
@@ -46,7 +69,7 @@ if [[ -z ${BASHRC_PROFILE_DIR-} || ! -f $BASHRC_PROFILE_DIR/lib/core.sh ]]; then
 fi
 export BASHRC_PROFILE_DIR
 
-# Autodetect the machine profile when nothing set one.
+# Autodetect the machine profile when nothing set one. Same rules as install.sh.
 # UW student servers: hostname or DNS search domain under uwaterloo.ca (no fork).
 _bashrc_is_uw() {
     [[ $HOSTNAME == *uwaterloo* ]] && return 0
@@ -66,11 +89,12 @@ if [[ -z $BASHRC_PROFILE ]]; then
     else
         BASHRC_PROFILE=server
     fi
-    unset _m; unset -f _bashrc_is_uw
 fi
+unset -f _bashrc_is_uw
 export BASHRC_PROFILE
 
 # ble.sh must be sourced before anything touches readline; attached at the very end.
+# The BLE_VERSION guard keeps `reload` from loading it a second time.
 if [[ $BASHRC_BLESH == 1 && -z ${BLE_VERSION-} && -r "$HOME/.local/share/blesh/ble.sh" ]]; then
     . "$HOME/.local/share/blesh/ble.sh" --noattach
 fi
@@ -93,7 +117,8 @@ _bashrc_lazy dev ru run rud rund rut mkt
 # 11. Prompt and interactive tooling. Last on purpose.
 . "$BASHRC_PROFILE_DIR/lib/prompt.sh"
 
-# BASHRC_TIMING=1 bash -i   →  prints how long startup took
+# BASHRC_TIMING=1 bash -i   →  prints how long startup took (includes ble-attach)
+# shellcheck disable=SC2317  # reachable: the `return` above only fires for non-interactive shells
 if [[ ${BASHRC_TIMING-} == 1 ]]; then
     printf 'bashrc-profile: %d ms (profile=%s)\n' "$(( (${EPOCHREALTIME/./} - ${_bashrc_t0/./}) / 1000 ))" "$BASHRC_PROFILE"
     unset _bashrc_t0

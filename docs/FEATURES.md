@@ -91,10 +91,16 @@ are in the docker group)
 | `bt` | edit `lib/aliases.sh` |
 | `bt <module>` | edit `lib/<module>.sh` or `profiles/<module>.sh` — `bt system`, `bt pi` |
 | `bt local` / `bt config` | edit `~/.bashrc.local` / `~/.config/bashrc-profile/config` |
-| `bt -l` | list modules |
+| `bt readme`, `bt features`, `bt setup`, `bt architecture`, `bt audit` | edit the docs |
+| `bt theme` | edit the starship theme this machine links; `bt aurora` / `bt waterloo-gold` open a specific one |
+| `bt blerc`, `bt install.sh`, `bt tests/smoke.sh` | the rest |
+| `bt -l` | list everything `bt` can open |
+| (after `bt`) | a changed bash file is `bash -n`-checked and, if it parses, `~/.bashrc` is re-sourced in the current shell; a file with a syntax error is *not* reloaded |
+| `bgit …` | `git -C $BASHRC_PROFILE_DIR …` — `bgit status`, `bgit add -A`, `bgit commit -m …`, `bgit push` |
 | `reload` | `source ~/.bashrc` |
-| `bup` | `git pull` the repo, clear caches, reload |
+| `bup` | `install.sh --update`: `git pull --ff-only`, relink, append toggles new since this config was written, clear caches, verify — then reload |
 | `prereqs [opts]` | `install.sh --deps-only` — e.g. `prereqs --with-dev` |
+| `prereqs --upgrade` | refresh the user-local tools to their latest: ble.sh nightly, starship, fzf (`~/.fzf`), zoxide; apt-managed copies are left to `nu` |
 | `fetch` | fastfetch |
 
 ## Navigation (lib/navigation.sh)
@@ -107,7 +113,7 @@ are in the docker group)
 | `up [n]` | go up n levels |
 | `mkcd <dir>` | mkdir -p + cd |
 | `take <url\|dir>` | download an archive, extract it in a temp dir and cd in; or `mkcd` |
-| `tre [depth] [dir]` | tree, depth 3, ignoring .git/node_modules/__pycache__/.venv/.cache *(tree)* |
+| `tre [depth] [dir]` | tree, depth 3, ignoring .git/node_modules/__pycache__/.venv/.cache *(tree; a `find`-based fallback where tree cannot be installed)* |
 
 ## Files (lib/files.sh)
 
@@ -125,10 +131,10 @@ are in the docker group)
 
 | Command | Does |
 |---------|------|
-| `sys` | CPU % (real 0.5 s delta) + load, memory, root disk, IP + interface, temperature, battery, uptime, then profile extras |
+| `sys` | CPU % (real 0.5 s delta) + load, memory, root disk, IP + interface, CPU temperature (hwmon `coretemp`/`k10temp`/`cpu_thermal`, else `thermal_zone0`), battery, uptime, then profile extras |
 | `psg <pattern>...` | processes matching, highlighted, with counts |
 | `port` / `port 80 443` | what listens where *(iproute2 `ss`)* |
-| `killport <port>...` | kill the listener |
+| `killport <port>...` | kill the TCP or UDP listener |
 | `topp [-c\|-m] [n]` | top n by CPU or memory |
 | `myip` (`whatsmyip`) | LAN IP on the default-route interface + public IP |
 | `pubip` | public IP only |
@@ -141,7 +147,7 @@ are in the docker group)
 | Command | Does |
 |---------|------|
 | `ru [-f files] [-O n] [-W flags] [-o name] [-- gcc-flags]` | compile with `gcc -std=c99 -g -Wall -Wextra -Wpedantic` → `./myprogram` |
-| `run …` | `ru` then execute |
+| `run …` | `ru` then execute the binary (honours `-o NAME`) |
 | `rud …` | debug build (`-O0`) |
 | `rund [-i input] [-- args]` | debug build, run under valgrind, colourised leak/error report, log saved |
 | `rut [-v] [-d dir] [-f files]` | compile, then run every `<stem>.in` against `<stem>.expect` (+ optional `<stem>.args`) |
@@ -194,7 +200,7 @@ Environment: `TERMINAL=alacritty`, `QT_QPA_PLATFORMTHEME=qt5ct`, fastfetch and b
 ## Profile: uw (profiles/uw.sh — UW CS student servers)
 
 No root, so there is nothing to install system-wide. The installer links the
-**Waterloo Gold** theme (`starship_uw.toml`) as `~/.config/starship.toml`.
+**Waterloo Gold** theme (`themes/waterloo-gold.toml`) as `~/.config/starship.toml`.
 
 | Change | Does |
 |--------|------|
@@ -207,10 +213,14 @@ The C toolchain (`ru`… `mkt`) is the shared `lib/dev.sh`; put `alias home-pc=�
 
 ## Environment variables you can set (bt config / bt local)
 
+Precedence: **environment > `~/.config/bashrc-profile/config` > defaults in `bashrc`**.
+So `BASHRC_BLESH=0 bash -i` or `BASHRC_PROFILE=pi bash -i` tries something once
+without touching the config file.
+
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `BASHRC_PROFILE` | autodetect | pi / nas / desktop / uw / server |
-| `BASHRC_BLESH` | 1 | load ble.sh (highlighting, autosuggestions, menu completion — tuned in `blerc`) |
+| `BASHRC_BLESH` | 1 | load ble.sh when `~/.local/share/blesh/ble.sh` exists (highlighting, autosuggestions, menu completion — tuned in `blerc`) |
 | `BASHRC_FASTFETCH` | 0 (desktop 1) | fastfetch on new terminals |
 | `BASHRC_CD_LS_MAX` | 200 | `cd` lists directories up to this size |
 | `BASHRC_LAZY_COMPLETION` | 1 | bash-completion on first Tab instead of at startup |
@@ -222,3 +232,4 @@ The C toolchain (`ru`… `mkt`) is the shared `lib/dev.sh`; put `alias home-pc=�
 | `ZPOOL` | tank | pool for the nas profile |
 | `WEATHER_LOCATION` | – | default for `weather` |
 | `NOTES_FILE` | ~/Nextcloud/quick-notes.txt | `note` storage |
+| `EDITOR` | nvim → vim → nano | kept if the environment already set it; set your own in `bt local` |

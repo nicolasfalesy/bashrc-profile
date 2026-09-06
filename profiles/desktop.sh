@@ -56,7 +56,7 @@ apps() {
         -h|--help) echo "Usage: apps        cd to ~/.local/share/applications"
                    echo "       apps -u     update desktop database"; return 0 ;;
         -u) update-desktop-database ~/.local/share/applications && echo "Desktop database updated ✅" ;;
-        *)  cd ~/.local/share/applications ;;
+        *)  cd ~/.local/share/applications || return ;;
     esac
 }
 install_app() {
@@ -97,7 +97,7 @@ grub() {
                    echo "       grub -t <dir>   install a theme dir and select it"
                    echo "       grub -d         cd to $themes"; return 0 ;;
         -e) sudo "$EDITOR" /etc/default/grub ;;
-        -d) cd "$themes" ;;
+        -d) cd "$themes" || return ;;
         -t) [[ -d ${2-} ]] || { echo "grub: theme directory required" >&2; return 1; }
             local name; name=$(basename "$2")
             sudo cp -r "$2" "$themes/" &&

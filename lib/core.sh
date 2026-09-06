@@ -45,10 +45,16 @@ _path_append  "$XDG_DATA_HOME/flatpak/exports/bin"
 export PATH
 
 # ── Editor: first available of nvim → vim → nano ────────────────────────────
-for _e in nvim vim nano; do
-    if hash "$_e" 2>/dev/null; then export EDITOR=$_e VISUAL=$_e; break; fi
-done
-unset _e
+# An EDITOR already in the environment is respected (ssh SendEnv, a systemd
+# user session, `EDITOR=nano bt local` for one call). Set a permanent choice in
+# ~/.bashrc.local, which is sourced after this.
+if [[ -z ${EDITOR-} ]]; then
+    for _e in nvim vim nano; do
+        if hash "$_e" 2>/dev/null; then export EDITOR=$_e; break; fi
+    done
+    unset _e
+fi
+export VISUAL="${VISUAL:-$EDITOR}"
 
 # ── Pager / man page colours ─────────────────────────────────────────────────
 export LESS='-R'                        # let colour through (git log, diff2, ftext…)

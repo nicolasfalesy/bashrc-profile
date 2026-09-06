@@ -15,14 +15,14 @@ Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for opt
 | Area | Highlights |
 |------|-----------|
 | Prompt | [starship](https://starship.rs) "Aurora" theme ("Waterloo Gold" on the UW servers), [fzf](https://github.com/junegunn/fzf) Ctrl-R / Ctrl-T / Alt-C, [ble.sh](https://github.com/akinomyoga/ble.sh) highlighting + autosuggestions, optional [zoxide](https://github.com/ajeetdsouza/zoxide) `z`/`zi` (`--with-zoxide`) |
-| Speed | ~30 ms to a prompt on a Pi 4, ~60 ms with ble.sh (was ~80 ms without it): cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded |
+| Speed | 6–8 ms inside `bashrc` on the NAS, ~22 ms on a Pi 4 (ble.sh attach on top): cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded |
 | Navigation | `cd` auto-lists, `ll`, `up 3`, `mkcd`, `take <url>`, `tre` |
 | Files | `extract`, `ftext`, `size`, `bak`/`bak -r`, `diff2`, `path` |
 | System | `sys`, `psg`, `port`, `killport`, `topp`, `myip`, `weather`, `t` (tmux) |
 | Services | git (`gs`, `gcm`, `glog`…), systemd (`scs`, `screstart`, `sclog`…), Docker Compose (`dcu`, `dcd`, `dcr`, `dcl`, `dps`) |
 | C dev | `ru` / `run` / `rud` / `rund` (valgrind) / `rut` (test suite) / `mkt` — lazy-loaded |
 | Per machine | **pi**: `temp`, `wt`, `cloud` (Cloudflare tunnel) · **nas**: ZFS shortcuts, `dsv`, `wn` · **desktop**: clipboard, `vpn`, `note`, Alacritty/GRUB helpers · **uw**: no-root student servers, Waterloo Gold prompt |
-| Housekeeping | `bt` (edit the profile), `bup` (git pull + reload), `prereqs` (install dependencies), `reload` |
+| Housekeeping | `bt` (edit a module — syntax-checked and reloaded on save), `bgit` (git in the repo from anywhere), `bup` (pull + relink + reload), `prereqs` (install dependencies), `reload`, `tests/smoke.sh` |
 
 Full reference: [docs/FEATURES.md](docs/FEATURES.md).
 
@@ -38,11 +38,14 @@ lib/system.sh          sys, psg, port, killport, topp, myip, weather, t, rcon
 lib/dev.sh             C toolchain (lazy-loaded)
 lib/prompt.sh          fzf, starship, ble.sh, optional zoxide (always last)
 profiles/{pi,nas,desktop,uw,server}.sh
-starship.toml, blerc   linked into ~/.config/starship.toml and ~/.blerc
-starship_uw.toml       "Waterloo Gold" theme, linked instead on the uw profile
+themes/aurora.toml     starship theme, linked as ~/.config/starship.toml
+themes/waterloo-gold.toml   linked instead on the uw profile (bt theme edits whichever is linked)
+blerc                  ble.sh settings, linked as ~/.blerc
 legacy/                the old single-file uw_bashrc and TrueNAS zshrc (reference only)
 bashrc.local.example   template for ~/.bashrc.local (secrets, ssh hosts — never committed)
 install.sh             install / --update / --deps-only / --uninstall
+tests/smoke.sh         parse + shellcheck + start every profile in a sandbox and call the functions
+.shellcheckrc          repo-wide shellcheck settings (the code is shellcheck-clean)
 docs/                  ARCHITECTURE, FEATURES, SETUP, AUDIT
 ```
 
@@ -72,11 +75,16 @@ zoxide (`z`, `zi`) is off everywhere unless you install with `--with-zoxide` or 
 ## Daily use
 
 ```bash
-bt            # edit lib/aliases.sh        bt pi / bt system / bt local / bt config
+bt            # edit lib/aliases.sh        bt pi / bt system / bt local / bt config / bt readme
+              # on save: bash -n, then the profile is reloaded in this shell
+bgit status   # git inside the repo from anywhere: bgit add -A && bgit commit -m … && bgit push
 reload        # re-source ~/.bashrc
-bup           # git pull + reload
+bup           # install.sh --update: git pull, relink, add new toggles to the config, reload
 prereqs       # (re)install this profile's dependencies    prereqs --with-dev
-BASHRC_TIMING=1 bash -i     # how long does startup take?
+prereqs --upgrade   # refresh ble.sh nightly / starship / fzf / zoxide to their latest
+bash "$BASHRC_PROFILE_DIR/tests/smoke.sh"   # before committing: every profile still loads and works
+BASHRC_TIMING=1 bash -i                     # how long does startup take?
+BASHRC_PROFILE=pi BASHRC_BLESH=0 bash -i    # try another profile / toggle without editing anything
 ```
 
 Secrets and host-specific aliases (ssh shortcuts, RCON password, Cloudflare tunnel

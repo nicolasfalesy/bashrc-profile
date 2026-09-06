@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/prompt.sh — fastfetch, fzf, starship, zoxide, ble.sh. Loaded last.
+# lib/prompt.sh — fastfetch, fzf, starship, zoxide, ble-attach. Loaded last.
 #
 # Speed: `starship init` and `zoxide init` each spawn a process that just prints
 # a shell script. That output is cached in ~/.cache/bashrc-profile and rebuilt
@@ -7,6 +7,16 @@
 # The starship script is also patched so the shell's own $EPOCHREALTIME replaces
 # the `starship time` subprocess it would otherwise run before and after every
 # command (two forks per prompt on a Pi).
+#
+# Quirks:
+#   • starship replaces PROMPT_COMMAND with `starship_precmd` and runs whatever was
+#     there before (our `history -a` from lib/core.sh) from $STARSHIP_PROMPT_COMMAND.
+#     Don't "fix" PROMPT_COMMAND after this file — append to it before it instead.
+#   • With ble.sh attached, ble.sh owns history writing (bleopt history_share in
+#     blerc) and PROMPT_COMMAND is unset *during* command execution — a function
+#     that reads $PROMPT_COMMAND at runtime will see it empty. Normal.
+#   • Anything that must not run twice on `reload` needs its own guard; the cache
+#     helper is naturally idempotent, ble-attach is a no-op when already attached.
 
 [[ -d $BASHRC_CACHE_DIR ]] || command mkdir -p "$BASHRC_CACHE_DIR" 2>/dev/null
 
@@ -28,6 +38,7 @@ _bashrc_patch_starship() {   # <file> <starship-path>
     local ps2
     ps2=$("$2" prompt --continuation 2>/dev/null)
     {
+        # shellcheck disable=SC2016  # the $ in this banner is meant literally
         printf '# patched by bashrc-profile: literal PS2, $EPOCHREALTIME instead of `starship time`\n'
         sed -e "s|\"\$($2 prompt --continuation)\"|'${ps2//\'/\'\\\'\'}'|" \
             -e "s|\$($2 time)|\$(( \${EPOCHREALTIME/./} / 1000 ))|g" \
@@ -36,11 +47,13 @@ _bashrc_patch_starship() {   # <file> <starship-path>
 }
 
 # ── fastfetch on new terminals (toggle: BASHRC_FASTFETCH in bt config) ───────
+# Only top-level terminals (not tmux panes, not `bash` typed inside bash).
 if [[ $BASHRC_FASTFETCH == 1 && -z ${TMUX-} && $SHLVL -le 2 ]] && hash fastfetch 2>/dev/null; then
     fastfetch
 fi
 
 # ── fzf: Ctrl-R history, Ctrl-T files, Alt-C cd ──────────────────────────────
+# completion.bash (the `vim **<Tab>` feature) costs ~25 ms, so it is opt-in.
 export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
 if [[ $BASHRC_BLESH == 1 && -n ${BLE_VERSION-} ]]; then
     ble-import -d integration/fzf-key-bindings
@@ -63,11 +76,13 @@ fi
 
 # ── zoxide: z <dir>, zi (interactive) — opt-in: BASHRC_ZOXIDE=1 in bt config ─
 if [[ $BASHRC_ZOXIDE == 1 ]] && _bashrc_cached_init zoxide zoxide zoxide init bash; then
-    __zoxide_cd() { cd "$@"; }     # route z/zi through our auto-listing cd
+    __zoxide_cd() { cd "$@" || return; }     # route z/zi through our auto-listing cd
 fi
 
 # ── ble.sh: attach (sourced with --noattach at the top of bashrc) ────────────
 [[ $BASHRC_BLESH == 1 && -n ${BLE_VERSION-} ]] && ble-attach
 
+# Startup-only helpers. (_bashrc_cached_init stays: bup clears the cache and
+# a reload rebuilds it.)
 unset -f _path_prepend _path_append
 return 0
