@@ -373,7 +373,8 @@ link_files() {
         info "creating ~/.profile so login shells load ~/.bashrc"
         (( DRY )) || printf '# ~/.profile\n[ -n "$BASH_VERSION" ] && [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n' > "$HOME/.profile"
     elif [[ -f $HOME/.profile ]] && ! grep -q 'bashrc' "$HOME/.profile"; then
-        warn "~/.profile never sources ~/.bashrc — add:  [ -f ~/.bashrc ] && . ~/.bashrc"
+        info "~/.profile exists but never sources ~/.bashrc — appending the standard snippet"
+        (( DRY )) || printf '\n# added by bashrc-profile: login shells load ~/.bashrc\n[ -n "$BASH_VERSION" ] && [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n' >> "$HOME/.profile"
     fi
 }
 
