@@ -1,5 +1,7 @@
 # bashrc-profile
 
+[![smoke](https://github.com/nicolasfalesy/bashrc-profile/actions/workflows/smoke.yml/badge.svg)](https://github.com/nicolasfalesy/bashrc-profile/actions/workflows/smoke.yml)
+
 A modular bash configuration for every machine I touch — a Raspberry Pi 4 (Docker host),
 a TrueNAS SCALE box, a laptop, and the odd Debian server — with one installer that
 knows which machine it is on and what that machine needs.
@@ -45,6 +47,7 @@ legacy/                the old single-file uw_bashrc and TrueNAS zshrc (referenc
 bashrc.local.example   template for ~/.bashrc.local (secrets, ssh hosts — never committed)
 install.sh             install / --update / --deps-only / --uninstall
 tests/smoke.sh         parse + shellcheck + start every profile in a sandbox and call the functions
+.github/workflows/     CI: runs tests/smoke.sh and an installer dry run on every push
 .shellcheckrc          repo-wide shellcheck settings (the code is shellcheck-clean)
 docs/                  ARCHITECTURE, FEATURES, SETUP, AUDIT
 ```
