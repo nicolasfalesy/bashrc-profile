@@ -1,24 +1,22 @@
-# ble.sh performance config for Raspberry Pi / SSH
-# Disable syntax highlighting (biggest CPU hog in ble.sh)
-ble-face -s syntax_default none
-ble-face -s syntax_command none
-ble-face -s syntax_quoted none
-ble-face -s syntax_error none
-ble-face -s syntax_comment none
+# ~/.blerc — ble.sh tuning (linked from the bashrc-profile repo).
+# Goal on a Pi: keep syntax highlighting (commands green, errors red, paths
+# underlined), drop the per-keystroke work that burns CPU over ssh.
 
-bleopt highlight_syntax=
-bleopt highlight_filename=
-bleopt highlight_variable=
+# Syntax highlighting: ON (this is the "green when the command exists" feature)
+bleopt highlight_syntax=1
+bleopt highlight_filename=1
+bleopt highlight_variable=1
 
-# Disable auto-suggestions (history lookups on every keystroke)
+# Auto-suggestions from history on every keystroke: OFF (CPU hog on a Pi).
+# Set to 1 on a desktop if you like fish-style grey suggestions.
 bleopt complete_auto_complete=
 bleopt complete_auto_history=
 
-# Disable auto-menu popup
+# Don't pop the completion menu automatically
 bleopt complete_menu_complete=
 bleopt complete_ambiguous=
 
-# Reduce highlight timeout
+# Re-highlight less aggressively while typing
 bleopt syntax_eval_polling_interval=50
 
-# Keep: line editing, history search (ctrl-r), and tab completion
+# Keep: line editing, Ctrl-R history search (fzf), Tab completion
