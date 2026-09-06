@@ -29,6 +29,6 @@ bleopt history_share=1                # commands from other terminals show up im
 bleopt history_lazyload=1
 
 # ── Misc
-bleopt edit_abell=1                   # flash instead of beep
+bleopt edit_bell=abell                # flash instead of beep
 bleopt exec_errexit_mark=$'\e[91m[exit %d]\e[m'   # the red "[exit N]" line after a failed command
 bleopt prompt_eol_mark=$'\e[94m⏎\e[m'  # marks output that lacked a final newline
