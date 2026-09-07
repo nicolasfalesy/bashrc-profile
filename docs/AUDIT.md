@@ -100,7 +100,8 @@ Where it went: bash-completion 35 ms → deferred to first Tab; `zoxide init` 35
 
 The starship "Aurora" theme and `blerc` tuning, the C toolchain (`ru`…`mkt`) verbatim,
 the git/systemd alias sets, `cd` auto-listing (now capped at 200 entries),
-`rm → trash`, the `claude --dangerously-skip-permissions` alias (Pi only).
+`rm → trash`, the `claude --dangerously-skip-permissions` alias (moved out of
+`profiles/pi.sh` into `lib/aliases.sh` — it applies to every machine).
 
 ## Merged from GitHub afterwards (September 2026)
 

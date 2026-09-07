@@ -84,6 +84,12 @@ are in the docker group)
 | `dps` | `docker ps` as a names/status/ports table |
 | `dprune` | `docker system prune -f` |
 
+**Claude Code** *(when `claude` is on PATH)*
+
+| Command | Does |
+|---------|------|
+| `claude` | `claude --dangerously-skip-permissions` — every machine here is Nico's own; use `\claude` or `command claude` for one run with the prompts back |
+
 **This profile**
 
 | Command | Does |
@@ -160,7 +166,6 @@ are in the docker group)
 | `temp` | CPU temperature + decoded `vcgencmd get_throttled` bits (under-voltage, capped, throttled — now and since boot) *(raspi-utils)* |
 | `wt` | `watch` temperature + throttle flags every second |
 | `cloud <sub>` | edit `/etc/cloudflared/config.yml`, add DNS route `sub.$CF_DOMAIN` to tunnel `$CF_TUNNEL`, restart cloudflared |
-| `claude` | `claude --dangerously-skip-permissions` (headless box) |
 | `sys` extra | throttle status line |
 
 ## Profile: nas (profiles/nas.sh — TrueNAS SCALE)

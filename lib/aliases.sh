@@ -110,6 +110,14 @@ if hash docker 2>/dev/null; then
     unset _dk
 fi
 
+# ── Claude Code ──────────────────────────────────────────────────────────────
+# Every box this profile runs on is a personal machine Nico already trusts, so
+# the permission prompt is pure friction. `\claude` or `command claude` still
+# gets the un-aliased binary when you want the prompts back for one run.
+if hash claude 2>/dev/null; then
+    alias claude='claude --dangerously-skip-permissions'
+fi
+
 # ── This profile ─────────────────────────────────────────────────────────────
 alias reload='source ~/.bashrc && echo "🚀 bash profile reloaded"'
 if hash fastfetch 2>/dev/null; then alias fetch='fastfetch'; fi
