@@ -60,8 +60,3 @@ HELP
     cloudflared tunnel route dns "$CF_TUNNEL" "$host" || return
     sudo systemctl restart cloudflared && echo "🚀 $host routed through tunnel '$CF_TUNNEL'; cloudflared restarted"
 }
-
-# Claude Code on a headless Pi: skip the permission prompts.
-if hash claude 2>/dev/null; then
-    alias claude='claude --dangerously-skip-permissions'
-fi
