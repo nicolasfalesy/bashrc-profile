@@ -62,6 +62,10 @@ _t "cpy -h"      cpy -h
 _t "pst -h"      pst -h
 _clip_rt() { local BASHRC_CLIP_BACKEND=file; cpy "smoke-clip" && [[ $(pst) == smoke-clip ]]; }
 _t "cpy/pst"     _clip_rt
+# a paste that never arrives must fail fast and leave the clipboard untouched
+_clip_np() { local BASHRC_CLIP_BACKEND=file BASHRC_CLIP_PASTE_WAIT=1
+             cpy "keep-me"; cpy -p; (( $? == 1 )) && [[ $(pst) == keep-me ]]; }
+_t "cpy -p safe" _clip_np
 _t "sys"         sys
 _t "psg"         psg bash
 _t "port -h"     port -h

@@ -3,6 +3,8 @@
 #
 #   cat notes.txt | cpy        cpy "some text"        cpy < notes.txt
 #   pst                        pst > notes.txt        cpy -c   (clear)
+#   cpy -p                     then Ctrl+Shift+V — catch a paste, for terminals
+#                              that refuse to be read (Windows Terminal, WezTerm)
 #
 # Backends, tried in this order (force one with BASHRC_CLIP_BACKEND):
 #   wayland   wl-copy / wl-paste        when $WAYLAND_DISPLAY is set
@@ -32,6 +34,8 @@
 #   BASHRC_CLIP_MAX       largest base64 payload pushed through OSC 52, in bytes
 #                         (default 74994 — xterm's cap; 0 = no limit)
 #   BASHRC_CLIP_TIMEOUT   seconds to wait for the terminal's OSC 52 reply (default 0.5)
+#   BASHRC_CLIP_PASTE_WAIT  seconds `cpy -p` waits for a paste to start (default 15)
+#   BASHRC_CLIP_PASTE_IDLE  tenths of a second of silence that end a `cpy -p` capture (default 2)
 
 # The spool: what cpy last copied on THIS host. Also the only thing pst can
 # return when the terminal refuses to be read.
@@ -102,9 +106,36 @@ _clip_osc52_read() (
     printf '%s' "$b64" | base64 "$(_clip_b64d_flag)" 2>/dev/null
 )
 
+# Read a paste straight off the terminal. This is the answer for terminals that
+# implement the OSC 52 write but refuse the read — Windows Terminal, WezTerm —
+# where pst can never fetch the laptop's clipboard: instead of asking for it, we
+# let the terminal type it at us.
+#
+# Two things here are not obvious and both were found the hard way:
+#   • bash's own `read` builtin CANNOT be used. Reading the same raw terminal,
+#     `dd` sees "A \r \n B" and `read -rs -N` sees "A \n \n" — it rewrites CR as
+#     LF. A Windows clipboard arrives as CRLF, so every line came out doubled.
+#   • the waiting is left to the terminal driver rather than a bash timeout:
+#     `min 0 time N` makes a read return after N tenths of a second of silence,
+#     which is exactly "the paste has stopped", and a 0-byte read is EOF to cat.
+# Output is the raw bytes on stdout; the caller decides whether anything came.
+_clip_slurp() (
+    local old first=${BASHRC_CLIP_PASTE_WAIT:-15} idle=${BASHRC_CLIP_PASTE_IDLE:-2} t
+    t=$(( first * 10 ))                      # termios counts tenths, and caps at 255
+    (( t > 255 )) && t=255; (( t < 1 )) && t=1
+    exec 3<>/dev/tty 2>/dev/null || return 1
+    old=$(stty -g <&3 2>/dev/null) || return 1
+    # shellcheck disable=SC2064  # $old must expand now, while the subshell still has it
+    trap "stty $old <&3 2>/dev/null" EXIT
+    stty raw -echo min 0 time "$t" <&3 2>/dev/null || return 1
+    dd bs=4096 count=1 <&3 2>/dev/null       # the first chunk, however long he takes
+    stty min 0 time "$idle" <&3 2>/dev/null  # then stop 0.2 s after it goes quiet
+    command cat <&3
+)
+
 # cpy [-n] [--] [text...]   — stdin, or the arguments, to the clipboard.
 cpy() {
-    local strip=0 f b64 backend bytes rc=0
+    local strip=0 paste=0 f b64 backend bytes rc=0 caught
     while (( $# )); do
         case $1 in
             -h|--help)
@@ -112,9 +143,13 @@ cpy() {
 Copy to the clipboard — the real one, even over SSH (OSC 52).
 
 Usage: cpy [-n] [--] [TEXT...]     no TEXT = read stdin
+       cpy -p                      catch a paste from your terminal
        cpy -c                      clear the clipboard
 
   -n, --no-newline   drop trailing newlines from stdin
+  -p, --paste        wait, then store whatever you paste (Ctrl+Shift+V) — this is
+                     how you get your laptop's clipboard onto this box when the
+                     terminal refuses to be read. Then use pst as normal.
   -c, --clear        clear the clipboard and the local spool
   --                 end of options (copy text that starts with -)
 
@@ -122,6 +157,7 @@ Examples:
   cat notes.txt | cpy          cpy < notes.txt
   cpy "ssh nico@nas"           docker logs plex 2>&1 | tail -50 | cpy
   ip -4 a | cpy -n
+  cpy -p                       then Ctrl+Shift+V, then: pst > thing.txt
 
 Paste it back with pst. See the top of lib/clipboard.sh (bt clipboard) for the
 backends and for enabling remote paste in your terminal.
@@ -134,6 +170,7 @@ HELP
                 [[ -t 2 ]] && echo "cpy: clipboard cleared 📋" >&2
                 return 0 ;;
             -n|--no-newline) strip=1; shift ;;
+            -p|--paste)      paste=1; shift ;;
             --) shift; break ;;
             -*) echo "cpy: unknown option '$1' (cpy -h)" >&2; return 1 ;;
             *)  break ;;
@@ -145,11 +182,34 @@ HELP
     # to, and it is what gets base64'd for the terminal.
     f=$(_clip_file)
     command mkdir -p -- "${f%/*}" 2>/dev/null
+    # Catch the paste BEFORE touching the spool, and straight into a file rather
+    # than through $(…) — command substitution eats trailing newlines, and a
+    # mistimed paste must not wipe what was already on the clipboard.
+    if (( paste )); then
+        caught=$(mktemp "${TMPDIR:-/tmp}/cpy.XXXXXX") || return 1
+        [[ -t 2 ]] && printf 'cpy: paste now (Ctrl+Shift+V)… ' >&2
+        _clip_slurp > "$caught"
+        if [[ ! -s $caught ]]; then
+            [[ -t 2 ]] && echo "nothing arrived ❌" >&2
+            command rm -f -- "$caught"; return 1
+        fi
+        # A terminal sends CR for every line break and Windows pastes CRLF. The
+        # trailing X is a guard: $(…) strips trailing newlines, which would make
+        # `cpy -p; pst > file` lose the file's last newline.
+        local d; d=$(command cat -- "$caught"; printf X); d=${d%X}
+        d=${d//$'\033'\[200~/}; d=${d//$'\033'\[201~/}   # bracketed-paste markers, if any
+        d=${d//$'\r\n'/$'\n'}; d=${d//$'\r'/$'\n'}
+        printf '%s' "$d" > "$caught"
+        [[ -t 2 ]] && echo "caught ✅" >&2
+    fi
     ( umask 077; : > "$f"; ) || { echo "cpy: cannot write $f" >&2; return 1; }
-    if (( $# )); then printf '%s' "$*" > "$f"; else command cat > "$f"; fi
+    if (( paste )); then command cat -- "$caught" > "$f"; command rm -f -- "$caught"
+    elif (( $# )); then printf '%s' "$*" > "$f"
+    else command cat > "$f"; fi
     if (( strip )); then local d; d=$(command cat -- "$f"); printf '%s' "$d" > "$f"; fi
 
     backend=$(_clip_backend)
+    (( paste )) && backend="file"    # it came from the clipboard; no point sending it back
     case $backend in
         wayland) wl-copy < "$f" || rc=1 ;;
         x11)     if hash xclip 2>/dev/null; then xclip -selection clipboard -i "$f" || rc=1
@@ -189,8 +249,12 @@ Usage: pst              print it
        pst > file       write it            pst | jq .
 
 Over SSH pst asks the terminal for its clipboard (OSC 52). Most terminals ship
-that read disabled, and then pst returns whatever cpy last copied on this host
-instead. Enabling it: see the top of lib/clipboard.sh (bt clipboard).
+that read disabled — Windows Terminal and WezTerm will never implement it — and
+then pst returns whatever cpy last copied on this host instead.
+
+To get your laptop's clipboard here on one of those: run `cpy -p`, press
+Ctrl+Shift+V, and pst returns it from then on. Terminals that CAN be read are
+listed at the top of lib/clipboard.sh (bt clipboard).
 HELP
             return 0 ;;
     esac
@@ -204,7 +268,7 @@ HELP
         # Say why once per shell, then stay quiet — this is the normal SSH case.
         if [[ -t 2 && -z ${_CLIP_FELLBACK-} && $(_clip_backend) == osc52 ]]; then
             _CLIP_FELLBACK=1
-            echo "pst: terminal won't be read (normal) — returning what cpy last copied here. pst -h 📋" >&2
+            echo "pst: terminal won't be read (normal) — returning what cpy last copied here. For your laptop's clipboard: cpy -p 📋" >&2
         fi
     else
         command rm -f -- "$tmp"
@@ -219,6 +283,6 @@ HELP
 }
 _cpy_completions() {
     local cur=${COMP_WORDS[COMP_CWORD]}
-    [[ $cur == -* ]] && COMPREPLY=($(compgen -W '-h --help -n --no-newline -c --clear' -- "$cur"))
+    [[ $cur == -* ]] && COMPREPLY=($(compgen -W '-h --help -n --no-newline -p --paste -c --clear' -- "$cur"))
 }
 complete -F _cpy_completions cpy

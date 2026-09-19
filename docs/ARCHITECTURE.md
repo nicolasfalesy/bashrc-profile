@@ -197,7 +197,11 @@ the spool file instead of a shell variable: command substitution eats trailing n
 so `cat f | cpy; pst > f2` would not have been byte-exact. `_clip_osc52_read` runs in a
 subshell with an `EXIT` trap that drains the terminal and restores `stty` — raw mode left
 on wedges the shell, and a reply that arrives after the timeout would otherwise be typed
-into the next prompt.
+into the next prompt. `_clip_slurp` (`cpy -p`) exists because Windows Terminal and WezTerm
+refuse that read permanently, so the clipboard has to be *typed* at us instead; it reads
+with `dd`/`cat` rather than the `read` builtin, because `read` rewrites CR as LF on a
+terminal and a Windows clipboard arrives as CRLF, and it lets `stty min 0 time N` decide
+when the paste has stopped instead of timing the loop in bash.
 
 `lib/system.sh` — `sys` reads `/proc/stat` twice, 0.5 s apart, and computes the
 *delta* (the old version divided cumulative counters, i.e. average since boot). Memory

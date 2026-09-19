@@ -144,6 +144,7 @@ escape sequence, so it lands on the laptop's real clipboard.
 | `cpy [TEXT...]` | copy the arguments, or stdin when there are none: `cat notes.txt \| cpy` |
 | `cpy -n` | same, minus trailing newlines |
 | `cpy -c` | clear the clipboard and the local spool |
+| `cpy -p` | **wait for a paste** (Ctrl+Shift+V) and store it — see below |
 | `pst` | paste to stdout — `pst > file`, `pst \| jq .` |
 
 Backend, picked per call: `wl-copy` (Wayland) → `xclip`/`xsel` (X11, including
@@ -162,7 +163,38 @@ same host always round-trips. To get a true remote paste, allow the read:
 | kitty | `clipboard_control write-clipboard write-primary read-clipboard` |
 | iTerm2 | Settings → General → Selection → "Applications may access clipboard" |
 | xterm | `XTerm*disallowedWindowOps: 20,21,SetXprop` |
-| WezTerm, Windows Terminal | write only — no read support |
+| WezTerm, Windows Terminal | write only — **no read, ever** (deliberate; use `cpy -p`) |
+
+### `cpy -p` — paste into the clipboard
+
+For the terminals that will never allow the read. Run `cpy -p`, press Ctrl+Shift+V,
+and it captures what the terminal types at it:
+
+```bash
+cpy -p          # "paste now (Ctrl+Shift+V)…"  → "caught ✅"
+pst > token.txt # and now pst returns it, here and in every later shell
+```
+
+`compatibility.allowOSC52` in Windows Terminal's `settings.json` controls the *copy*
+half and already defaults to `true`, so `cpy` works there with no configuration.
+
+Two implementation notes, both found the hard way and both load-bearing:
+
+- **bash's `read` builtin cannot be used to capture a paste.** Reading the same raw
+  terminal, `dd` sees `A \r \n B` where `read -rs -N` sees `A \n \n` — it rewrites CR
+  as LF. A Windows clipboard arrives as CRLF, so every line came out doubled.
+- **The terminal must be in raw mode *before* the paste arrives.** Otherwise the
+  driver's own CR→LF translation fires first and CRLF becomes two newlines. This is
+  why there is no reliable one-keystroke binding: anything that types `cpy -p` and
+  pastes in the same action loses the race and double-spaces multi-line pastes.
+  Binding a key to *type the command only* is safe:
+
+```json
+{ "keys": "ctrl+alt+v",
+  "command": { "action": "sendInput", "input": "cpy -p\r" } }
+```
+
+  then press Ctrl+Shift+V as normal.
 
 ## System (lib/system.sh)
 
@@ -267,6 +299,8 @@ without touching the config file.
 | `BASHRC_CLIP_FILE` | `$BASHRC_CACHE_DIR/clipboard` | the `cpy` spool (mode 0600) |
 | `BASHRC_CLIP_MAX` | 74994 | largest base64 payload pushed through OSC 52; `0` = no limit |
 | `BASHRC_CLIP_TIMEOUT` | 0.5 | seconds `pst` waits for the terminal's OSC 52 reply |
+| `BASHRC_CLIP_PASTE_WAIT` | 15 | seconds `cpy -p` waits for a paste to start (capped at 25) |
+| `BASHRC_CLIP_PASTE_IDLE` | 2 | tenths of a second of silence that end a `cpy -p` capture |
 | `RCON_IP`, `RCON_PORT`, `RCON_PASS` | – | Minecraft RCON |
 | `CF_TUNNEL`, `CF_DOMAIN` | – | Cloudflare tunnel name and zone (`cloud`) |
 | `ZPOOL` | tank | pool for the nas profile |
