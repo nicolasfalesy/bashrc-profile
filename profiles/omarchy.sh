@@ -50,9 +50,15 @@ export STARSHIP_CONFIG="$BASHRC_PROFILE_DIR/themes/aurora.toml"
 # Safe to run twice: `reload` re-sources Omarchy's rc chain first, which puts the
 # original function back, and the grep guard skips a wrapper we already made.
 _omarchy_rename_fn() {   # <old> <new>
+    # Already moved (a reload re-sourced Omarchy's rc, which put the original
+    # back): just drop the duplicate. This is the common path and costs nothing.
+    if declare -F "$2" >/dev/null 2>&1; then unset -f "$1" 2>/dev/null; return 0; fi
     declare -F "$1" >/dev/null 2>&1 || return 0
-    declare -f "$1" | grep -q -- "$2" && return 0
-    eval "$2$(declare -f "$1" | sed "1s/^$1//")" && unset -f "$1"
+    # One command substitution, and bash's own prefix-strip instead of piping
+    # through grep and sed — this runs on every new shell, so three renames used
+    # to mean nine forked processes before the prompt appeared.
+    local body; body=$(declare -f "$1")
+    eval "$2${body#"$1"}" && unset -f "$1"
     return 0
 }
 
