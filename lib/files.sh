@@ -36,7 +36,7 @@ ftext() {
             echo "Usage: ftext <pattern>   — case-insensitive recursive search, paged (ripgrep if available)"
             return 0 ;;
     esac
-    if hash rg 2>/dev/null; then
+    if command -v rg >/dev/null 2>&1; then
         rg -in --color=always --no-heading -- "$1" . | less
     else
         command grep -iIHrn --color=always -- "$1" . | less

@@ -13,7 +13,7 @@
 # Exit status is non-zero on any failure, so this can run in CI or before a commit.
 set -uo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-profiles=("$@"); (( ${#profiles[@]} )) || profiles=(pi nas desktop uw server)
+profiles=("$@"); (( ${#profiles[@]} )) || profiles=(pi nas desktop omarchy uw server)
 fail=0
 red=$'\033[0;31m' green=$'\033[0;32m' dim=$'\033[2m' n=$'\033[0m'
 [[ -t 1 ]] || red='' green='' dim='' n=''

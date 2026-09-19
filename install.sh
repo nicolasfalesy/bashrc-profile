@@ -6,11 +6,12 @@
 #  bash install.sh [options]              (from a clone)
 #
 #  What it does
-#    1. detects the machine profile (pi / nas / desktop / uw / server) — or takes --profile
+#    1. detects the machine profile (pi / nas / desktop / omarchy / uw / server) — or takes --profile
 #    2. gets the repo (uses the clone you ran it from, else clones to ~/.local/share/bashrc-profile)
 #    3. installs every dependency the profile uses (system packages where apt works,
 #       user-local binaries where it doesn't — e.g. TrueNAS)
 #    4. backs up and symlinks ~/.bashrc, ~/.config/starship.toml, ~/.blerc
+#       (profile "omarchy": layered instead — see link_layered)
 #    5. writes ~/.config/bashrc-profile/config and seeds ~/.bashrc.local
 #    6. verifies the result by starting a real interactive shell
 #
@@ -87,6 +88,7 @@ Modes (default: full install)
   --deps-only          only install/refresh dependencies for the profile
   --update             git pull, relink, add new toggles to the config, clear caches (what bup runs)
   --uninstall          remove symlinks, restore the newest ~/.bashrc backup
+                       (profile "omarchy": strips the appended block instead)
 
 Options
   --profile <p>        pi | nas | desktop | uw | server | auto   (default: auto)
@@ -109,7 +111,7 @@ USAGE
 
 while (( $# )); do
     case $1 in
-        --profile)      [[ -n ${2-} ]] || die "--profile needs a value (pi|nas|desktop|uw|server|auto)"; PROFILE=$2; shift ;;
+        --profile)      [[ -n ${2-} ]] || die "--profile needs a value (pi|nas|desktop|omarchy|uw|server|auto)"; PROFILE=$2; shift ;;
         --profile=*)    PROFILE=${1#*=} ;;
         --deps-only)    MODE=deps ;;
         --update)       MODE=update ;;
@@ -130,7 +132,7 @@ while (( $# )); do
     esac
     shift
 done
-case $PROFILE in pi|nas|desktop|uw|server|auto) ;; *) die "--profile must be pi, nas, desktop, uw, server or auto" ;; esac
+case $PROFILE in pi|nas|desktop|omarchy|uw|server|auto) ;; *) die "--profile must be pi, nas, desktop, omarchy, uw, server or auto" ;; esac
 
 # ── 1. Detect environment ────────────────────────────────────────────────────
 detect_profile() {
@@ -139,7 +141,7 @@ detect_profile() {
         PROFILE=$(sed -n 's/^BASHRC_PROFILE=//p' "$CONFIG_DIR/config" | tr -d '"'"'")
         PROFILE=${PROFILE%%#*}; PROFILE=${PROFILE//[[:space:]]/}   # drop the trailing "# pi | nas | …" comment
         case $PROFILE in
-            pi|nas|desktop|uw|server) info "profile from existing config: $PROFILE"; return ;;
+            pi|nas|desktop|omarchy|uw|server) info "profile from existing config: $PROFILE"; return ;;
             *) warn "config has an unknown profile '$PROFILE' — autodetecting"; PROFILE=auto ;;
         esac
     fi
@@ -147,6 +149,7 @@ detect_profile() {
     [[ -r /proc/device-tree/model ]] && read -r model < /proc/device-tree/model
     if [[ $model == *"Raspberry Pi"* ]]; then PROFILE=pi
     elif [[ -d /usr/share/truenas || -x /usr/bin/midclt ]]; then PROFILE=nas
+    elif [[ -d /usr/share/omarchy ]]; then PROFILE=omarchy
     elif [[ -n ${DISPLAY-} || -n ${WAYLAND_DISPLAY-} ]]; then PROFILE=desktop
     elif [[ $HOSTNAME == *uwaterloo* ]] || grep -qsE '^(search|domain).*uwaterloo\.ca' /etc/resolv.conf; then PROFILE=uw
     else PROFILE=server; fi
@@ -221,6 +224,9 @@ CORE_PKGS=(bash-completion curl git wget tree ripgrep:rg neovim:nvim trash-cli:t
            unzip p7zip-full:7z xz-utils:xz zstd gawk iproute2:ss fzf starship)
 PI_PKGS=(nala raspi-utils:vcgencmd wireguard-tools:wg)
 DESKTOP_PKGS=(alacritty xclip wl-clipboard:wl-copy wireguard-tools:wg fonts-noto-color-emoji desktop-file-utils:update-desktop-database)
+# Omarchy already ships eza, zoxide, fzf, starship, bat, ripgrep, neovim, tmux,
+# fastfetch, btop and wl-clipboard. This is only what it does not have.
+OMARCHY_PKGS=(tree trash-cli:trash 7zip:7z unrar wireguard-tools:wg desktop-file-utils:update-desktop-database)
 DEV_PKGS=(gcc make gdb valgrind clang)
 
 declare -a INSTALLED=() SKIPPED=() FAILED=() UPGRADED=()
@@ -230,6 +236,31 @@ declare -a INSTALLED=() SKIPPED=() FAILED=() UPGRADED=()
 is_user_local() { local p; p=$(command -v "$1" 2>/dev/null) && [[ $p == "$HOME"/.local/bin/* || $p == "$HOME"/.fzf/* ]]; }
 # note_upgrade <name> <old> <new> — record the result of a refresh for the summary
 note_upgrade() { if [[ $2 == "$3" ]]; then SKIPPED+=("$1 $3 (latest)"); else UPGRADED+=("$1 $2 → $3"); fi; }
+
+# pkg_translate <pkg> — the lists above are written with Debian names, because
+# that is what most of these machines run. Arch spells a few of them differently;
+# an empty result means "no equivalent, skip it".
+pkg_translate() {
+    [[ $PKG == pacman ]] || { printf '%s' "$1"; return 0; }
+    case $1 in
+        p7zip-full)             printf 7zip ;;
+        xz-utils)               printf xz ;;
+        fonts-noto-color-emoji) printf noto-fonts-emoji ;;
+        nala)                   printf '' ;;      # apt front-end: nothing to install
+        *)                      printf '%s' "$1" ;;
+    esac
+}
+
+# pkg_skipped <pkg> — a CORE_PKGS entry this profile deliberately does not want,
+# because the machine already has an equivalent. Nothing in this repo calls either
+# of these; `ni htop` / `ni wget` any time you disagree.
+pkg_skipped() {
+    case $PROFILE:$1 in
+        omarchy:htop) return 0 ;;   # Omarchy ships btop; profiles/omarchy.sh aliases htop→btop
+        omarchy:wget) return 0 ;;   # curl is what the code actually uses, and it is installed
+        *)            return 1 ;;
+    esac
+}
 
 pkg_installed() {   # <pkg>
     case $PKG in
@@ -269,6 +300,9 @@ install_pkgs() {
     local spec pkg cmd want=() missing_repo=()
     for spec in "$@"; do
         pkg=${spec%%:*}; cmd=${spec#*:}; [[ $spec == *:* ]] || cmd=$pkg
+        pkg=$(pkg_translate "$pkg") || true
+        [[ -n $pkg ]] || continue                 # no equivalent on this distro
+        if pkg_skipped "$pkg"; then SKIPPED+=("$pkg (not wanted on $PROFILE)"); continue; fi
         if have "$cmd" || pkg_installed "$pkg"; then
             SKIPPED+=("$pkg")
         elif pkg_available "$pkg"; then
@@ -413,6 +447,7 @@ install_dependencies() {
         case $PROFILE in
             pi)      install_pkgs "pi" "${PI_PKGS[@]}" ;;
             desktop) install_pkgs "desktop" "${DESKTOP_PKGS[@]}" ;;
+            omarchy) install_pkgs "omarchy" "${OMARCHY_PKGS[@]}" ;;
         esac
         (( WITH_DEV ))    && install_pkgs "dev" "${DEV_PKGS[@]}"
         (( WITH_ZOXIDE )) && install_pkgs "zoxide" zoxide
@@ -457,8 +492,36 @@ link() {
     run ln -s "$src" "$dst" && ok "$dst → $src"
 }
 
+# link_layered — the Omarchy profile. Omarchy owns ~/.bashrc and ships its own
+# ~/.config/starship.toml, so nothing is replaced: a marked block is appended to
+# ~/.bashrc (idempotent, and what --uninstall removes), and the starship theme is
+# selected with STARSHIP_CONFIG from profiles/omarchy.sh rather than by symlink.
+link_layered() {
+    local rc="$HOME/.bashrc"
+    if grep -qF 'bashrc-profile: BEGIN' "$rc" 2>/dev/null; then
+        ok "~/.bashrc already sources the profile"
+    elif (( DRY )); then
+        printf '%s[dry-run]%s append the bashrc-profile block to %s\n' "$Y" "$N" "$rc"
+    else
+        cp "$rc" "$rc.bak.$TS" && ok "backed up ~/.bashrc → ~/.bashrc.bak.$TS"
+        cat >> "$rc" <<EOF
+
+# --- bashrc-profile: BEGIN (layered under Omarchy) ---
+# Omarchy's own defaults are sourced above; this adds my profile on top of them.
+# Every name both sides define is settled in profiles/omarchy.sh.
+# To revert the whole integration: delete this block (or install.sh --uninstall).
+[[ -r "$REPO_DIR/bashrc" ]] && source "$REPO_DIR/bashrc"
+# --- bashrc-profile: END ---
+EOF
+        ok "~/.bashrc now sources $REPO_DIR/bashrc"
+    fi
+    link "$REPO_DIR/blerc" "$HOME/.blerc"
+    info "~/.config/starship.toml left as Omarchy shipped it — profiles/omarchy.sh sets STARSHIP_CONFIG"
+}
+
 link_files() {
     step "Linking files"
+    if [[ $PROFILE == omarchy ]]; then link_layered; return; fi
     # Starship theme: themes/aurora.toml everywhere, themes/waterloo-gold.toml on the
     # UW servers. A theme already linked from themes/ is kept (you picked it by hand).
     local theme=themes/aurora.toml current
@@ -488,13 +551,16 @@ link_files() {
 # appends it to existing configs without touching the values already there.
 config_lines() {
     local ff=0; [[ $PROFILE == desktop ]] && ff=1
+    # Omarchy loads bash-completion eagerly in its own rc, so lib/core.sh's lazy
+    # loader is a no-op there; say so in the file rather than implying it is live.
+    local lazy=1; [[ $PROFILE == omarchy ]] && lazy=0
     cat <<CFG
-BASHRC_PROFILE=$PROFILE      # pi | nas | desktop | uw | server
+BASHRC_PROFILE=$PROFILE      # pi | nas | desktop | omarchy | uw | server
 BASHRC_PROFILE_DIR=$REPO_DIR
 BASHRC_BLESH=$WITH_BLESH     # 1 = syntax highlighting + autosuggestions (ble.sh)
 BASHRC_FASTFETCH=$ff         # 1 = fastfetch on new terminals
 BASHRC_CD_LS_MAX=200         # cd auto-lists directories with at most this many entries
-BASHRC_LAZY_COMPLETION=1     # 1 = load bash-completion on first Tab (faster startup)
+BASHRC_LAZY_COMPLETION=$lazy     # 1 = load bash-completion on first Tab (faster startup)
 BASHRC_FZF_COMPLETION=0      # 1 = fzf **<Tab> fuzzy path completion (+25 ms startup)
 BASHRC_ZOXIDE=$WITH_ZOXIDE             # 1 = zoxide z/zi (install with: prereqs --with-zoxide)
 CFG
@@ -585,6 +651,12 @@ DONE
 uninstall() {
     step "Uninstall"
     local f newest
+    # Layered install: ~/.bashrc is Omarchy's real file with our block appended.
+    if [[ ! -L $HOME/.bashrc ]] && grep -qF 'bashrc-profile: BEGIN' "$HOME/.bashrc" 2>/dev/null; then
+        run cp "$HOME/.bashrc" "$HOME/.bashrc.bak.$TS"
+        (( DRY )) || sed -i '/bashrc-profile: BEGIN/,/bashrc-profile: END/d' "$HOME/.bashrc"
+        ok "removed the bashrc-profile block from ~/.bashrc (Omarchy's own config untouched)"
+    fi
     for f in "$HOME/.bashrc" "$HOME/.config/starship.toml" "$HOME/.blerc"; do
         if [[ -L $f ]]; then
             run rm -f "$f"; ok "removed link $f"

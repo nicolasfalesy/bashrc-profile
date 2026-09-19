@@ -22,8 +22,13 @@
 
 _bashrc_cached_init() {   # <cache-name> <binary> <command...>
     local name=$1 bin=$2; shift 2
-    hash "$bin" 2>/dev/null || return 1
-    local path=${BASH_CMDS[$bin]} cache="$BASHRC_CACHE_DIR/$name.bash"
+    # `type -P` and not `hash`/BASH_CMDS: a layered profile (omarchy) runs under
+    # `set +h`, where the hash builtin always fails with "hashing disabled" and
+    # BASH_CMDS is never populated — which silently cost us the cached starship
+    # init and dropped the prompt to the plain-PS1 fallback.
+    local path; path=$(type -P "$bin" 2>/dev/null) || return 1
+    [[ -n $path ]] || return 1
+    local cache="$BASHRC_CACHE_DIR/$name.bash"
     if [[ ! -s $cache || $path -nt $cache ]]; then
         if "$@" > "$cache.$$" 2>/dev/null; then
             [[ $name == starship ]] && _bashrc_patch_starship "$cache.$$" "$path"
@@ -48,7 +53,7 @@ _bashrc_patch_starship() {   # <file> <starship-path>
 
 # ── fastfetch on new terminals (toggle: BASHRC_FASTFETCH in bt config) ───────
 # Only top-level terminals (not tmux panes, not `bash` typed inside bash).
-if [[ $BASHRC_FASTFETCH == 1 && -z ${TMUX-} && $SHLVL -le 2 ]] && hash fastfetch 2>/dev/null; then
+if [[ $BASHRC_FASTFETCH == 1 && -z ${TMUX-} && $SHLVL -le 2 ]] && command -v fastfetch >/dev/null 2>&1; then
     fastfetch
 fi
 

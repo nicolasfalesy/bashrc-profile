@@ -168,7 +168,7 @@ weather() {
 
 # t — tmux session manager.  t dev | t -l | t -p dev | t -k
 t() {
-    hash tmux 2>/dev/null || { echo "t: tmux is not installed (run prereqs)" >&2; return 1; }
+    command -v tmux >/dev/null 2>&1 || { echo "t: tmux is not installed (run prereqs)" >&2; return 1; }
     case ${1-} in
         -h|--help|'')
             cat <<'HELP'
@@ -217,7 +217,7 @@ Examples: rcon list | rcon say Hello | rcon whitelist add Steve
 HELP
             return 0 ;;
     esac
-    hash mcrcon 2>/dev/null || { echo -e "${R}rcon: mcrcon not found — run: install.sh --with-mcrcon${N}" >&2; return 1; }
+    command -v mcrcon >/dev/null 2>&1 || { echo -e "${R}rcon: mcrcon not found — run: install.sh --with-mcrcon${N}" >&2; return 1; }
     [[ -n ${RCON_PASS-} ]] || { echo -e "${R}rcon: RCON_PASS is not set (bt local)${N}" >&2; return 1; }
     local out rc
     out=$(mcrcon -H "${RCON_IP:-127.0.0.1}" -P "${RCON_PORT:-25575}" -p "$RCON_PASS" -w 5 "$*" 2>&1); rc=$?
