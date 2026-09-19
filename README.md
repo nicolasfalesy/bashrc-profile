@@ -20,7 +20,7 @@ Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for opt
 | Speed | 6–8 ms inside `bashrc` on the NAS, ~22 ms on a Pi 4 (ble.sh attach on top): cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded |
 | Navigation | `cd` auto-lists, `ll`, `up 3`, `mkcd`, `take <url>`, `tre` |
 | Files | `extract`, `ftext`, `size`, `bak`/`bak -r`, `diff2`, `path` |
-| Clipboard | `cpy` / `pst` on every machine — `cat notes.txt \| cpy` puts it on your laptop's clipboard straight out of an SSH session (OSC 52) |
+| Clipboard | `cpy` / `pst` on every machine — `cat notes.txt \| cpy` puts it on your laptop's clipboard straight out of an SSH session (OSC 52), and `cpy -p` catches a paste coming the other way |
 | System | `sys`, `psg`, `port`, `killport`, `topp`, `myip`, `weather`, `t` (tmux) |
 | Services | git (`gs`, `gcm`, `glog`…), systemd (`scs`, `screstart`, `sclog`…), Docker Compose (`dcu`, `dcd`, `dcr`, `dcl`, `dps`) |
 | C dev | `ru` / `run` / `rud` / `rund` (valgrind) / `rut` (test suite) / `mkt` — lazy-loaded |
