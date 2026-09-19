@@ -133,6 +133,37 @@ are in the docker group)
 | `diff2 <a> <b>` | side-by-side coloured diff in less |
 | `path [pattern]` / `path -c` | PATH one per line / count |
 
+## Clipboard (lib/clipboard.sh)
+
+Works on **every** profile, including over SSH — on a headless box `cpy` hands the
+text to the terminal emulator at the other end of the connection with an OSC 52
+escape sequence, so it lands on the laptop's real clipboard.
+
+| Command | Does |
+|---------|------|
+| `cpy [TEXT...]` | copy the arguments, or stdin when there are none: `cat notes.txt \| cpy` |
+| `cpy -n` | same, minus trailing newlines |
+| `cpy -c` | clear the clipboard and the local spool |
+| `pst` | paste to stdout — `pst > file`, `pst \| jq .` |
+
+Backend, picked per call: `wl-copy` (Wayland) → `xclip`/`xsel` (X11, including
+`ssh -X`) → `pbcopy` (macOS) → **OSC 52** (the terminal itself). `tmux` and
+`screen` are wrapped in a DCS passthrough automatically.
+
+`cpy` always also writes a spool file (`$BASHRC_CACHE_DIR/clipboard`, mode 0600),
+because the OSC 52 *read* that `pst` needs is disabled by default in nearly every
+terminal — letting a remote host read your clipboard is a security hole. `pst`
+tries the read anyway and otherwise returns the spool, so `cpy` → `pst` on the
+same host always round-trips. To get a true remote paste, allow the read:
+
+| Terminal | Setting |
+|----------|---------|
+| Alacritty | `[terminal] osc52 = "CopyPaste"` in `alacritty.toml` |
+| kitty | `clipboard_control write-clipboard write-primary read-clipboard` |
+| iTerm2 | Settings → General → Selection → "Applications may access clipboard" |
+| xterm | `XTerm*disallowedWindowOps: 20,21,SetXprop` |
+| WezTerm, Windows Terminal | write only — no read support |
+
 ## System (lib/system.sh)
 
 | Command | Does |
@@ -190,7 +221,6 @@ Environment: if `~/nvim-linux-x86_64` exists (a hand-unpacked nvim release) it i
 
 | Command | Does |
 |---------|------|
-| `cpy [text]` / `pst` | clipboard copy (arg or stdin) / paste — Wayland `wl-copy` or X11 `xclip` |
 | `vpn` / `vpn -s` / `vpn -d` | WireGuard `wg0` up / status / down *(wireguard-tools)* |
 | `note <text>` / `-l` / `-e` / `-c` | timestamped scratch notes in `$NOTES_FILE` |
 | `notes` | edit the "constant notes" file |
@@ -201,6 +231,7 @@ Environment: if `~/nvim-linux-x86_64` exists (a hand-unpacked nvim release) it i
 | `grub` / `-e` / `-t <dir>` / `-d` | update-grub / edit config / install theme / cd themes |
 
 Environment: `TERMINAL=alacritty`, `QT_QPA_PLATFORMTHEME=qt5ct`, fastfetch and ble.sh on by default.
+`cpy` / `pst` are shared now — see [Clipboard](#clipboard-libclipboardsh); here they pick up `wl-copy` or `xclip` by themselves.
 
 ## Profile: uw (profiles/uw.sh — UW CS student servers)
 
@@ -232,6 +263,10 @@ without touching the config file.
 | `BASHRC_FZF_COMPLETION` | 0 | fzf `**<Tab>` completion (+25 ms) |
 | `BASHRC_ZOXIDE` | 0 | `1` = zoxide `z` / `zi` (install with `prereqs --with-zoxide`) |
 | `BASHRC_TIMING` | – | `=1` prints startup time |
+| `BASHRC_CLIP_BACKEND` | auto | force `wayland` / `x11` / `macos` / `osc52` / `file` |
+| `BASHRC_CLIP_FILE` | `$BASHRC_CACHE_DIR/clipboard` | the `cpy` spool (mode 0600) |
+| `BASHRC_CLIP_MAX` | 74994 | largest base64 payload pushed through OSC 52; `0` = no limit |
+| `BASHRC_CLIP_TIMEOUT` | 0.5 | seconds `pst` waits for the terminal's OSC 52 reply |
 | `RCON_IP`, `RCON_PORT`, `RCON_PASS` | – | Minecraft RCON |
 | `CF_TUNNEL`, `CF_DOMAIN` | – | Cloudflare tunnel name and zone (`cloud`) |
 | `ZPOOL` | tank | pool for the nas profile |

@@ -10,11 +10,12 @@
 #    4. lib/aliases.sh              aliases (editor, packages, git, docker, systemd, listing…) + bt/bup/bgit/prereqs
 #    5. lib/navigation.sh           ll, cd (auto-list), up, mkcd, take, tre
 #    6. lib/files.sh                extract, ftext, size, bak, diff2, path
-#    7. lib/system.sh               sys, psg, port, killport, topp, myip, weather, t (tmux), rcon
-#    8. lib/dev.sh                  C toolchain helpers — lazy-loaded on first use
-#    9. profiles/<profile>.sh       pi | nas | desktop | uw | server
-#   10. ~/.bashrc.local             per-machine secrets, ssh aliases, overrides (never in git)
-#   11. lib/prompt.sh               fzf, starship, zoxide, ble-attach (must be last)
+#    7. lib/clipboard.sh            cpy, pst (OSC 52 — works over SSH)
+#    8. lib/system.sh               sys, psg, port, killport, topp, myip, weather, t (tmux), rcon
+#    9. lib/dev.sh                  C toolchain helpers — lazy-loaded on first use
+#   10. profiles/<profile>.sh       pi | nas | desktop | uw | server
+#   11. ~/.bashrc.local             per-machine secrets, ssh aliases, overrides (never in git)
+#   12. lib/prompt.sh               fzf, starship, zoxide, ble-attach (must be last)
 #
 #  Quirks to keep in mind when editing (the long version is docs/ARCHITECTURE.md):
 #    • Nothing below the interactive guard may print in a non-interactive shell —
@@ -99,22 +100,22 @@ if [[ $BASHRC_BLESH == 1 && -z ${BLE_VERSION-} && -r "$HOME/.local/share/blesh/b
     . "$HOME/.local/share/blesh/ble.sh" --noattach
 fi
 
-# 3–7. Shared modules, in order.
-for _m in core aliases navigation files system; do
+# 3–8. Shared modules, in order. clipboard.sh borrows _size_fmt from files.sh, so it follows it.
+for _m in core aliases navigation files clipboard system; do
     . "$BASHRC_PROFILE_DIR/lib/$_m.sh"
 done
 unset _m
 
-# 8. lib/dev.sh is big and rarely needed: stubs load it on first call or Tab.
+# 9. lib/dev.sh is big and rarely needed: stubs load it on first call or Tab.
 _bashrc_lazy dev ru run rud rund rut mkt
 
-# 9. Machine profile.
+# 10. Machine profile.
 [[ -r "$BASHRC_PROFILE_DIR/profiles/$BASHRC_PROFILE.sh" ]] && . "$BASHRC_PROFILE_DIR/profiles/$BASHRC_PROFILE.sh"
 
-# 10. Local overrides — secrets, ssh hosts, anything that must not be committed.
+# 11. Local overrides — secrets, ssh hosts, anything that must not be committed.
 [[ -r "$HOME/.bashrc.local" ]] && . "$HOME/.bashrc.local"
 
-# 11. Prompt and interactive tooling. Last on purpose.
+# 12. Prompt and interactive tooling. Last on purpose.
 . "$BASHRC_PROFILE_DIR/lib/prompt.sh"
 
 # BASHRC_TIMING=1 bash -i   →  prints how long startup took (includes ble-attach)
