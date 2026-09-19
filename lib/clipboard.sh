@@ -51,9 +51,9 @@ _clip_backend() {
         auto) ;;
         *)    printf '%s' "$BASHRC_CLIP_BACKEND"; return ;;
     esac
-    if   [[ -n ${WAYLAND_DISPLAY-} ]] && hash wl-copy 2>/dev/null; then printf wayland
-    elif [[ -n ${DISPLAY-} ]] && { hash xclip 2>/dev/null || hash xsel 2>/dev/null; }; then printf x11
-    elif hash pbcopy 2>/dev/null; then printf macos
+    if   [[ -n ${WAYLAND_DISPLAY-} ]] && command -v wl-copy >/dev/null 2>&1; then printf wayland
+    elif [[ -n ${DISPLAY-} ]] && { command -v xclip >/dev/null 2>&1 || command -v xsel >/dev/null 2>&1; }; then printf x11
+    elif command -v pbcopy >/dev/null 2>&1; then printf macos
     else printf osc52
     fi
 }
@@ -212,7 +212,7 @@ HELP
     (( paste )) && backend="file"    # it came from the clipboard; no point sending it back
     case $backend in
         wayland) wl-copy < "$f" || rc=1 ;;
-        x11)     if hash xclip 2>/dev/null; then xclip -selection clipboard -i "$f" || rc=1
+        x11)     if command -v xclip >/dev/null 2>&1; then xclip -selection clipboard -i "$f" || rc=1
                  else xsel --clipboard --input < "$f" || rc=1; fi ;;
         macos)   pbcopy < "$f" || rc=1 ;;
         file)    ;;
@@ -231,7 +231,7 @@ HELP
 _clip_read_raw() {
     case $(_clip_backend) in
         wayland) wl-paste --no-newline ;;
-        x11)     if hash xclip 2>/dev/null; then xclip -selection clipboard -o; else xsel --clipboard --output; fi ;;
+        x11)     if command -v xclip >/dev/null 2>&1; then xclip -selection clipboard -o; else xsel --clipboard --output; fi ;;
         macos)   pbpaste ;;
         file)    return 1 ;;
         *)       _clip_osc52_read ;;

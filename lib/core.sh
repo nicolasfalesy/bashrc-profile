@@ -50,7 +50,7 @@ export PATH
 # ~/.bashrc.local, which is sourced after this.
 if [[ -z ${EDITOR-} ]]; then
     for _e in nvim vim nano; do
-        if hash "$_e" 2>/dev/null; then export EDITOR=$_e; break; fi
+        if command -v "$_e" >/dev/null 2>&1; then export EDITOR=$_e; break; fi
     done
     unset _e
 fi
