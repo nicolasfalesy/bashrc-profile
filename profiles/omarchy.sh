@@ -129,10 +129,14 @@ vpn() {
             return 0 ;;
         -s) if [[ -x $helper ]]; then
                 echo "wg0: $("$helper" status)"
-                [[ -d /sys/class/net/wg0 ]] && sudo -n wg show wg0 2>/dev/null
+                # An `if`, not `[[ … ]] &&`: as the last command in the branch a
+                # false guard would become the function's exit status, so `vpn -s`
+                # returned 1 merely because the tunnel was down.
+                if [[ -d /sys/class/net/wg0 ]]; then sudo -n wg show wg0 2>/dev/null; fi
             else
                 sudo wg show
-            fi ;;
+            fi
+            return 0 ;;
         -d|-r|-p) if [[ -x $helper ]]; then "$helper" down; else sudo wg-quick down wg0; fi ;;
         -t) [[ -x $helper ]] && { "$helper" toggle; return; }
             if sudo wg show wg0 >/dev/null 2>&1; then vpn -d; else vpn; fi ;;
