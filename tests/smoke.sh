@@ -58,6 +58,10 @@ _t "bak"         bak "$T/f"
 _t "bak -h"      bak -h
 _t "size"        size "$T"
 _t "path -c"     path -c
+_t "cpy -h"      cpy -h
+_t "pst -h"      pst -h
+_clip_rt() { local BASHRC_CLIP_BACKEND=file; cpy "smoke-clip" && [[ $(pst) == smoke-clip ]]; }
+_t "cpy/pst"     _clip_rt
 _t "sys"         sys
 _t "psg"         psg bash
 _t "port -h"     port -h
@@ -73,7 +77,7 @@ _t "reload"      source "$HOME/.bashrc"
 case $BASHRC_PROFILE in
     pi)      _t "pi: temp"   declare -F temp;  _t "pi: cloud" declare -F cloud ;;
     nas)     _t "nas: dsv"   declare -F dsv;   _t "nas: zh"   alias zh ;;
-    desktop) _t "desktop: cpy" declare -F cpy; _t "desktop: vpn" declare -F vpn; _t "desktop: note" declare -F note ;;
+    desktop) _t "desktop: vpn" declare -F vpn; _t "desktop: note" declare -F note ;;
     uw)      _t "uw: rm -iv" bash -c "[[ \"$(alias rm)\" == *-iv* ]]" ;;
 esac
 exit

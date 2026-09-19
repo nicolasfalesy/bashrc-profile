@@ -8,17 +8,8 @@ export NOTES_FILE="${NOTES_FILE:-$HOME/Nextcloud/quick-notes.txt}"
 alias kt='$EDITOR ~/.config/alacritty/keybinds.toml'
 alias notes='$EDITOR "$HOME/Nextcloud/constant notes.txt"'
 
-# ── Clipboard: cpy / pst (Wayland or X11) ────────────────────────────────────
-if [[ -n ${WAYLAND_DISPLAY-} ]] && hash wl-copy 2>/dev/null; then
-    cpy() { if (( $# )); then printf '%s' "$*" | wl-copy; else wl-copy; fi; }
-    pst() { wl-paste; }
-elif hash xclip 2>/dev/null; then
-    cpy() { if (( $# )); then printf '%s' "$*" | xclip -selection clipboard; else xclip -selection clipboard; fi; }
-    pst() { xclip -selection clipboard -o; }
-else
-    cpy() { echo "cpy: install wl-clipboard or xclip (run prereqs)" >&2; return 1; }
-    pst() { echo "pst: install wl-clipboard or xclip (run prereqs)" >&2; return 1; }
-fi
+# Clipboard (cpy / pst) moved to lib/clipboard.sh — every profile has it now, and
+# it picks wl-copy/xclip here and OSC 52 over SSH by itself.
 
 # ── vpn — WireGuard wg0 ──────────────────────────────────────────────────────
 vpn() {

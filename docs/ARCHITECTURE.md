@@ -18,6 +18,7 @@ How the profile is put together, in the order things happen when a shell starts.
      ├── lib/aliases.sh       aliases · bt · bup · prereqs
      ├── lib/navigation.sh    ll · cd · up · mkcd · take · tre
      ├── lib/files.sh         extract · ftext · size · bak · diff2 · path
+     ├── lib/clipboard.sh     cpy · pst        (OSC 52 — works over SSH)
      ├── lib/system.sh        sys · psg · port · killport · topp · myip · weather · t · rcon
      ├── (lib/dev.sh)         ru run rud rund rut mkt   ← stubs only; loaded on first use
      │
@@ -186,6 +187,17 @@ indented `find` listing where `tree` cannot be installed (TrueNAS, UW).
 byte→unit formatting is one helper (`_size_fmt`) instead of two copies of the same
 40 lines. `extract` lets GNU tar autodetect compression, so one case covers
 `.tar.{gz,bz2,xz,zst}`.
+
+`lib/clipboard.sh` — `cpy`/`pst` used to live in `profiles/desktop.sh`, where they were
+useless: the machines actually typed into are headless and reached over SSH. The backend
+is resolved *per call* rather than at startup, because one shell can be local now and
+inside tmux over SSH a minute later — and because a `hash` lookup per call costs nothing
+while a startup probe would show up in the 6–8 ms budget. Everything is staged through
+the spool file instead of a shell variable: command substitution eats trailing newlines,
+so `cat f | cpy; pst > f2` would not have been byte-exact. `_clip_osc52_read` runs in a
+subshell with an `EXIT` trap that drains the terminal and restores `stty` — raw mode left
+on wedges the shell, and a reply that arrives after the timeout would otherwise be typed
+into the next prompt.
 
 `lib/system.sh` — `sys` reads `/proc/stat` twice, 0.5 s apart, and computes the
 *delta* (the old version divided cumulative counters, i.e. average since boot). Memory
