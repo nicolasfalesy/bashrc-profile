@@ -166,7 +166,18 @@ HELP
             -c|--clear)
                 f=$(_clip_file)
                 command rm -f -- "$f"
-                [[ $(_clip_backend) == osc52 ]] && _clip_osc52_write ''
+                # Dropping the spool is not enough: on wayland/x11/macos the real
+                # selection is held by the compositor or another process, so pst
+                # would happily keep returning the old value after we claimed to
+                # have cleared it. Clear the live backend too.
+                case $(_clip_backend) in
+                    wayland) wl-copy --clear >/dev/null 2>&1 ;;
+                    x11)     if command -v xclip >/dev/null 2>&1; then
+                                 printf '' | xclip -selection clipboard -i >/dev/null 2>&1
+                             else xsel --clipboard --clear >/dev/null 2>&1; fi ;;
+                    macos)   printf '' | pbcopy >/dev/null 2>&1 ;;
+                    osc52)   _clip_osc52_write '' ;;
+                esac
                 [[ -t 2 ]] && echo "cpy: clipboard cleared 📋" >&2
                 return 0 ;;
             -n|--no-newline) strip=1; shift ;;
@@ -211,8 +222,13 @@ HELP
     backend=$(_clip_backend)
     (( paste )) && backend="file"    # it came from the clipboard; no point sending it back
     case $backend in
-        wayland) wl-copy < "$f" || rc=1 ;;
-        x11)     if command -v xclip >/dev/null 2>&1; then xclip -selection clipboard -i "$f" || rc=1
+        # >/dev/null 2>&1 is load-bearing: wl-copy and xclip both fork a daemon
+        # that keeps serving the selection after the command returns, and that
+        # daemon inherits our stdout. Without closing it, `out=$(cpy file)` (or
+        # any command substitution around cpy) blocks forever waiting for EOF on
+        # a pipe nothing will ever close.
+        wayland) wl-copy < "$f" >/dev/null 2>&1 || rc=1 ;;
+        x11)     if command -v xclip >/dev/null 2>&1; then xclip -selection clipboard -i "$f" >/dev/null 2>&1 || rc=1
                  else xsel --clipboard --input < "$f" || rc=1; fi ;;
         macos)   pbcopy < "$f" || rc=1 ;;
         file)    ;;
