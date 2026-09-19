@@ -127,7 +127,12 @@ vpn() {
             echo "       vpn -d     disconnect"
             echo "       vpn -t     toggle (what the taskbar button does)"
             return 0 ;;
-        -s) if [[ -x $helper ]]; then "$helper" status; else sudo wg show; fi ;;
+        -s) if [[ -x $helper ]]; then
+                echo "wg0: $("$helper" status)"
+                [[ -d /sys/class/net/wg0 ]] && sudo -n wg show wg0 2>/dev/null
+            else
+                sudo wg show
+            fi ;;
         -d|-r|-p) if [[ -x $helper ]]; then "$helper" down; else sudo wg-quick down wg0; fi ;;
         -t) [[ -x $helper ]] && { "$helper" toggle; return; }
             if sudo wg show wg0 >/dev/null 2>&1; then vpn -d; else vpn; fi ;;
