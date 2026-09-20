@@ -94,6 +94,51 @@ fi
 unset -f _bashrc_is_uw
 export BASHRC_PROFILE
 
+# 2b. ble.sh is OFF in the TrueNAS web Shell (the GUI's System -> Shell), on purpose.
+#     WHY: at attach ble.sh fires 21 terminal queries -- one DA2 (\e[>c) plus ~20 cursor
+#     position reports (\e[6n) it uses to measure character widths. Over that shell's
+#     websocket the replies are NOT consumed by ble.sh; they are handed to bash and run as
+#     commands, so Nico got `command not found: 0` / `276` / `0c1RRRRRRRRc` (that is the
+#     browser terminal's reply \e[>0;276;0c, typed), then `[ble: press RET to continue]`
+#     -- ble.sh's placeholder PS1 -- and eventually a shell that would not accept input.
+#     Measured: 21 queries with ble.sh, 0 without, so switching it off here removes the
+#     cause rather than working around it.
+#
+#     This is NOT reproducible on a local pty: nothing there answers \e[6n, so ble.sh times
+#     out and carries on cleanly. A plain pty, a responder emulating the browser at 0-300 ms
+#     latency, and a mid-session resize were all tried and all came back clean. The only
+#     honest test of that shell is opening that shell.
+#
+#     SSH, tmux and the console are untouched -- ble.sh loads there exactly as before. The
+#     web Shell keeps starship, every alias and function; it loses syntax highlighting and
+#     autosuggestions in that one window. Undo = delete this block.
+#
+#     The test is narrow because a bare `xterm` is also what a real 8-colour terminal
+#     reports: TERM exactly `xterm`, no ssh, and a /proc ancestor named middlewared (the
+#     real chain is bash -> login -> middlewared). The walk only runs once the first two
+#     match, so a normal shell pays nothing.
+_bashrc_is_truenas_webshell() {
+    [[ $TERM == xterm && -z ${SSH_CONNECTION-} && -z ${SSH_TTY-} ]] || return 1
+    local pid=$PPID comm stat depth=0
+    local -a f
+    while ((depth++ < 8)) && [[ -r /proc/$pid/comm ]]; do
+        read -r comm < "/proc/$pid/comm" || return 1
+        [[ $comm == middlewared ]] && return 0
+        # Field 4 of /proc/<pid>/stat is the ppid, but field 2 is the comm in parentheses
+        # and may itself contain spaces -- cut past the `)` first.
+        read -r stat < "/proc/$pid/stat" || return 1
+        # shellcheck disable=SC2206  # deliberate word splitting: stat is numeric fields
+        f=(${stat#*') '})
+        pid=${f[1]}
+        [[ -n $pid && $pid != *[!0-9]* ]] && ((pid > 1)) || return 1
+    done
+    return 1
+}
+if _bashrc_is_truenas_webshell; then
+    BASHRC_BLESH=0
+fi
+unset -f _bashrc_is_truenas_webshell
+
 # ble.sh must be sourced before anything touches readline; attached at the very end.
 # The BLE_VERSION guard keeps `reload` from loading it a second time.
 if [[ $BASHRC_BLESH == 1 && -z ${BLE_VERSION-} && -r "$HOME/.local/share/blesh/ble.sh" ]]; then
