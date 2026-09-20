@@ -6,7 +6,6 @@
 #  Load order (see docs/ARCHITECTURE.md):
 #    1. interactive guard           non-interactive shells (scp, rsync, ssh cmd) stop here
 #    2. toggles                     defaults ← ~/.config/bashrc-profile/config ← environment
-#    2b. TrueNAS web shell          repair the terminal iX's webshell lies about
 #    3. lib/core.sh                 shell options, history, PATH, env, readline, completion, lazy loader
 #    4. lib/aliases.sh              aliases (editor, packages, git, docker, systemd, listing…) + bt/bup/bgit/prereqs
 #    5. lib/navigation.sh           ll, cd (auto-list), up, mkcd, take, tre
@@ -94,48 +93,6 @@ if [[ -z $BASHRC_PROFILE ]]; then
 fi
 unset -f _bashrc_is_uw
 export BASHRC_PROFILE
-
-# 2b. TrueNAS web Shell (the GUI's System -> Shell) lies about the terminal.
-#     middlewared forks the pty with a hardcoded four-variable environment --
-#     TERM=xterm, HOME, PATH, LC_ALL -- and then execs `login -p -f`
-#     (/usr/lib/python3/dist-packages/middlewared/apps/webshell_app.py). But the
-#     thing on the other end is xterm.js, which does 256 colours and truecolor.
-#     `xterm` terminfo advertises 8, and no COLORTERM is set, so ble.sh believes
-#     it (bleopt term_index_colors and term_true_colors both default to `auto`)
-#     and the syntax highlighting drops to 8 colours. That environment is
-#     iXsystems' and cannot be configured, so correct it here.
-#
-#     This sits ahead of the ble.sh source on purpose: everything below reads
-#     TERM, so it has to be right before any of it runs. It cannot live in
-#     profiles/nas.sh, which loads at step 10.
-#
-#     The test is deliberately narrow, because a bare `xterm` is also what a
-#     genuinely 8-colour terminal reports: TERM exactly `xterm`, no ssh, and an
-#     ancestor process that is middlewared. The /proc walk only runs when the
-#     first two already match, so a normal shell pays nothing for it. Starship
-#     is unaffected either way -- it emits truecolor escapes regardless of TERM.
-_bashrc_is_truenas_webshell() {
-    [[ $TERM == xterm && -z ${SSH_CONNECTION-} && -z ${SSH_TTY-} ]] || return 1
-    local pid=$PPID comm stat depth=0
-    local -a f
-    while ((depth++ < 8)) && [[ -r /proc/$pid/comm ]]; do
-        read -r comm < "/proc/$pid/comm" || return 1
-        [[ $comm == middlewared ]] && return 0
-        # Field 4 of /proc/<pid>/stat is the ppid, but field 2 is the comm in
-        # parentheses and may itself contain spaces -- cut past the `)` first.
-        read -r stat < "/proc/$pid/stat" || return 1
-        # shellcheck disable=SC2206  # deliberate word splitting: stat is numeric fields
-        f=(${stat#*') '})
-        pid=${f[1]}
-        [[ -n $pid && $pid != *[!0-9]* ]] && ((pid > 1)) || return 1
-    done
-    return 1
-}
-if _bashrc_is_truenas_webshell; then
-    export TERM=xterm-256color
-    export COLORTERM=truecolor
-fi
-unset -f _bashrc_is_truenas_webshell
 
 # ble.sh must be sourced before anything touches readline; attached at the very end.
 # The BLE_VERSION guard keeps `reload` from loading it a second time.
