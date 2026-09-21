@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Omarchy theme-set hook — re-render the starship prompt in the colours of the
+# theme that was just set. `omarchy theme set <name>` runs this with the new
+# theme's slug in $1; the slug is not needed, since current/theme has already
+# moved by the time hooks run.
+#
+# Installed (by install.sh, or by hand) with:
+#   omarchy hook install theme-set ~/.local/share/bashrc-profile/hooks/50-starship-palette
+#
+# A stub on purpose: the generator and the template stay in the repo, so editing
+# either takes effect without reinstalling the hook.
+config=${XDG_CONFIG_HOME:-$HOME/.config}/bashrc-profile/config
+# shellcheck source=/dev/null
+[[ -r $config ]] && . "$config"
+exec "${BASHRC_PROFILE_DIR:-$HOME/.local/share/bashrc-profile}/bin/starship-omarchy-palette" --force

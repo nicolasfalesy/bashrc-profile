@@ -8,21 +8,21 @@
 alias sudo='sudo '
 
 # ── Editor ───────────────────────────────────────────────────────────────────
-if hash nvim 2>/dev/null; then
+if command -v nvim >/dev/null 2>&1; then
     alias vim='nvim' vi='nvim'
 fi
 alias svim='sudo $EDITOR'                     # edit as root
 alias nt='$EDITOR ~/.config/nvim/init.lua'    # neovim config
 
 # ── Package management (Debian family; skipped where apt is unusable, e.g. TrueNAS)
-if hash nala 2>/dev/null; then
+if command -v nala >/dev/null 2>&1; then
     alias apt='sudo nala'
     alias ni='sudo nala install'
     alias np='sudo nala purge'
     alias ns='nala search'
     alias nu='sudo nala full-upgrade -y'          # update lists + upgrade everything
     alias nclean='sudo nala autoremove -y && sudo nala clean'
-elif hash apt-get 2>/dev/null; then
+elif command -v apt-get >/dev/null 2>&1; then
     alias ni='sudo apt install'
     alias np='sudo apt purge'
     alias ns='apt search'
@@ -34,7 +34,7 @@ fi
 alias cp='cp -i'
 alias mv='mv -i'
 alias mkdir='mkdir -p'
-if hash trash 2>/dev/null; then
+if command -v trash >/dev/null 2>&1; then
     alias rm='trash -v'                           # to the trash can (trash-list / trash-restore)
 else
     alias rm='rm -I'                              # one prompt for >3 files or -r
@@ -55,7 +55,7 @@ alias openports='ports'
 # `ll` itself is a function (lib/navigation.sh) so other functions can call it.
 alias l='ll'
 alias lt='ll -tr'                                 # by time, newest last
-if hash tree 2>/dev/null; then
+if command -v tree >/dev/null 2>&1; then
     alias tree='tree -CAhF --dirsfirst'
 fi
 alias folders='command du -h --max-depth=1 2>/dev/null | sort -h'   # sizes of subdirs, sorted
@@ -80,7 +80,7 @@ alias gstp='git stash pop'
 alias gcl='git clone'
 
 # ── systemd ──────────────────────────────────────────────────────────────────
-if hash systemctl 2>/dev/null; then
+if command -v systemctl >/dev/null 2>&1; then
     alias sc='systemctl'
     alias scs='systemctl status'
     alias scf='systemctl --failed'
@@ -97,7 +97,7 @@ fi
 # Renamed from du/dd/dr: `du` and `dd` shadowed the coreutils and silently broke
 # `folders`. `dr` is kept as an alias of dcr for muscle memory.
 # shellcheck disable=SC2139  # $_dk is meant to expand now: the aliases bake in `sudo` or not
-if hash docker 2>/dev/null; then
+if command -v docker >/dev/null 2>&1; then
     if [[ -w /var/run/docker.sock ]]; then _dk='docker'; else _dk='sudo docker'; fi
     alias dcu="$_dk compose up -d"
     alias dcd="$_dk compose down"
@@ -114,13 +114,13 @@ fi
 # Every box this profile runs on is a personal machine Nico already trusts, so
 # the permission prompt is pure friction. `\claude` or `command claude` still
 # gets the un-aliased binary when you want the prompts back for one run.
-if hash claude 2>/dev/null; then
+if command -v claude >/dev/null 2>&1; then
     alias claude='claude --dangerously-skip-permissions'
 fi
 
 # ── This profile ─────────────────────────────────────────────────────────────
 alias reload='source ~/.bashrc && echo "🚀 bash profile reloaded"'
-if hash fastfetch 2>/dev/null; then alias fetch='fastfetch'; fi
+if command -v fastfetch >/dev/null 2>&1; then alias fetch='fastfetch'; fi
 
 # bt — edit the profile.  bt | bt aliases | bt pi | bt local | bt config | bt readme | bt -l
 # When the editor exits and the file changed: bash files are syntax-checked
@@ -140,8 +140,10 @@ Usage: bt [module|local|config|readme|<doc>|-l]
   bt local        edit ~/.bashrc.local   (secrets, ssh hosts — not in git)
   bt config       edit ~/.config/bashrc-profile/config       (profile + toggles)
   bt readme       edit README.md;  bt features|setup|architecture|audit → docs/*.md
-  bt theme        edit the starship theme this machine links (themes/aurora.toml or waterloo-gold)
-  bt aurora | bt waterloo-gold | bt blerc | bt install.sh | bt tests/smoke.sh
+  bt theme        edit the starship theme this machine uses. On Omarchy that is the
+                  template (themes/omarchy-auto.toml) — saving re-renders it against
+                  the current desktop theme's colours.
+  bt aurora | bt waterloo-gold | bt omarchy-auto | bt blerc | bt install.sh | bt tests/smoke.sh
   bt -l           list what you can edit
 
 Bash files are syntax-checked and the profile reloaded when the editor exits.
@@ -159,7 +161,9 @@ HELP
         local)   f="$HOME/.bashrc.local" ;;
         config)  f="$BASHRC_CONFIG_DIR/config" ;;
         readme)  f="$d/README.md" ;;
-        theme)   f=$(readlink -f "$HOME/.config/starship.toml") ;;
+        # On Omarchy, STARSHIP_CONFIG is a rendered file that the next theme switch
+        # overwrites — the template is the thing worth editing.
+        theme)   f=${BASHRC_STARSHIP_TEMPLATE:-${STARSHIP_CONFIG:-$(readlink -f "$HOME/.config/starship.toml")}} ;;
         *)
             for f in "$d/lib/$1.sh" "$d/profiles/$1.sh" "$d/themes/$1.toml" "$d/docs/${1^^}.md" "$d/$1"; do
                 [[ -f $f ]] && break
@@ -182,7 +186,14 @@ HELP
             else
                 echo "bt: $f has a syntax error — not reloaded" >&2; return 1
             fi ;;
-        *.toml) echo "✓ saved — starship re-reads its config at the next prompt" ;;
+        *.toml)
+            if [[ -n ${BASHRC_STARSHIP_TEMPLATE-} && $f == "$BASHRC_STARSHIP_TEMPLATE" ]]; then
+                BASHRC_STARSHIP_OUT=$STARSHIP_CONFIG \
+                    "$BASHRC_PROFILE_DIR/bin/starship-omarchy-palette" --force &&
+                    echo "✓ saved — re-rendered with the current theme's colours"
+            else
+                echo "✓ saved — starship re-reads its config at the next prompt"
+            fi ;;
         *)      echo "✓ saved $f" ;;
     esac
 }

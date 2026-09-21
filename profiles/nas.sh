@@ -16,7 +16,7 @@ if [[ -d $HOME/nvim-linux-x86_64/bin ]]; then
     _path_prepend "$HOME/nvim-linux-x86_64/bin"
     export VIMRUNTIME="$HOME/nvim-linux-x86_64/share/nvim/runtime"
 fi
-hash nvidia-smi 2>/dev/null && alias wn='watch -n 0.1 nvidia-smi'   # live GPU monitor
+command -v nvidia-smi >/dev/null 2>&1 && alias wn='watch -n 0.1 nvidia-smi'   # live GPU monitor
 
 # ── ZFS shortcuts ────────────────────────────────────────────────────────────
 alias zs='sudo zpool status -v'                                      # full status
@@ -28,7 +28,7 @@ alias smart='sudo smartctl -a'                                       # smart /de
 
 # Extra lines for `sys`.
 _sys_extra() {
-    hash zpool 2>/dev/null || return 0
+    command -v zpool >/dev/null 2>&1 || return 0
     local line
     while read -r line; do
         [[ -n $line ]] && printf '\033[0;32mZFS:\033[0m      %s\n' "$line"
@@ -59,7 +59,7 @@ HELP
         esac
     done
     pattern=${pattern:-/mnt/$ZPOOL/}
-    hash zpool 2>/dev/null || { echo "dsv: zpool not found" >&2; return 1; }
+    command -v zpool >/dev/null 2>&1 || { echo "dsv: zpool not found" >&2; return 1; }
 
     local -a files=()
     mapfile -t files < <(sudo zpool status -v "$ZPOOL" 2>/dev/null | command grep -- "$pattern" | sed 's/^ *//')

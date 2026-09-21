@@ -50,7 +50,7 @@ export PATH
 # ~/.bashrc.local, which is sourced after this.
 if [[ -z ${EDITOR-} ]]; then
     for _e in nvim vim nano; do
-        if hash "$_e" 2>/dev/null; then export EDITOR=$_e; break; fi
+        if command -v "$_e" >/dev/null 2>&1; then export EDITOR=$_e; break; fi
     done
     unset _e
 fi
@@ -107,7 +107,14 @@ _bashrc_lazy() {
 _bashrc_lazy_load() {           # <module> <function>...  (idempotent)
     local mod=$1 fn; shift
     for fn in "$@"; do unset -f "$fn"; complete -r "$fn" 2>/dev/null; done
+    # bashrc sources the startup modules with alias expansion off so a
+    # framework alias cannot rewrite our function bodies. This one is sourced
+    # at first *use*, long after that guard was lifted, so it needs its own —
+    # otherwise `rm` inside dev.sh becomes `trash -v` and `cp` becomes `cp -i`.
+    local _ea; _ea=$(shopt -p expand_aliases)
+    [[ $BASHRC_PROFILE == omarchy ]] && shopt -u expand_aliases
     . "$BASHRC_PROFILE_DIR/lib/$mod.sh"
+    eval "$_ea"
 }
 _bashrc_lazy_dispatch() {       # call the completer the module registered for $1
     local spec

@@ -87,7 +87,7 @@ tre() {
     local depth=${1:-3} dir=${2:-.}
     [[ $depth =~ ^[0-9]+$ ]] || { echo "tre: depth must be a number" >&2; return 1; }
     [[ -d $dir ]] || { echo "tre: '$dir' is not a directory" >&2; return 1; }
-    if hash tree 2>/dev/null; then
+    if command -v tree >/dev/null 2>&1; then
         command tree -CAhF --dirsfirst -L "$depth" -I '.git|node_modules|__pycache__|.venv|.cache|*.pyc' "$dir"
     else
         # poor man's tree: indent by depth, directories get a trailing /
