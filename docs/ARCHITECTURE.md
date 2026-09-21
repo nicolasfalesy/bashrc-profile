@@ -246,6 +246,14 @@ other terminals' commands appear, and writes are ble.sh's), and it *unsets*
 `PROMPT_COMMAND` while a command runs. A function that reads `$PROMPT_COMMAND` at
 runtime under ble.sh sees it empty; that is normal.
 
+**ble.sh's shared history miscounts under `HISTTIMEFORMAT` — patched in `blerc`.** ble.sh
+tracks its read offset into `$HISTFILE` in lines but counts entries in three places; with
+timestamps every entry is two lines, so unpatched it duplicated every command in memory and
+— through the `erasedups` bookkeeping that then goes wrong — silently never wrote a command
+that had been typed before. Three guarded `ble/function#advice` blocks in `blerc` correct
+the counts and switch themselves off once upstream changes the code. Test history changes in
+a throwaway detached tmux session with its own `HISTFILE`, never against `~/.bash_history`.
+
 Measured on the Pi 4 (`BASHRC_TIMING=1`, warm cache): **~22 ms inside `bashrc`, ~30 ms
 wall for `bash -ic exit`**, down from ~80 ms.
 
