@@ -538,7 +538,10 @@ install_theme_hook() {
     local installed=0
     if command -v omarchy-hook-install >/dev/null 2>&1; then
         omarchy-hook-install theme-set "$src" >/dev/null 2>&1 && installed=1
-    elif mkdir -p "${dst%/*}" && cp "$src" "$dst" && chmod 755 "$dst"; then
+    fi
+    # Separate `if`, not `elif`: a present-but-failing omarchy-hook-install must
+    # still fall through to the plain copy.
+    if (( ! installed )) && mkdir -p "${dst%/*}" && cp "$src" "$dst" && chmod 755 "$dst"; then
         installed=1
     fi
     if (( installed )); then
@@ -695,6 +698,11 @@ uninstall() {
             if [[ -n $newest ]]; then run cp "$newest" "$f"; ok "restored $f from $newest"; fi
         fi
     done
+    # The theme-set hook execs bin/starship-omarchy-palette in the repo. Left
+    # behind, it fails on every `omarchy theme set` and omarchy-theme-set sends
+    # that failure to /dev/null, so nobody would ever see it.
+    f="$HOME/.config/omarchy/hooks/theme-set.d/50-starship-palette"
+    if [[ -f $f ]]; then run rm -f "$f"; ok "removed theme-set hook $f"; fi
     run rm -rf "$CONFIG_DIR" "$CACHE_DIR"
     info "kept: the repo, ~/.bashrc.local, and all installed packages"
 }
