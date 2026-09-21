@@ -19,6 +19,7 @@
 #   c     ours     clear. Omarchy's `opencode --auto` moves to `o`.
 #   h     omarchy  herdr. Our `history | grep` moves to `hg`.
 #   lt    omarchy  eza tree (and its `lta` companion). Our `ll -tr` → `ltr`.
+#   ll    ours     re-pointed at eza below so it matches Omarchy's `ls`.
 #   t     merged   our session manager, but bare `t` attaches "Work" the way
 #                  Omarchy's one-liner did.
 #   ga    ours     git add.  Omarchy's worktree-add    moves to `wta`.
@@ -82,7 +83,36 @@ alias o='opencode --auto'                  # Omarchy's `c`, rehomed (ours is cle
 alias h='herdr'                            # Omarchy wins: Ctrl-R already does history
 alias hg='history | grep'                  # ours, rehomed
 alias lt='eza --tree --level=2 --long --icons --git'   # Omarchy wins: git-aware tree
-alias ltr='ll -tr'                         # ours, rehomed (mnemonic: ls -tr)
+# ── listing: one look for ls, ll, l and the listing `cd` prints ──────────────
+# Omarchy's `ls` is eza; lib/navigation.sh's `ll` is GNU ls. Two different
+# programs, so the same directory came out with two different colour schemes,
+# icon sets and column layouts. Re-point `ll` at eza with the flags Omarchy
+# gives `ls`, plus -a for dotfiles (what GNU -A did). `cd`, `take` and `l` call
+# `ll` by name at runtime, so they all follow. Guarded: lib/navigation.sh's
+# portable GNU version stays in charge on a box without eza.
+if command -v eza >/dev/null 2>&1; then
+    # Given no path operand and a stdin that is not a terminal, eza enters its
+    # --stdin mode (reading file names from stdin) without being asked. In a
+    # function that is a footgun: `ll` anywhere in a pipeline silently swallows
+    # the caller's input — it ate the checks in tests/smoke.sh, which arrive on
+    # stdin, and took the rest of the run with them. So always hand eza an
+    # explicit path, and never let it see our stdin.
+    ll() {
+        local a
+        for a in "$@"; do
+            [[ $a == -* ]] && continue
+            command eza -lha --group-directories-first --icons=auto "$@" </dev/null
+            return
+        done
+        command eza -lha --group-directories-first --icons=auto "$@" . </dev/null
+    }
+    # `ll -tr` meant "by time, newest last" to GNU ls. eza spells that
+    # --sort=modified; its own -t picks which timestamp to *show*, so the old
+    # flags would not just sort differently, they would mean something else.
+    alias ltr='ll --sort=modified'
+else
+    alias ltr='ll -tr'                     # ours, rehomed (mnemonic: ls -tr)
+fi
 
 # `c` is in lib/core.sh's HISTIGNORE, which was written when `c` meant clear.
 # It still does here, so nothing to adjust — but keep it in mind if that flips.
