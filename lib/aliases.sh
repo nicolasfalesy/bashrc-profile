@@ -140,8 +140,10 @@ Usage: bt [module|local|config|readme|<doc>|-l]
   bt local        edit ~/.bashrc.local   (secrets, ssh hosts — not in git)
   bt config       edit ~/.config/bashrc-profile/config       (profile + toggles)
   bt readme       edit README.md;  bt features|setup|architecture|audit → docs/*.md
-  bt theme        edit the starship theme this machine links (themes/aurora.toml or waterloo-gold)
-  bt aurora | bt waterloo-gold | bt blerc | bt install.sh | bt tests/smoke.sh
+  bt theme        edit the starship theme this machine uses. On Omarchy that is the
+                  template (themes/omarchy-auto.toml) — saving re-renders it against
+                  the current desktop theme's colours.
+  bt aurora | bt waterloo-gold | bt omarchy-auto | bt blerc | bt install.sh | bt tests/smoke.sh
   bt -l           list what you can edit
 
 Bash files are syntax-checked and the profile reloaded when the editor exits.
@@ -159,7 +161,9 @@ HELP
         local)   f="$HOME/.bashrc.local" ;;
         config)  f="$BASHRC_CONFIG_DIR/config" ;;
         readme)  f="$d/README.md" ;;
-        theme)   f=${STARSHIP_CONFIG:-$(readlink -f "$HOME/.config/starship.toml")} ;;
+        # On Omarchy, STARSHIP_CONFIG is a rendered file that the next theme switch
+        # overwrites — the template is the thing worth editing.
+        theme)   f=${BASHRC_STARSHIP_TEMPLATE:-${STARSHIP_CONFIG:-$(readlink -f "$HOME/.config/starship.toml")}} ;;
         *)
             for f in "$d/lib/$1.sh" "$d/profiles/$1.sh" "$d/themes/$1.toml" "$d/docs/${1^^}.md" "$d/$1"; do
                 [[ -f $f ]] && break
@@ -182,7 +186,14 @@ HELP
             else
                 echo "bt: $f has a syntax error — not reloaded" >&2; return 1
             fi ;;
-        *.toml) echo "✓ saved — starship re-reads its config at the next prompt" ;;
+        *.toml)
+            if [[ -n ${BASHRC_STARSHIP_TEMPLATE-} && $f == "$BASHRC_STARSHIP_TEMPLATE" ]]; then
+                BASHRC_STARSHIP_OUT=$STARSHIP_CONFIG \
+                    "$BASHRC_PROFILE_DIR/bin/starship-omarchy-palette" --force &&
+                    echo "✓ saved — re-rendered with the current theme's colours"
+            else
+                echo "✓ saved — starship re-reads its config at the next prompt"
+            fi ;;
         *)      echo "✓ saved $f" ;;
     esac
 }

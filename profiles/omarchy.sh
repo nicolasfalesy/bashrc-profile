@@ -44,7 +44,22 @@ export NOTES_FILE="${NOTES_FILE:-$HOME/Documents/quick-notes.txt}"
 # Our starship theme, without touching ~/.config/starship.toml — that file is
 # Omarchy's, byte-identical to what it ships. STARSHIP_CONFIG wins over it and
 # is read fresh at every prompt, so `bt theme` edits show up immediately.
-export STARSHIP_CONFIG="$BASHRC_PROFILE_DIR/themes/aurora.toml"
+#
+# The prompt follows the desktop theme. themes/omarchy-auto.toml refers to its
+# colours by name only; bin/starship-omarchy-palette renders it against the
+# current theme's colors.toml into the cache, and the theme-set hook re-renders
+# it whenever `omarchy theme set` runs. What is left here is the cold-start path:
+# a cleared cache, or a template edited since the last render. When the rendered
+# file is present and current this is two [[ ]] tests and no fork.
+export BASHRC_STARSHIP_TEMPLATE="$BASHRC_PROFILE_DIR/themes/omarchy-auto.toml"
+export STARSHIP_CONFIG="$BASHRC_CACHE_DIR/starship-omarchy.toml"
+if [[ ! -s $STARSHIP_CONFIG || $BASHRC_STARSHIP_TEMPLATE -nt $STARSHIP_CONFIG ]]; then
+    # Silent: a theme that cannot be rendered (no Omarchy colors.toml — this
+    # profile forced on a box without it) must not print on every new terminal.
+    BASHRC_STARSHIP_OUT=$STARSHIP_CONFIG \
+        "$BASHRC_PROFILE_DIR/bin/starship-omarchy-palette" --force 2>/dev/null ||
+        export STARSHIP_CONFIG="$BASHRC_PROFILE_DIR/themes/aurora.toml"
+fi
 
 # ── helper: move an Omarchy function aside instead of losing it ───────────────
 # Safe to run twice: `reload` re-sources Omarchy's rc chain first, which puts the
