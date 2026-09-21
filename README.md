@@ -17,7 +17,7 @@ Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for opt
 | Area | Highlights |
 |------|-----------|
 | Prompt | [starship](https://starship.rs) "Aurora" theme ("Waterloo Gold" on the UW servers, "Omarchy Auto" — which retints itself to match the desktop theme — on the laptop), [fzf](https://github.com/junegunn/fzf) Ctrl-R / Ctrl-T / Alt-C, [ble.sh](https://github.com/akinomyoga/ble.sh) highlighting + autosuggestions, optional [zoxide](https://github.com/ajeetdsouza/zoxide) `z`/`zi` (`--with-zoxide`) |
-| Speed | 6–8 ms inside `bashrc` on the NAS, ~22 ms on a Pi 4 (ble.sh attach on top): cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded |
+| Speed | 6–8 ms inside `bashrc` on the NAS, ~22 ms on a Pi 4, 7 ms on the Omarchy laptop: cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded. ble.sh, when enabled, adds ~205 ms on top of that — measure with `BASHRC_TIMING=1` before assuming it is cheap |
 | Navigation | `cd` auto-lists, `ll`, `up 3`, `mkcd`, `take <url>`, `tre` |
 | Files | `extract`, `ftext`, `size`, `bak`/`bak -r`, `diff2`, `path` |
 | Clipboard | `cpy` / `pst` on every machine — `cat notes.txt \| cpy` puts it on your laptop's clipboard straight out of an SSH session (OSC 52), and `cpy -p` catches a paste coming the other way |
@@ -25,6 +25,7 @@ Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for opt
 | Services | git (`gs`, `gcm`, `glog`…), systemd (`scs`, `screstart`, `sclog`…), Docker Compose (`dcu`, `dcd`, `dcr`, `dcl`, `dps`) |
 | C dev | `ru` / `run` / `rud` / `rund` (valgrind) / `rut` (test suite) / `mkt` — lazy-loaded |
 | Per machine | **pi**: `temp`, `wt`, `cloud` (Cloudflare tunnel) · **nas**: ZFS shortcuts, `dsv`, `wn` · **desktop**: `vpn`, `note`, Alacritty/GRUB helpers · **uw**: no-root student servers, Waterloo Gold prompt |
+| Timing | `BASHRC_TIMING=1 bash -i` prints startup ms. ble.sh's first prompt redraw wipes that line, so the same number is always written to `~/.cache/bashrc-profile/last-startup-ms` |
 | Housekeeping | `bt` (edit a module — syntax-checked and reloaded on save), `bgit` (git in the repo from anywhere), `bup` (pull + relink + reload), `prereqs` (install dependencies), `reload`, `tests/smoke.sh` |
 
 Full reference: [docs/FEATURES.md](docs/FEATURES.md).

@@ -96,7 +96,10 @@ Options
   --no-deps            skip dependency installation
   --with-dev           C toolchain: gcc make gdb valgrind clang
   --with-blesh         install ble.sh and enable it (default)
-  --no-blesh           skip ble.sh (saves ~30 ms per shell start)
+  --no-blesh           skip ble.sh. Worth measuring rather than assuming: on the
+                       Omarchy laptop ble.sh costs ~205 ms of the ~215 ms startup
+                       (~95 ms to source, ~110 ms to attach), independent of what
+                       blerc sets. BASHRC_TIMING=1 reports it.
   --with-mcrcon        build mcrcon (Minecraft RCON client)
   --with-zoxide        install zoxide and enable z / zi (off by default)
   --upgrade            refresh the user-local tools to their latest: ble.sh nightly, starship,

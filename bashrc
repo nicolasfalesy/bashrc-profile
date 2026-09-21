@@ -141,6 +141,17 @@ eval "$_bashrc_ea"; unset _bashrc_ea      # alias expansion back to normal
 # BASHRC_TIMING=1 bash -i   →  prints how long startup took (includes ble-attach)
 # shellcheck disable=SC2317  # reachable: the `return` above only fires for non-interactive shells
 if [[ ${BASHRC_TIMING-} == 1 ]]; then
-    printf 'bashrc-profile: %d ms (profile=%s)\n' "$(( (${EPOCHREALTIME/./} - ${_bashrc_t0/./}) / 1000 ))" "$BASHRC_PROFILE"
+    _bashrc_ms=$(( (${EPOCHREALTIME/./} - ${_bashrc_t0/./}) / 1000 ))
     unset _bashrc_t0
+    printf 'bashrc-profile: %d ms (profile=%s)\n' "$_bashrc_ms" "$BASHRC_PROFILE"
+    # ble.sh has owned the display since ble-attach at the end of lib/prompt.sh,
+    # and its first prompt redraw wipes the line above: it reaches the output
+    # stream but never stays on screen, which makes this switch look broken
+    # exactly when it is most wanted. Handing the line to a PRECMD hook does not
+    # help (ble-attach defers the real attach and drops hooks registered here),
+    # and PROMPT_COMMAND is starship's from lib/prompt.sh onwards. So record it
+    # where it can always be read back:  cat ~/.cache/bashrc-profile/last-startup-ms
+    printf '%d ms (profile=%s, blesh=%s)\n' "$_bashrc_ms" "$BASHRC_PROFILE" \
+        "${BLE_VERSION:-off}" > "$BASHRC_CACHE_DIR/last-startup-ms" 2>/dev/null
+    unset -v _bashrc_ms
 fi
