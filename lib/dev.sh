@@ -340,7 +340,7 @@ EOF
     local tmpfile
     tmpfile="$(mktemp)"
     # shellcheck disable=SC2064
-    trap "rm -f '$tmpfile'" RETURN
+    trap "command rm -f '$tmpfile'" RETURN
 
     # Build valgrind command
     local -a vcmd=(valgrind -s --leak-check=full --track-origins=yes "./$output")
@@ -357,7 +357,7 @@ EOF
     fi
 
     # Save raw output
-    cp "$tmpfile" "$logfile"
+    command cp "$tmpfile" "$logfile"
 
     # Colors for pretty output
     local RED='\033[0;31m'
@@ -505,7 +505,7 @@ _run_suite() {
     local TEMPFILE
     TEMPFILE="$(mktemp)"
     # shellcheck disable=SC2064
-    trap "rm -f '$TEMPFILE'" RETURN
+    trap "command rm -f '$TEMPFILE'" RETURN
 
     local stem expect_file args_file in_file
     local -a argv
@@ -652,7 +652,7 @@ EOF
     _run_suite $verbose_arg "$suite" ./myprogram
     local rc=$?
 
-    rm -f "$suite"
+    command rm -f "$suite"
     return "$rc"
 }
 

@@ -11,7 +11,7 @@ temp() {
         read -r t < /sys/class/thermal/thermal_zone0/temp
         printf 'CPU temp: %d.%d°C\n' $(( t / 1000 )) $(( t % 1000 / 100 ))
     fi
-    hash vcgencmd 2>/dev/null || return 0
+    command -v vcgencmd >/dev/null 2>&1 || return 0
     raw=$(vcgencmd get_throttled 2>/dev/null); raw=${raw#throttled=}
     [[ -n $raw ]] || return 0
     local v=$(( raw ))
@@ -30,7 +30,7 @@ temp() {
 
 # Extra lines for `sys`.
 _sys_extra() {
-    hash vcgencmd 2>/dev/null || return 0
+    command -v vcgencmd >/dev/null 2>&1 || return 0
     local raw; raw=$(vcgencmd get_throttled 2>/dev/null); raw=${raw#throttled=}
     if [[ $raw == 0x0 ]]; then printf '\033[0;32mThrottle:\033[0m none\n'
     else printf '\033[0;32mThrottle:\033[0m \033[1;33m%s\033[0m (run temp to decode)\n' "$raw"; fi
@@ -53,7 +53,7 @@ Needs CF_TUNNEL and CF_DOMAIN in ~/.bashrc.local (bt local).
 HELP
             return 0 ;;
     esac
-    hash cloudflared 2>/dev/null || { echo "cloud: cloudflared not installed" >&2; return 1; }
+    command -v cloudflared >/dev/null 2>&1 || { echo "cloud: cloudflared not installed" >&2; return 1; }
     [[ -n ${CF_TUNNEL-} && -n ${CF_DOMAIN-} ]] || { echo "cloud: set CF_TUNNEL and CF_DOMAIN in ~/.bashrc.local" >&2; return 1; }
     local host="$1.$CF_DOMAIN"
     sudo "$EDITOR" /etc/cloudflared/config.yml

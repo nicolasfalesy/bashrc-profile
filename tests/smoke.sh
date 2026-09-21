@@ -13,13 +13,14 @@
 # Exit status is non-zero on any failure, so this can run in CI or before a commit.
 set -uo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-profiles=("$@"); (( ${#profiles[@]} )) || profiles=(pi nas desktop uw server)
+profiles=("$@"); (( ${#profiles[@]} )) || profiles=(pi nas desktop omarchy uw server)
 fail=0
 red=$'\033[0;31m' green=$'\033[0;32m' dim=$'\033[2m' n=$'\033[0m'
 [[ -t 1 ]] || red='' green='' dim='' n=''
 
 echo "── syntax"
-for f in "$here"/bashrc "$here"/lib/*.sh "$here"/profiles/*.sh "$here"/install.sh "$here"/tests/smoke.sh; do
+for f in "$here"/bashrc "$here"/lib/*.sh "$here"/profiles/*.sh "$here"/bin/* "$here"/hooks/* \
+         "$here"/install.sh "$here"/tests/smoke.sh; do
     if bash -n "$f"; then :; else echo "${red}FAIL${n} bash -n $f"; fail=1; fi
 done
 (( fail )) || echo "${green}ok${n}   all files parse"
@@ -29,7 +30,7 @@ sc=()
 if command -v shellcheck >/dev/null 2>&1; then sc=(shellcheck)
 elif command -v uvx >/dev/null 2>&1; then sc=(uvx --from shellcheck-py shellcheck); fi
 if (( ${#sc[@]} )); then
-    if (cd "$here" && "${sc[@]}" bashrc lib/*.sh profiles/*.sh install.sh tests/smoke.sh); then
+    if (cd "$here" && "${sc[@]}" bashrc lib/*.sh profiles/*.sh bin/* hooks/* install.sh tests/smoke.sh); then
         echo "${green}ok${n}   shellcheck"
     else
         echo "${red}FAIL${n} shellcheck"; fail=1
