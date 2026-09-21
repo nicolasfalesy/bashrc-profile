@@ -517,6 +517,32 @@ EOF
     fi
     link "$REPO_DIR/blerc" "$HOME/.blerc"
     info "~/.config/starship.toml left as Omarchy shipped it — profiles/omarchy.sh sets STARSHIP_CONFIG"
+    install_theme_hook
+}
+
+# install_theme_hook — make the prompt follow the desktop theme. The hook is a
+# stub that calls bin/starship-omarchy-palette in the repo, so editing the
+# generator or themes/omarchy-auto.toml never means reinstalling it.
+install_theme_hook() {
+    local src="$REPO_DIR/hooks/50-starship-palette"
+    local dst="$HOME/.config/omarchy/hooks/theme-set.d/50-starship-palette"
+    [[ -f $src ]] || return 0
+    if (( DRY )); then
+        printf '%s[dry-run]%s install theme-set hook → %s\n' "$Y" "$N" "$dst"; return 0
+    fi
+    # omarchy-hook-install is the documented route; the copy is the fallback for
+    # an Omarchy old enough not to ship it.
+    local installed=0
+    if command -v omarchy-hook-install >/dev/null 2>&1; then
+        omarchy-hook-install theme-set "$src" >/dev/null 2>&1 && installed=1
+    elif mkdir -p "${dst%/*}" && cp "$src" "$dst" && chmod 755 "$dst"; then
+        installed=1
+    fi
+    if (( installed )); then
+        ok "theme-set hook installed — the prompt retints with \`omarchy theme set\`"
+    else
+        warn "could not install the theme-set hook (the prompt still works, it just will not follow the theme)"
+    fi
 }
 
 link_files() {
@@ -610,7 +636,8 @@ refresh_config() {
 verify() {
     step "Verify"
     local f bad=0
-    for f in "$REPO_DIR"/bashrc "$REPO_DIR"/lib/*.sh "$REPO_DIR"/profiles/*.sh; do
+    for f in "$REPO_DIR"/bashrc "$REPO_DIR"/lib/*.sh "$REPO_DIR"/profiles/*.sh \
+             "$REPO_DIR"/bin/* "$REPO_DIR"/hooks/*; do
         bash -n "$f" || { err "syntax error in $f"; bad=1; }
     done
     (( bad )) && return 1

@@ -16,7 +16,7 @@ Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for opt
 
 | Area | Highlights |
 |------|-----------|
-| Prompt | [starship](https://starship.rs) "Aurora" theme ("Waterloo Gold" on the UW servers), [fzf](https://github.com/junegunn/fzf) Ctrl-R / Ctrl-T / Alt-C, [ble.sh](https://github.com/akinomyoga/ble.sh) highlighting + autosuggestions, optional [zoxide](https://github.com/ajeetdsouza/zoxide) `z`/`zi` (`--with-zoxide`) |
+| Prompt | [starship](https://starship.rs) "Aurora" theme ("Waterloo Gold" on the UW servers, "Omarchy Auto" — which retints itself to match the desktop theme — on the laptop), [fzf](https://github.com/junegunn/fzf) Ctrl-R / Ctrl-T / Alt-C, [ble.sh](https://github.com/akinomyoga/ble.sh) highlighting + autosuggestions, optional [zoxide](https://github.com/ajeetdsouza/zoxide) `z`/`zi` (`--with-zoxide`) |
 | Speed | 6–8 ms inside `bashrc` on the NAS, ~22 ms on a Pi 4 (ble.sh attach on top): cached `starship`/`zoxide` init, bash-completion loaded on first Tab, big modules lazy-loaded |
 | Navigation | `cd` auto-lists, `ll`, `up 3`, `mkcd`, `take <url>`, `tre` |
 | Files | `extract`, `ftext`, `size`, `bak`/`bak -r`, `diff2`, `path` |
@@ -44,6 +44,10 @@ lib/prompt.sh          fzf, starship, ble.sh, optional zoxide (always last)
 profiles/{pi,nas,desktop,uw,server}.sh
 themes/aurora.toml     starship theme, linked as ~/.config/starship.toml
 themes/waterloo-gold.toml   linked instead on the uw profile (bt theme edits whichever is linked)
+themes/omarchy-auto.toml    starship theme for the omarchy profile — colours by name only,
+                       rendered against the desktop theme (bt theme edits this one)
+bin/starship-omarchy-palette   renders it from the current Omarchy theme's colors.toml
+hooks/50-starship-palette      theme-set hook that re-runs the renderer
 blerc                  ble.sh settings, linked as ~/.blerc
 legacy/                the old single-file uw_bashrc and TrueNAS zshrc (reference only)
 bashrc.local.example   template for ~/.bashrc.local (secrets, ssh hosts — never committed)

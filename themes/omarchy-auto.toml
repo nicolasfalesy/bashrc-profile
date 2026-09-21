@@ -1,0 +1,317 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Starship — "Omarchy Auto"
+#
+#  A TEMPLATE, not a usable config on its own: every colour below is a palette
+#  name, and the [palettes.omarchy] table that defines them is generated from the
+#  current Omarchy theme's colors.toml by bin/starship-omarchy-palette. The
+#  rendered file lands in ~/.cache/bashrc-profile/starship-omarchy.toml and that
+#  is what STARSHIP_CONFIG points at (profiles/omarchy.sh).
+#
+#  So: `omarchy theme set <anything>` retints the prompt along with everything
+#  else, and there is no palette to keep in sync by hand.
+#
+#  Edit this file with `bt theme` — it regenerates on save. Editing the rendered
+#  file is pointless; the next theme switch overwrites it.
+#
+#  Design: no powerline blocks and no backgrounds at all, so a translucent
+#  terminal stays translucent. Two lines, the left one holding what changes as
+#  you move (where you are, what git thinks), the right one what changes as you
+#  work (toolchain, duration, jobs, clock), separated by a faint dotted rule.
+#
+#      ~/Projects/bashrc-profile  main ~2 ?1 ········  3.4s  22:28
+#    ❯ 
+#
+#  Line 1 is inset two columns so the path lines up with what you type after ❯.
+#  Palette names available: background foreground accent muted selection
+#  light_foreground dark_foreground red green yellow orange blue cyan magenta
+#  plus two the generator derives along this theme's own background→foreground
+#  axis, so their contrast is the same on every theme, light or dark:
+#    rule  42% — the fill rule
+#    dim   72% — secondary text (clock, untracked count, the path before a repo)
+#  Use those for anything subdued. A named background tone like `muted` or
+#  `selection` is a background tone: it disappears on some themes.
+# ─────────────────────────────────────────────────────────────────────────────
+
+"$schema" = 'https://starship.rs/config-schema.json'
+
+palette = "omarchy"
+add_newline = true
+command_timeout = 500
+scan_timeout = 30
+
+format = """
+  $os\
+$username\
+$hostname\
+$directory\
+$git_branch\
+$git_state\
+$git_status\
+$git_metrics\
+$fill \
+$c\
+$elixir\
+$elm\
+$golang\
+$haskell\
+$java\
+$julia\
+$nim\
+$nodejs\
+$python\
+$rust\
+$docker_context\
+$memory_usage\
+$cmd_duration\
+$jobs\
+$sudo\
+$status\
+$battery\
+$time\
+$line_break\
+$character"""
+
+# ── who and where ────────────────────────────────────────────────────────────
+
+[os]
+disabled = false
+style = "accent"
+format = "[$symbol]($style)"
+
+[os.symbols]
+Arch = " "
+Ubuntu = " "
+Debian = " "
+Fedora = " "
+Macos = " "
+Windows = " "
+Linux = " "
+Raspbian = " "
+
+# Invisible in normal use. Starship still renders it when you are root or on the
+# far end of an SSH connection — which is exactly when you want to be told.
+[username]
+show_always = false
+style_user = "yellow"
+style_root = "bold red"
+format = "[$user]($style) "
+
+[hostname]
+ssh_only = true
+style = "bold yellow"
+format = "[󰒋 $hostname]($style) "
+
+[directory]
+truncation_length = 3
+truncation_symbol = "…/"
+truncate_to_repo = false
+home_symbol = "~"
+style = "accent"
+before_repo_root_style = "dim"
+repo_root_style = "bold accent"
+read_only = " 󰌾"
+read_only_style = "red"
+format = "[$path]($style)[$read_only]($read_only_style) "
+# Inside a repo the path up to the repo dims and the repo name goes bold, so the
+# project you are in reads at a glance out of a long path.
+repo_root_format = "[$before_root_path]($before_repo_root_style)[$repo_root]($repo_root_style)[$path]($style)[$read_only]($read_only_style) "
+
+[directory.substitutions]
+"Documents" = "󰈙"
+"Downloads" = ""
+"Music" = "󰎆"
+"Pictures" = "󰋩"
+"Videos" = "󰕧"
+"Nextcloud" = "󰅟"
+"Projects" = ""
+"Work" = ""
+
+# ── git ──────────────────────────────────────────────────────────────────────
+
+[git_branch]
+symbol = " "
+style = "italic magenta"
+truncation_length = 24
+truncation_symbol = "…"
+format = "[$symbol$branch]($style) "
+
+# Rebase / merge / cherry-pick in progress, with the step counter.
+[git_state]
+style = "bold orange"
+format = '[\($state( $progress_current/$progress_total)\)]($style) '
+
+[git_status]
+style = "yellow"
+format = "([$all_status$ahead_behind]($style) )"
+conflicted = "[◈${count}](bold red) "
+ahead      = "[⇡${count}](cyan) "
+behind     = "[⇣${count}](cyan) "
+diverged   = "[⇕⇡${ahead_count}⇣${behind_count}](bold red) "
+untracked  = "[?${count}](dim) "
+stashed    = "[≡${count}](magenta) "
+modified   = "[~${count}](yellow) "
+staged     = "[+${count}](green) "
+renamed    = "[»${count}](yellow) "
+deleted    = "[✘${count}](red) "
+up_to_date = "[󰄬](green)"
+
+# Lines added and removed in the working tree. only_nonzero_diffs keeps it off
+# the prompt entirely in a clean repo.
+[git_metrics]
+disabled = false
+only_nonzero_diffs = true
+added_style = "green"
+deleted_style = "red"
+format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
+
+# ── the rule between the two halves ──────────────────────────────────────────
+# For a plain gap instead of the dotted rule: symbol = " ". `rule` is derived
+# per theme (see the header) rather than named, so the dots stay legible
+# without competing with the text on either side.
+[fill]
+symbol = "·"
+style = "rule"
+
+# ── toolchain (right half, only in a project that uses it) ───────────────────
+
+[c]
+symbol = " "
+style = "cyan"
+format = "[$symbol($version)]($style) "
+
+[elixir]
+symbol = " "
+style = "magenta"
+format = "[$symbol($version)]($style) "
+
+[elm]
+symbol = " "
+style = "cyan"
+format = "[$symbol($version)]($style) "
+
+[golang]
+symbol = " "
+style = "cyan"
+format = "[$symbol($version)]($style) "
+
+[haskell]
+symbol = " "
+style = "magenta"
+format = "[$symbol($version)]($style) "
+
+[java]
+symbol = " "
+style = "cyan"
+format = "[$symbol($version)]($style) "
+
+[julia]
+symbol = " "
+style = "magenta"
+format = "[$symbol($version)]($style) "
+
+[nim]
+symbol = "󰆥 "
+style = "yellow"
+format = "[$symbol($version)]($style) "
+
+[nodejs]
+symbol = " "
+style = "green"
+format = "[$symbol($version)]($style) "
+
+[python]
+symbol = " "
+style = "cyan"
+format = "[$symbol($version)( $virtualenv)]($style) "
+
+[rust]
+symbol = "󱘗 "
+style = "orange"
+format = "[$symbol($version)]($style) "
+
+[docker_context]
+symbol = " "
+style = "blue"
+only_with_files = true
+format = "[$symbol$context]($style) "
+
+# ── state (right half) ───────────────────────────────────────────────────────
+
+# Only once RAM is over the threshold — invisible the rest of the time.
+[memory_usage]
+disabled = false
+threshold = 60
+symbol = "󰍛 "
+style = "yellow"
+format = "[$symbol${ram_pct}]($style) "
+
+[cmd_duration]
+min_time = 1000
+show_milliseconds = false
+# Inert unless show_notifications is also turned on, but kept so that turning it
+# on is a one-line change.
+min_time_to_notify = 30000
+style = "orange"
+format = "[󰔛 $duration]($style) "
+
+[jobs]
+symbol = "󰜎"
+style = "cyan"
+number_threshold = 1
+symbol_threshold = 1
+format = "[$symbol$number]($style) "
+
+# Shows only while sudo credentials are still cached.
+[sudo]
+disabled = false
+symbol = "󰞀"
+style = "red"
+format = "[$symbol]($style) "
+
+[status]
+disabled = false
+map_symbol = true
+recognize_signal_code = true
+style = "red"
+symbol = "✘"
+success_symbol = ""
+not_found_symbol = "󰍉"
+sigint_symbol = "󰅗"
+signal_symbol = "󰜗"
+format = "[$symbol$status]($style) "
+
+# No display rule matches above 40%, which is starship's way of hiding a module:
+# the battery appears only once it is worth knowing about.
+[battery]
+format = "[$symbol$percentage]($style) "
+full_symbol = "󰁹 "
+charging_symbol = "󱐋 "
+discharging_symbol = "󰂃 "
+unknown_symbol = "󰂑 "
+empty_symbol = "󰂎 "
+
+[[battery.display]]
+threshold = 15
+style = "bold red"
+discharging_symbol = "󰁺 "
+
+[[battery.display]]
+threshold = 40
+style = "yellow"
+discharging_symbol = "󰁼 "
+
+[time]
+disabled = false
+time_format = "%H:%M"
+style = "dim"
+format = "[$time]($style)"
+
+# ── line 2 ───────────────────────────────────────────────────────────────────
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+vimcmd_symbol = "[❮](bold magenta)"
+vimcmd_replace_one_symbol = "[❮](bold orange)"
+vimcmd_replace_symbol = "[❮](bold orange)"
+vimcmd_visual_symbol = "[❮](bold yellow)"
