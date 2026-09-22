@@ -28,6 +28,53 @@ bleopt complete_menu_filter=1         # keep typing to filter the open menu
 bleopt history_share=1                # commands from other terminals show up immediately
 bleopt history_lazyload=1
 
+# history_share + HISTTIMEFORMAT: repair ble.sh's line bookkeeping (upstream bug, still in
+# master as of 2026-09-20).
+#   WHY: history_share tracks how far into $HISTFILE this shell has read ("rskip") in LINES,
+#   but ble.sh counts ENTRIES in three places. lib/core.sh sets HISTTIMEFORMAT, so every
+#   entry is TWO lines ("#<epoch>" + the command) and all three come up half short:
+#     1. .initialize      clamps rskip to the entry count  -> a new shell re-imports the back
+#                         half of the file ("loading history ..." on every command).
+#     2. .add-rskip       advances by entries written      -> the shell re-reads its own line,
+#                         so EVERY command landed in history twice (Up had to be pressed
+#                         twice per command, and timestamps slid onto the wrong entry).
+#     3. .load-recent-entries is told lines, not entries   -> imports twice as many entries
+#                         from bash's list as really arrived.
+#   Measured on an empty HISTFILE: `echo A; echo B; echo C` gave A A B B C C with
+#   HISTTIMEFORMAT set and A B C without. Dropping the timestamps or history_share would
+#   also "fix" it; this keeps both.
+#   The guard matches the exact buggy call in .write, so once upstream changes that code
+#   these advices switch themselves off instead of double-correcting. Undo = delete the block.
+if [[ $(declare -f ble/builtin/history/.write) == *'.add-rskip "$file" "$_ble_builtin_history_histapp_count"'* ]]; then
+    # Line count of $HISTFILE as this shell starts, i.e. what bash itself is about to load.
+    # .initialize runs lazily at the FIRST command, and counting then would skip whatever
+    # another terminal wrote in between (measured: its first command never showed up here).
+    # mapfile, not $(wc -l): no fork on the startup path.
+    _bashrc_histfile_lines0=0
+    if [[ -r ${HISTFILE-} ]]; then
+        mapfile -t _bashrc_histfile_tmp < "$HISTFILE"
+        _bashrc_histfile_lines0=${#_bashrc_histfile_tmp[@]}
+        unset -v _bashrc_histfile_tmp
+    fi
+    ble/function#advice around ble/builtin/history/.initialize '
+        local _bashrc_was=$_ble_builtin_history_initialized
+        ble/function#advice/do
+        if [[ ! $_bashrc_was && $_ble_builtin_history_initialized && -e ${HISTFILE-} ]] &&
+            declare -p HISTTIMEFORMAT &>/dev/null; then
+            ble/builtin/history/.set-rskip "$HISTFILE" "$_bashrc_histfile_lines0"
+        fi'
+    # flag_timestamp is .write's own local (1 when HISTTIMEFORMAT is declared), visible here
+    # through bash's dynamic scoping; .write is the only caller of .add-rskip.
+    ble/function#advice around ble/builtin/history/.add-rskip '
+        ((flag_timestamp)) && ADVICE_WORDS[2]=$((ADVICE_WORDS[2]*2))
+        ble/function#advice/do'
+    # The true number of new entries is how far bash's own list grew since ble.sh last looked.
+    ble/function#advice around ble/builtin/history/.load-recent-entries '
+        local max; ble/builtin/history/.get-max
+        ADVICE_WORDS[1]=$((max-_ble_builtin_history_prevmax))
+        ble/function#advice/do'
+fi
+
 # ── Misc
 bleopt edit_bell=abell                # flash instead of beep
 bleopt exec_errexit_mark=$'\e[91m[exit %d]\e[m'   # the red "[exit N]" line after a failed command
