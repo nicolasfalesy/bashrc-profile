@@ -252,7 +252,10 @@ unset _lg_theme
 # 2), not over SSH, and not the agent/about windows which draw their own. The
 # card comes from ~/.config/fastfetch/config.jsonc, a symlink into the current
 # theme (see omarchy-desktop config/themed/fastfetch.jsonc.tpl).
-if [[ $- == *i* && -t 1 && ${SHLVL:-1} -le 1 && -z ${SSH_CONNECTION-} && -z ${TMUX-} && -z ${CLAUDECODE-} ]] \
+# _omarchy_ff_shown stops it firing again when reload, bup or bt re-source
+# ~/.bashrc in the same shell. It is not exported, so new shells start clean.
+if [[ -z ${_omarchy_ff_shown-} && $- == *i* && -t 1 && ${SHLVL:-1} -le 1 && -z ${SSH_CONNECTION-} && -z ${TMUX-} && -z ${CLAUDECODE-} ]] \
    && command -v fastfetch >/dev/null 2>&1 && [[ -f ${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch/config.jsonc ]]; then
     fastfetch
+    _omarchy_ff_shown=1
 fi
