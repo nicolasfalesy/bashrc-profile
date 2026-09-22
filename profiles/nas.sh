@@ -86,3 +86,27 @@ _dsv_completions() {
     else COMPREPLY=($(compgen -d -- "${cur:-/mnt/$ZPOOL/}")); fi
 }
 complete -F _dsv_completions dsv
+
+# pw — hand the vault master password to a helper session, without it ever touching
+# the screen, the shell history or a command line. Prompts with no echo, writes the
+# value to a root-only file that the helper reads once and shreds. `pw -c` removes
+# the file yourself if the helper never picked it up.
+pw() {
+    local file=/root/.bw-master p
+    case ${1-} in
+        -h|--help) echo "pw       prompt for the vault master password -> $file (root-only, 0600)"
+                   echo "pw -c    remove that file without writing a new one"; return 0 ;;
+        -c) if sudo shred -u "$file" 2>/dev/null; then echo "pw: $file removed"; else echo "pw: nothing to remove"; fi; return 0 ;;
+        '') ;;
+        *) echo "pw: unknown option '$1'" >&2; return 1 ;;
+    esac
+    # read -rs: typed, not echoed. Type it rather than paste it — see cpy -p for why
+    # pasting into `read` is unreliable in some terminals.
+    read -rs -p 'master password: ' p || { echo; return 1; }
+    echo
+    [[ -n $p ]] || { echo "pw: empty, nothing written" >&2; return 1; }
+    # stdin, not an argument: sudo logs its argv, and that log is shipped to Loki.
+    if ! { printf '%s' "$p" | sudo tee "$file" >/dev/null && sudo chmod 600 "$file"; }; then unset p; return 1; fi
+    unset p
+    echo "pw: written to $file ($(sudo stat -c '%a %U' "$file")) — tell the helper it is there"
+}
