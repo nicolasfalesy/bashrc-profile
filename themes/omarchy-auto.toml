@@ -48,6 +48,7 @@ $git_branch\
 $git_state\
 $git_status\
 $git_metrics\
+${custom.nextclass}\
 $fill \
 $c\
 $elixir\
@@ -163,6 +164,19 @@ only_nonzero_diffs = true
 added_style = "green"
 deleted_style = "red"
 format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
+
+# ── next class ───────────────────────────────────────────────────────────────
+# "󰃭 EC 270 in 25m" when the calendar cache (the bar's gcal.json) has an event
+# starting within 90 minutes or on now; empty otherwise. omarchy-next-class is
+# in the omarchy-desktop repo. `when` keeps the module free when there is no
+# cache at all (a machine without the calendar widget).
+[custom.nextclass]
+command = "omarchy-next-class"
+when = '[[ -s "$HOME/.cache/omarchy/gcal.json" ]] && command -v omarchy-next-class >/dev/null'
+shell = ["bash", "--noprofile", "--norc"]
+style = "accent"
+format = "[󰃭 $output]($style) "
+ignore_timeout = true
 
 # ── the rule between the two halves ──────────────────────────────────────────
 # For a plain gap instead of the dotted rule: symbol = " ". `rule` is derived
