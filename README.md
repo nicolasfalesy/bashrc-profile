@@ -3,7 +3,7 @@
 [![smoke](https://github.com/nicolasfalesy/bashrc-profile/actions/workflows/smoke.yml/badge.svg)](https://github.com/nicolasfalesy/bashrc-profile/actions/workflows/smoke.yml)
 
 A modular bash configuration for every machine I touch — a Raspberry Pi 4 (Docker host),
-a TrueNAS SCALE box, a laptop, and the odd Debian server — with one installer that
+a TrueNAS SCALE box, a laptop running Omarchy (Arch + Hyprland), and the odd Debian server — with one installer that
 knows which machine it is on and what that machine needs.
 
 ```bash
@@ -24,7 +24,7 @@ Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for opt
 | System | `sys`, `psg`, `port`, `killport`, `topp`, `myip`, `weather`, `t` (tmux) |
 | Services | git (`gs`, `gcm`, `glog`…), systemd (`scs`, `screstart`, `sclog`…), Docker Compose (`dcu`, `dcd`, `dcr`, `dcl`, `dps`) |
 | C dev | `ru` / `run` / `rud` / `rund` (valgrind) / `rut` (test suite) / `mkt` — lazy-loaded |
-| Per machine | **pi**: `temp`, `wt`, `cloud` (Cloudflare tunnel) · **nas**: ZFS shortcuts, `dsv`, `wn` · **desktop**: `vpn`, `note`, Alacritty/GRUB helpers · **uw**: no-root student servers, Waterloo Gold prompt |
+| Per machine | **pi**: `temp`, `wt`, `cloud` (Cloudflare tunnel) · **nas**: ZFS shortcuts, `dsv`, `wn` · **desktop**: `vpn`, `note`, Alacritty/GRUB helpers · **omarchy**: layered on top of Omarchy's own bash setup, prompt follows the desktop theme and shows your next class, themed lazygit, fastfetch card on a new terminal · **uw**: no-root student servers, Waterloo Gold prompt |
 | Timing | `BASHRC_TIMING=1 bash -i` prints startup ms. ble.sh's first prompt redraw wipes that line, so the same number is always written to `~/.cache/bashrc-profile/last-startup-ms` |
 | Housekeeping | `bt` (edit a module — syntax-checked and reloaded on save), `bgit` (git in the repo from anywhere), `bup` (pull + relink + reload), `prereqs` (install dependencies), `reload`, `tests/smoke.sh` |
 
@@ -42,7 +42,7 @@ lib/clipboard.sh       cpy, pst (OSC 52 — works over SSH)
 lib/system.sh          sys, psg, port, killport, topp, myip, weather, t, rcon
 lib/dev.sh             C toolchain (lazy-loaded)
 lib/prompt.sh          fzf, starship, ble.sh, optional zoxide (always last)
-profiles/{pi,nas,desktop,uw,server}.sh
+profiles/{pi,nas,desktop,omarchy,uw,server}.sh
 themes/aurora.toml     starship theme, linked as ~/.config/starship.toml
 themes/waterloo-gold.toml   linked instead on the uw profile (bt theme edits whichever is linked)
 themes/omarchy-auto.toml    starship theme for the omarchy profile — colours by name only,
@@ -65,19 +65,25 @@ Per-machine install notes (Pi, TrueNAS, laptop): [docs/SETUP.md](docs/SETUP.md).
 ## Machine profiles
 
 The installer detects the profile (`/proc/device-tree/model` → **pi**, TrueNAS
-middleware → **nas**, a display → **desktop**, a `uwaterloo.ca` hostname or DNS
+middleware → **nas**, `/usr/share/omarchy` → **omarchy**, a display → **desktop**, a `uwaterloo.ca` hostname or DNS
 search domain → **uw**, else **server**) and writes it to
 `~/.config/bashrc-profile/config`. Override with `install.sh --profile nas` or
 edit later with `bt config`.
 
-| | pi | nas | desktop | uw | server |
-|---|---|---|---|---|---|
-| System packages via apt/nala | ✓ | ✗ (read-only root) | ✓ | ✗ (no root) | ✓ |
-| starship / fzf | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback |
-| ble.sh (syntax highlighting) | on | on (`~/.local/share/blesh`) | on | on | on |
-| fastfetch on new terminal | off | off | on | off | off |
-| starship theme | Aurora | Aurora | Aurora | Waterloo Gold | Aurora |
-| Extras | raspi-utils, nala, wireguard | GPU `wn`, hand-unpacked nvim | alacritty, clipboard, Nerd Font, wireguard | `rm -iv`, `~/bin` | — |
+| | pi | nas | desktop | omarchy | uw | server |
+|---|---|---|---|---|---|---|
+| System packages | apt/nala | ✗ (read-only root) | apt/nala | pacman (only what Omarchy lacks) | ✗ (no root) | apt/nala |
+| starship / fzf | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback `~/.local/bin` | Omarchy's own | `~/.local/bin` only | apt, fallback |
+| ble.sh (syntax highlighting) | on | on (`~/.local/share/blesh`) | on | off by choice (`--no-blesh`, it costs ~205 ms) | on | on |
+| fastfetch on new terminal | off | off | on | on (first shell in a new window only) | off | off |
+| starship theme | Aurora | Aurora | Aurora | Omarchy Auto | Waterloo Gold | Aurora |
+| Extras | raspi-utils, nala, wireguard | GPU `wn`, hand-unpacked nvim | alacritty, clipboard, Nerd Font, wireguard | next class in the prompt, themed lazygit, wireguard | `rm -iv`, `~/bin` | — |
+
+The **omarchy** profile is layered, not a takeover: `~/.bashrc` keeps loading
+Omarchy's own rc and then sources this repo from a marked block, so deleting that
+block reverts everything. Where both define the same name, `profiles/omarchy.sh`
+decides who wins and moves the loser to a new name (details in
+[docs/FEATURES.md](docs/FEATURES.md#profile-omarchy-profilesomarchysh)).
 
 zoxide (`z`, `zi`) is off everywhere unless you install with `--with-zoxide` or set
 `BASHRC_ZOXIDE=1` in `bt config`.

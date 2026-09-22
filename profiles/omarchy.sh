@@ -234,3 +234,25 @@ install_app() {
             ln -sf "$src" "$dir/$(basename "$src")" && echo "✅ Linked $(basename "$src")" ;;
     esac
 }
+
+
+# ── Sakura Night extras (2026-09-21, see ~/Projects/omarchy-desktop) ─────────
+# lazygit: Omarchy renders ~/.local/state/omarchy/current/theme/lazygit.yml from
+# a template in that repo on every theme switch. lazygit reads a comma-separated
+# list of config files, later ones winning, so the user's own config.yml stays
+# the base and the theme file only adds colours.
+_lg_theme="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/current/theme/lazygit.yml"
+if [[ -f $_lg_theme ]]; then
+    export LG_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/lazygit/config.yml,$_lg_theme"
+fi
+unset _lg_theme
+
+# fastfetch card on a fresh terminal window: interactive, a real terminal, the
+# first shell in it (SHLVL 1 — not a subshell, not inside tmux which starts at
+# 2), not over SSH, and not the agent/about windows which draw their own. The
+# card comes from ~/.config/fastfetch/config.jsonc, a symlink into the current
+# theme (see omarchy-desktop config/themed/fastfetch.jsonc.tpl).
+if [[ $- == *i* && -t 1 && ${SHLVL:-1} -le 1 && -z ${SSH_CONNECTION-} && -z ${TMUX-} && -z ${CLAUDECODE-} ]] \
+   && command -v fastfetch >/dev/null 2>&1 && [[ -f ${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch/config.jsonc ]]; then
+    fastfetch
+fi

@@ -265,6 +265,36 @@ Environment: if `~/nvim-linux-x86_64` exists (a hand-unpacked nvim release) it i
 Environment: `TERMINAL=alacritty`, `QT_QPA_PLATFORMTHEME=qt5ct`, fastfetch and ble.sh on by default.
 `cpy` / `pst` are shared now — see [Clipboard](#clipboard-libclipboardsh); here they pick up `wl-copy` or `xclip` by themselves.
 
+## Profile: omarchy (profiles/omarchy.sh)
+
+Layered on top of Omarchy's own bash setup (see [SETUP.md](SETUP.md#omarchy-laptop-profile-omarchy)).
+Where both sides define a name, this file settles it:
+
+| Name | Winner | The other one moved to |
+|------|--------|------------------------|
+| `cd` | Omarchy (zoxide `zd`) | — (`z` / `zi` jump) |
+| `c` | ours (clear) | Omarchy's `opencode --auto` → `o` |
+| `h` | Omarchy (herdr) | our `history \| grep` → `hg` |
+| `lt` | Omarchy (eza tree) | our `ll -tr` → `ltr` |
+| `ll` | ours, re-pointed at eza | — (matches Omarchy's `ls`) |
+| `t` | merged | bare `t` attaches the "Work" tmux session |
+| `ga` / `gd` | ours (git add / diff) | Omarchy's worktree add / remove → `wta` / `wtd` |
+
+| Command | Does |
+|---------|------|
+| `ni` / `np` / `ns` / `nq` | pacman install / remove / search / query |
+| `nu` | `omarchy-update` (not `pacman -Syu`: the mirror is pinned on purpose) |
+| `nclean` | remove orphaned packages, keep 2 cached versions |
+| `htop` | `btop`, when htop is not installed |
+| `vpn` / `-s` / `-d` / `-t` | WireGuard `wg0` up / status / down / toggle, shared with the taskbar toggle |
+| `note`, `notes`, `apps`, `install_app` | same as the desktop profile |
+
+Also set up here: the Omarchy Auto prompt, which retints itself on every theme
+change and shows the next class when one starts within 90 minutes; lazygit
+loading the theme's colours after your own config; and a fastfetch card in the
+first shell of a new terminal window. Environment: `TERMINAL=/usr/bin/foot`;
+`claude` is left as the real binary.
+
 ## Profile: uw (profiles/uw.sh — UW CS student servers)
 
 No root, so there is nothing to install system-wide. The installer links the
