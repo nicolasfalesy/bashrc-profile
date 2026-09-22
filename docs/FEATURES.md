@@ -317,7 +317,7 @@ without touching the config file.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `BASHRC_PROFILE` | autodetect | pi / nas / desktop / uw / server |
+| `BASHRC_PROFILE` | autodetect | pi / nas / desktop / omarchy / uw / server |
 | `BASHRC_BLESH` | 1 | load ble.sh when `~/.local/share/blesh/ble.sh` exists (highlighting, autosuggestions, menu completion — tuned in `blerc`) |
 | `BASHRC_FASTFETCH` | 0 (desktop 1) | fastfetch on new terminals |
 | `BASHRC_CD_LS_MAX` | 200 | `cd` lists directories up to this size |
