@@ -107,6 +107,39 @@ terminal so the prompt glyphs render. ble.sh and fastfetch are on by default.
 `vpn` expects a WireGuard config at `/etc/wireguard/wg0.conf`. `note`/`notes` default to
 `~/Nextcloud/…`; change `NOTES_FILE` in `~/.bashrc.local`.
 
+## Omarchy laptop (profile `omarchy`)
+
+Detected from `/usr/share/omarchy`. Arch + Hyprland with Omarchy's own bash setup.
+
+```bash
+bash install.sh --profile omarchy --no-blesh
+```
+
+Unlike every other profile this one does **not** replace `~/.bashrc`. It appends
+a block marked `bashrc-profile: BEGIN` / `END` that sources this repo after
+Omarchy's rc chain, so both sets of aliases are live and nothing under
+`/usr/share/omarchy` is touched. `install.sh --uninstall` strips the block again.
+
+Packages come from pacman, and only the few Omarchy does not already ship
+(`tree`, `trash-cli`, `7zip`, `unrar`, `wireguard-tools`, `desktop-file-utils`).
+ble.sh is best left off here: it adds about 205 ms to every new shell.
+
+What it adds on top of Omarchy:
+
+- **Prompt that follows the desktop theme.** `themes/omarchy-auto.toml` names its
+  colours, `bin/starship-omarchy-palette` fills them in from the current theme's
+  `colors.toml`, and `hooks/50-starship-palette` re-runs it on every
+  `omarchy theme set`.
+- **Next class in the prompt.** Starship's `[custom.nextclass]` module shows the
+  next calendar event when it starts within 90 minutes. It needs an
+  `omarchy-next-class` command on `PATH` and a calendar cache at
+  `~/.cache/omarchy/gcal.json`; without them the module simply stays hidden.
+- **Themed lazygit.** If the current theme has a `lazygit.yml`, `LG_CONFIG_FILE`
+  loads it after your own `config.yml`, so it only adds colours.
+- **fastfetch card on a new terminal window.** Only in the first shell of a real
+  terminal: not in subshells, tmux, SSH or Claude Code sessions. It uses
+  `~/.config/fastfetch/config.jsonc`, and is skipped if that file is missing.
+
 ## UW student servers (profile `uw`)
 
 `ubuntu2404-0xx.student.cs.uwaterloo.ca` and friends. Detected from a hostname or a
