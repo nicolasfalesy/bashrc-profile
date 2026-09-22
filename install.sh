@@ -91,7 +91,7 @@ Modes (default: full install)
                        (profile "omarchy": strips the appended block instead)
 
 Options
-  --profile <p>        pi | nas | desktop | uw | server | auto   (default: auto)
+  --profile <p>        pi | nas | desktop | omarchy | uw | server | auto   (default: auto)
                        uw = UW CS student servers: no root, Waterloo Gold prompt
   --no-deps            skip dependency installation
   --with-dev           C toolchain: gcc make gdb valgrind clang
