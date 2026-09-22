@@ -112,7 +112,7 @@ terminal so the prompt glyphs render. ble.sh and fastfetch are on by default.
 Detected from `/usr/share/omarchy`. Arch + Hyprland with Omarchy's own bash setup.
 
 ```bash
-bash install.sh --profile omarchy --no-blesh
+bash install.sh --profile omarchy
 ```
 
 Unlike every other profile this one does **not** replace `~/.bashrc`. It appends
@@ -122,7 +122,8 @@ Omarchy's rc chain, so both sets of aliases are live and nothing under
 
 Packages come from pacman, and only the few Omarchy does not already ship
 (`tree`, `trash-cli`, `7zip`, `unrar`, `wireguard-tools`, `desktop-file-utils`).
-ble.sh is best left off here: it adds about 205 ms to every new shell.
+ble.sh (syntax highlighting and suggestions) is on by default and adds about
+205 ms to every new shell; `--no-blesh` skips it.
 
 What it adds on top of Omarchy:
 

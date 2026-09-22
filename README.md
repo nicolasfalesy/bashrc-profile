@@ -74,8 +74,8 @@ edit later with `bt config`.
 |---|---|---|---|---|---|---|
 | System packages | apt/nala | ✗ (read-only root) | apt/nala | pacman (only what Omarchy lacks) | ✗ (no root) | apt/nala |
 | starship / fzf | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback `~/.local/bin` | Omarchy's own | `~/.local/bin` only | apt, fallback |
-| ble.sh (syntax highlighting) | on | on (`~/.local/share/blesh`) | on | off by choice (`--no-blesh`, it costs ~205 ms) | on | on |
-| fastfetch on new terminal | off | off | on | on (first shell in a new window only) | off | off |
+| ble.sh (syntax highlighting) | on | on (`~/.local/share/blesh`) | on | on (costs ~205 ms per shell; `--no-blesh` to skip) | on | on |
+| fastfetch on new terminal | off | off | on | on, from `profiles/omarchy.sh` (first shell in a new window only; keep `BASHRC_FASTFETCH=0` or it draws twice) | off | off |
 | starship theme | Aurora | Aurora | Aurora | Omarchy Auto | Waterloo Gold | Aurora |
 | Extras | raspi-utils, nala, wireguard | GPU `wn`, hand-unpacked nvim | alacritty, clipboard, Nerd Font, wireguard | next class in the prompt, themed lazygit, wireguard | `rm -iv`, `~/bin` | — |
 
