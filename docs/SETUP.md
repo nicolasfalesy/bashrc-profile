@@ -12,7 +12,7 @@ The installer asks one question. Useful flags:
 
 | Flag | Effect |
 |------|--------|
-| `--profile pi\|nas\|desktop\|uw\|server` | skip autodetection |
+| `--profile pi\|nas\|desktop\|omarchy\|uw\|server` | skip autodetection |
 | `--dry-run` | print every step, change nothing |
 | `--yes` | no questions (piped installs on a box without a tty assume yes) |
 | `--no-deps` | just link files |
