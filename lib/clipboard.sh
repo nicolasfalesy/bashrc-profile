@@ -36,12 +36,22 @@
 #   BASHRC_CLIP_TIMEOUT   seconds to wait for the terminal's OSC 52 reply (default 0.5)
 #   BASHRC_CLIP_PASTE_WAIT  seconds `cpy -p` waits for a paste to start (default 15)
 #   BASHRC_CLIP_PASTE_IDLE  tenths of a second of silence that end a `cpy -p` capture (default 2)
+#   BASHRC_CLIP_PASTE_FRESH seconds a `cpy -p` capture beats the terminal's clipboard in pst (default 600)
 
 # The spool: what cpy last copied on THIS host. Also the only thing pst can
 # return when the terminal refuses to be read.
 _clip_file() {
     printf '%s' "${BASHRC_CLIP_FILE:-${BASHRC_CACHE_DIR:-$HOME/.cache/bashrc-profile}/clipboard}"
 }
+
+# Beside the spool: the epoch of the last `cpy -p` capture. pst prefers the spool
+# over the terminal's clipboard while this is fresh. Why: on a terminal that CAN be
+# read (Alacritty with osc52 = "CopyPaste"), the obvious flow is "cpy -p, paste the
+# secret, then copy the next command from the instructions and run it" — and that
+# copy replaces the laptop's clipboard, so pst used to return the COMMAND instead of
+# what cpy -p had just caught (2026-09-23: `pst > ~/.cf-workers-token` wrote
+# "pst > ~/.cf-workers-token && chmod 600 ~/.cf-workers-token" into the token file).
+_clip_mark() { printf '%s.paste' "$(_clip_file)"; }
 
 # Which backend is live right now? Resolved per call, not at startup: the same
 # shell can be local one minute and inside tmux over SSH the next, and this keeps
@@ -149,7 +159,9 @@ Usage: cpy [-n] [--] [TEXT...]     no TEXT = read stdin
   -n, --no-newline   drop trailing newlines from stdin
   -p, --paste        wait, then store whatever you paste (Ctrl+Shift+V) — this is
                      how you get your laptop's clipboard onto this box when the
-                     terminal refuses to be read. Then use pst as normal.
+                     terminal refuses to be read. Then use pst as normal: for 10
+                     minutes pst returns this capture even if you copy something
+                     else on the laptop in the meantime.
   -c, --clear        clear the clipboard and the local spool
   --                 end of options (copy text that starts with -)
 
@@ -165,7 +177,7 @@ HELP
                 return 0 ;;
             -c|--clear)
                 f=$(_clip_file)
-                command rm -f -- "$f"
+                command rm -f -- "$f" "$(_clip_mark)"
                 # Dropping the spool is not enough: on wayland/x11/macos the real
                 # selection is held by the compositor or another process, so pst
                 # would happily keep returning the old value after we claimed to
@@ -218,6 +230,9 @@ HELP
     elif (( $# )); then printf '%s' "$*" > "$f"
     else command cat > "$f"; fi
     if (( strip )); then local d; d=$(command cat -- "$f"); printf '%s' "$d" > "$f"; fi
+    # A caught paste is what pst should hand back next (see _clip_mark); any other
+    # copy is also on the terminal's clipboard, so the normal read order applies again.
+    if (( paste )); then date +%s > "$(_clip_mark)"; else command rm -f -- "$(_clip_mark)"; fi
 
     backend=$(_clip_backend)
     (( paste )) && backend="file"    # it came from the clipboard; no point sending it back
@@ -256,13 +271,16 @@ _clip_read_raw() {
 
 # pst — the clipboard to stdout.
 pst() {
+    local only_local=0
     case ${1-} in
+        -l|--local) only_local=1 ;;
         -h|--help)
             cat <<'HELP'
 Paste the clipboard to stdout — the counterpart to cpy.
 
 Usage: pst              print it
        pst > file       write it            pst | jq .
+       pst -l           what cpy last stored on THIS host, never the terminal's clipboard
 
 Over SSH pst asks the terminal for its clipboard (OSC 52). Most terminals ship
 that read disabled — Windows Terminal and WezTerm will never implement it — and
@@ -271,13 +289,29 @@ then pst returns whatever cpy last copied on this host instead.
 To get your laptop's clipboard here on one of those: run `cpy -p`, press
 Ctrl+Shift+V, and pst returns it from then on. Terminals that CAN be read are
 listed at the top of lib/clipboard.sh (bt clipboard).
+
+A `cpy -p` capture wins over the terminal's clipboard for 10 minutes
+(BASHRC_CLIP_PASTE_FRESH), so copying the next command on the laptop cannot
+replace what you just pasted. Any plain cpy, or cpy -c, ends that early.
 HELP
             return 0 ;;
     esac
-    local f tmp src
+    local f tmp src t now fresh=${BASHRC_CLIP_PASTE_FRESH:-600}
     f=$(_clip_file)
     tmp=$(mktemp "${TMPDIR:-/tmp}/cpy.XXXXXX") || return 1
-    if _clip_read_raw > "$tmp" 2>/dev/null && [[ -s $tmp ]]; then
+    # A fresh `cpy -p` capture beats the terminal (why: _clip_mark).
+    if (( ! only_local )) && [[ -s $f && -r $(_clip_mark) ]]; then
+        IFS= read -r t < "$(_clip_mark)"; now=$(date +%s)
+        [[ $t =~ ^[0-9]+$ ]] && (( now - t < fresh )) && only_local=1
+    fi
+    if (( only_local )); then
+        if [[ ! -s $f ]]; then
+            command rm -f -- "$tmp"
+            echo "pst: nothing copied with cpy on $HOSTNAME yet 📋" >&2
+            return 1
+        fi
+        src=$f
+    elif _clip_read_raw > "$tmp" 2>/dev/null && [[ -s $tmp ]]; then
         src=$tmp
     elif [[ -s $f ]]; then
         src=$f
@@ -302,3 +336,4 @@ _cpy_completions() {
     [[ $cur == -* ]] && COMPREPLY=($(compgen -W '-h --help -n --no-newline -p --paste -c --clear' -- "$cur"))
 }
 complete -F _cpy_completions cpy
+complete -W '-h --help -l --local' pst

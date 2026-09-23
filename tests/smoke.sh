@@ -67,6 +67,19 @@ _t "cpy/pst"     _clip_rt
 _clip_np() { local BASHRC_CLIP_BACKEND=file BASHRC_CLIP_PASTE_WAIT=1
              cpy "keep-me"; cpy -p; (( $? == 1 )) && [[ $(pst) == keep-me ]]; }
 _t "cpy -p safe" _clip_np
+# a fresh cpy -p capture must beat the terminal clipboard: 2026-09-23 pst returned the
+# command copied on the laptop AFTER the paste instead of the pasted token. The stubs
+# stand in for a terminal that can be read (the sandbox has none).
+_clip_fresh() ( BASHRC_CLIP_BACKEND=file
+                _clip_slurp() { printf "caught-token"; }; _clip_read_raw() { printf "laptop-clip"; }
+                cpy -p && [[ $(pst) == caught-token ]] && [[ $(pst -l) == caught-token ]] )
+_t "cpy -p wins" _clip_fresh
+# ...only while fresh, and a plain cpy ends it: then the terminal is read again, as before
+_clip_ages() ( BASHRC_CLIP_BACKEND=file
+               _clip_slurp() { printf "caught-token"; }; _clip_read_raw() { printf "laptop-clip"; }
+               cpy -p && [[ $(BASHRC_CLIP_PASTE_FRESH=0 pst) == laptop-clip ]] &&
+               cpy -p && cpy "plain" && [[ $(pst) == laptop-clip ]] && [[ $(pst -l) == plain ]] )
+_t "cpy -p ages" _clip_ages
 _t "sys"         sys
 _t "psg"         psg bash
 _t "port -h"     port -h
