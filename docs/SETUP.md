@@ -201,6 +201,13 @@ terminal). `BASHRC_BLESH=0 bash -i` shows the number without ble.sh.
 line-by-line trace (ble.sh excluded — it refuses `bash -c`). Stale caches:
 `rm ~/.cache/bashrc-profile/*.bash`.
 
+**A new terminal ignores the first keys for a moment** — that is ble.sh loading and
+drawing the first prompt; nothing is lost, the keys show up once it is ready. Most of
+it is ble.sh's own start-up, but its character-width probe used to add a full prompt
+redraw on top. `blerc` now skips the probe when foot is the parent (about 0.25 s saved
+per terminal on a laptop on battery); `BASHRC_FOOT_WIDTHS=0 foot` opens one without
+that, for comparison. `bleopt debug_xtrace=<file>` traces ble.sh itself.
+
 **Something broke after an edit** — `bt` refuses to reload a file that does not
 parse and says so; fix it and save again. `bash "$BASHRC_PROFILE_DIR/tests/smoke.sh"`
 exercises every profile in a sandbox. An older `~/.bashrc.bak.*` is always there.
