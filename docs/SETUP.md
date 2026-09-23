@@ -132,7 +132,8 @@ What it adds on top of Omarchy:
   `colors.toml`, and `hooks/50-starship-palette` re-runs it on every
   `omarchy theme set`.
 - **Next class in the prompt.** Starship's `[custom.nextclass]` module shows the
-  next calendar event when it starts within 90 minutes. It needs an
+  next calendar event when it starts within 90 minutes, on the right next to the
+  clock (the folder you are in keeps the left to itself). It needs an
   `omarchy-next-class` command on `PATH` and a calendar cache at
   `~/.cache/omarchy/gcal.json`; without them the module simply stays hidden.
 - **Themed lazygit.** If the current theme has a `lazygit.yml`, `LG_CONFIG_FILE`
@@ -202,7 +203,9 @@ line-by-line trace (ble.sh excluded — it refuses `bash -c`). Stale caches:
 `rm ~/.cache/bashrc-profile/*.bash`.
 
 **A new terminal ignores the first keys for a moment** — that is ble.sh loading and
-drawing the first prompt; nothing is lost, the keys show up once it is ready. Most of
+drawing the first prompt; the keys show up once it is ready. (If they vanish instead,
+something at startup is flushing the tty: the omarchy profile's fastfetch did, until it
+was run detached with `setsid` — see the comment in `profiles/omarchy.sh`.) Most of
 it is ble.sh's own start-up, but its character-width probe used to add a full prompt
 redraw on top. `blerc` now skips the probe when foot is the parent (about 0.25 s saved
 per terminal on a laptop on battery); `BASHRC_FOOT_WIDTHS=0 foot` opens one without
