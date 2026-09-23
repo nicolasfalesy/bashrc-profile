@@ -24,8 +24,25 @@ bleopt complete_menu_style=align-nowrap
 bleopt complete_menu_maxlines=12
 bleopt complete_menu_filter=1         # keep typing to filter the open menu
 
+# ── Character widths: tell ble.sh what foot uses instead of letting it ask
+#   WHY: the default (char_width_mode=auto) makes every new shell print test characters
+#   and send foot 20 cursor-position queries, then redraw the whole prompt once the
+#   answers come back. With the full-width fill line that redraw is expensive: in foot
+#   on battery (power-saver) keys typed into a fresh terminal did not show until ~1.4 s
+#   after it opened; with the answer given up front, ~1.0 s (measured 2026-09-23).
+#   The values are what auto itself settles on in foot 1.28: `bleopt char_width_mode
+#   char_width_version` printed west / 16.0 (emoji_version is already 16.0 by default).
+#   Only when foot is the parent: tmux, ssh, other terminals and a nested `bash` keep
+#   auto-detection. After a foot upgrade, re-check from a nested `bash` with the
+#   bleopt command above; `BASHRC_FOOT_WIDTHS=0 foot` opens a terminal without this.
+if [[ ${BASHRC_FOOT_WIDTHS-1} == 1 && -r /proc/$PPID/comm ]] && { read -r _blerc_parent < "/proc/$PPID/comm"; [[ $_blerc_parent == foot ]]; }; then
+    bleopt char_width_mode=west
+    bleopt char_width_version=16.0
+fi
+unset -v _blerc_parent
+
 # ── History
-bleopt history_share=1                # commands from other terminals show up immediately
+bleopt history_share=1               # commands from other terminals show up immediately
 bleopt history_lazyload=1
 
 # history_share + HISTTIMEFORMAT: repair ble.sh's line bookkeeping (upstream bug, still in
