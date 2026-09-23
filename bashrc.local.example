@@ -1,26 +1,28 @@
 # ~/.bashrc.local — machine-specific settings, sourced after the profile.
 # This file is NOT tracked in git. install.sh copies this template if the file
 # does not exist yet. Edit with: bt local
+# The values below are placeholders (192.0.2.x and example.com are reserved for
+# documentation): this repo is public, so real addresses never go in it.
 
 # ── SSH shortcuts ────────────────────────────────────────────────────────────
 # Tip: ~/.ssh/config entries (Host nas / HostName … / User …) also give you
 # `scp file nas:` and tab completion. Aliases kept for muscle memory.
-alias uw='ssh nfalesy@ubuntu2404-010.student.cs.uwaterloo.ca'
-alias nas='ssh truenas_admin@192.168.2.182'
-alias pi='ssh raspby@192.168.2.181'
-alias home-pc='ssh nick@nicolasfalesy.com'      # from the UW servers back home
+alias uw='ssh userid@ubuntu2404-0xx.student.cs.uwaterloo.ca'
+alias nas='ssh admin@192.0.2.10'
+alias pi='ssh pi@192.0.2.11'
+alias home-pc='ssh user@example.com'      # from the UW servers back home
 
 # ── Minecraft RCON (rcon / rc) ───────────────────────────────────────────────
-export RCON_IP=192.168.2.182
+export RCON_IP=192.0.2.10
 export RCON_PORT=25575
 export RCON_PASS='change-me'
 
 # ── Cloudflare tunnel (cloud, Pi profile) ────────────────────────────────────
-export CF_TUNNEL=rpi-adguard
-export CF_DOMAIN=nicolasfalesy.com
+export CF_TUNNEL=my-tunnel
+export CF_DOMAIN=example.com
 
 # ── NAS (nas profile) ────────────────────────────────────────────────────────
-export ZPOOL=porsche
+export ZPOOL=tank
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 export WEATHER_LOCATION='Waterloo+Ontario+Canada'

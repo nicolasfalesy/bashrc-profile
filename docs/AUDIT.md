@@ -9,10 +9,10 @@ of functions); this rewrite reconciles both into one repo with machine profiles.
 
 | Finding | Action |
 |---------|--------|
-| **Minecraft RCON password committed** in `bashrc` (`RCON_PASS="${RCON_PASS:-ADF3…}"`) and pushed to a public repo | Removed. Secrets now live only in `~/.bashrc.local`. **Rotate the RCON password** — it stays in the git history of every clone. |
-| Home IPs, the UW username/hostname in tracked files | Moved to `~/.bashrc.local` (template ships with them since they are already public; edit as you like). |
+| **Minecraft RCON password committed** in `bashrc` and pushed to a public repo | Removed from `bashrc`, but the same default stayed in `legacy/zshrc` until 2026-09-22, when it became `change-me` there too. Secrets now live only in `~/.bashrc.local`. **Rotate the RCON password**: it stays in the git history of every clone. |
+| Home IPs, the UW username/hostname in tracked files | Moved to `~/.bashrc.local`. The template first shipped them as examples; since 2026-09-22 it ships placeholders (192.0.2.x, example.com), and the laptop's backup refuses to push new lines with home addresses. |
 | `curl … \| sh` used at shell *runtime* (`linutil`) | Removed. The installer still uses upstream install scripts, but only for starship/zoxide/fzf/ble.sh and only when apt cannot provide them. |
-| The NAS's ssh host key differs from `~/.ssh/known_hosts` (key changed — reinstall? new key?) | Not bypassed. If you reinstalled TrueNAS, run `ssh-keygen -R 192.168.2.182` and reconnect; otherwise investigate before trusting the box. |
+| The NAS's ssh host key differs from `~/.ssh/known_hosts` (key changed — reinstall? new key?) | Not bypassed. If you reinstalled TrueNAS, run `ssh-keygen -R <nas-address>` and reconnect; otherwise investigate before trusting the box. |
 
 ## Bugs fixed
 
@@ -189,7 +189,7 @@ versus `BASHRC_BLESH=0 BASHRC_TIMING=1 bash -i`.
   `configs/home/`), `~/.zsh/` (three plugin clones), both zsh histories, three
   `.zcompdump*`, `~/.zprofile`, `~/.zshenv`, the June `.bak` files and two stale
   `starship.toml.bak.*`. Everything was tarred to
-  `/mnt/porsche/configs/home/zsh-archive-20260906/` first; the live `.zshrc` (12 lines
+  `/mnt/<pool>/configs/home/zsh-archive-20260906/` first; the live `.zshrc` (12 lines
   newer) replaced `legacy/zshrc`. The Pi's dead `~/.shell_functions` went the same way.
   Login shells were already bash on both machines; the `zsh` binary is part of the
   TrueNAS image and stays.

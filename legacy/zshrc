@@ -110,9 +110,9 @@ export LESS_TERMCAP_us=$'\E[01;32m'
 export QT_QPA_PLATFORMTHEME=qt5ct
 
 # Minecraft RCON
-export RCON_IP="${RCON_IP:-192.168.2.182}"
+export RCON_IP="${RCON_IP:-192.0.2.10}"
 export RCON_PORT="${RCON_PORT:-25575}"
-export RCON_PASS="${RCON_PASS:-ADF3F9S3Lkvjv39lk39F}"
+export RCON_PASS="${RCON_PASS:-change-me}"
 
 # PATH
 mkdir -p "$HOME/.local/bin"
@@ -200,9 +200,9 @@ alias backup='bk'
 ###############################################################################
 # ALIASES — SSH
 ###############################################################################
-alias uw='ssh nfalesy@ubuntu2404-010.student.cs.uwaterloo.ca'
-alias nas='ssh truenas_admin@192.168.2.182'
-alias pi='ssh raspby@192.168.2.181'
+alias uw='ssh userid@ubuntu2404-0xx.student.cs.uwaterloo.ca'
+alias nas='ssh admin@192.0.2.10'
+alias pi='ssh pi@192.0.2.11'
 
 ###############################################################################
 # ALIASES — NVIDIA
@@ -819,7 +819,7 @@ rcon() {
             echo "  Sends a command to a Minecraft server via RCON (mcrcon)."
             echo ""
             echo "  Environment variables (with defaults):"
-            echo "    RCON_IP   - Server IP   (default: 192.168.2.182)"
+            echo "    RCON_IP   - Server IP   (default: 192.0.2.10)"
             echo "    RCON_PORT - Server port  (default: 25575)"
             echo "    RCON_PASS - RCON password"
             echo ""
@@ -873,12 +873,12 @@ cloud() {
 
   # 2. Add the DNS route for the new subdomain
   # Syntax: cloudflared tunnel route dns <tunnel-name/ID> <hostname>
-  cloudflared tunnel route dns rpi-adguard "$1.nicolasfalesy.com"
+  cloudflared tunnel route dns my-tunnel "$1.example.com"
 
   # 3. Restart the service to apply config.yml changes
   sudo systemctl restart cloudflared
 
-  echo "🚀 Route created and cloudflared restarted for $1.nicolasfalesy.com"
+  echo "🚀 Route created and cloudflared restarted for $1.example.com"
 }
 
 ###############################################################################
@@ -912,7 +912,7 @@ _dsv() {
   _arguments \
     '(-h --help -H)'{-h,--help,-H}'[Show help]' \
     '-n[Dry run - show files without deleting]' \
-    '1:pattern:(/mnt/porsche/ /mnt/porsche/movies /mnt/porsche/tv /mnt/porsche/music)'
+    '1:pattern:(/mnt/tank/ /mnt/tank/movies /mnt/tank/tv /mnt/tank/music)'
 }
 compdef _dsv dsv
 

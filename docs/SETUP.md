@@ -68,7 +68,7 @@ Detected from `/usr/share/truenas` or `/usr/bin/midclt`. TrueNAS SCALE is Debian
 ```bash
 # on the NAS, as your admin user
 curl -fsSL https://raw.githubusercontent.com/nicolasfalesy/bashrc-profile/main/install.sh | bash -s -- --profile nas
-bt local            # set ZPOOL=porsche (and anything else)
+bt local            # set ZPOOL=<your pool> (and anything else)
 ```
 
 Verified on the real box (TrueNAS SCALE, login shell switched from zsh to bash with
@@ -174,11 +174,11 @@ Consider moving the ssh aliases to `~/.ssh/config`:
 
 ```
 Host nas
-    HostName 192.168.2.182
-    User truenas_admin
+    HostName 192.0.2.10
+    User admin
 Host pi
-    HostName 192.168.2.181
-    User raspby
+    HostName 192.0.2.11
+    User pi
 ```
 That also gives you `scp file nas:` and host tab-completion.
 
