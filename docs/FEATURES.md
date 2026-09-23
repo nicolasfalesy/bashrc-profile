@@ -146,6 +146,7 @@ escape sequence, so it lands on the laptop's real clipboard.
 | `cpy -c` | clear the clipboard and the local spool |
 | `cpy -p` | **wait for a paste** (Ctrl+Shift+V) and store it — see below |
 | `pst` | paste to stdout — `pst > file`, `pst \| jq .` |
+| `pst -l` | only what `cpy` last stored on this host, never the terminal's clipboard |
 
 Backend, picked per call: `wl-copy` (Wayland) → `xclip`/`xsel` (X11, including
 `ssh -X`) → `pbcopy` (macOS) → **OSC 52** (the terminal itself). `tmux` and
@@ -174,6 +175,13 @@ and it captures what the terminal types at it:
 cpy -p          # "paste now (Ctrl+Shift+V)…"  → "caught ✅"
 pst > token.txt # and now pst returns it, here and in every later shell
 ```
+
+On a terminal that CAN be read (Alacritty with `osc52 = "CopyPaste"`), a capture
+still wins for 10 minutes (`BASHRC_CLIP_PASTE_FRESH`): otherwise copying the next
+command on the laptop, to paste it, replaced the laptop's clipboard, and `pst` wrote
+that command into `token.txt` instead of what `cpy -p` had just caught (it happened,
+2026-09-23). A plain `cpy` or `cpy -c` ends the window early; `pst -l` always reads
+the capture.
 
 `compatibility.allowOSC52` in Windows Terminal's `settings.json` controls the *copy*
 half and already defaults to `true`, so `cpy` works there with no configuration.
@@ -331,6 +339,7 @@ without touching the config file.
 | `BASHRC_CLIP_TIMEOUT` | 0.5 | seconds `pst` waits for the terminal's OSC 52 reply |
 | `BASHRC_CLIP_PASTE_WAIT` | 15 | seconds `cpy -p` waits for a paste to start (capped at 25) |
 | `BASHRC_CLIP_PASTE_IDLE` | 2 | tenths of a second of silence that end a `cpy -p` capture |
+| `BASHRC_CLIP_PASTE_FRESH` | 600 | seconds a `cpy -p` capture beats the terminal's clipboard in `pst` |
 | `RCON_IP`, `RCON_PORT`, `RCON_PASS` | – | Minecraft RCON |
 | `CF_TUNNEL`, `CF_DOMAIN` | – | Cloudflare tunnel name and zone (`cloud`) |
 | `ZPOOL` | tank | pool for the nas profile |
