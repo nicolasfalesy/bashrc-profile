@@ -256,6 +256,17 @@ unset _lg_theme
 # ~/.bashrc in the same shell. It is not exported, so new shells start clean.
 if [[ -z ${_omarchy_ff_shown-} && $- == *i* && -t 1 && ${SHLVL:-1} -le 1 && -z ${SSH_CONNECTION-} && -z ${TMUX-} && -z ${CLAUDECODE-} ]] \
    && command -v fastfetch >/dev/null 2>&1 && [[ -f ${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch/config.jsonc ]]; then
-    fastfetch
+    # Detached from the terminal, or it eats what you type. To show foot's version
+    # fastfetch asks foot over /dev/tty (a DA2 query), and before it asks it
+    # switches the tty with TCSAFLUSH, which throws away every key waiting to be
+    # read: open a terminal, type `nas` fast, and Enter ran an empty line
+    # (reproduced 2026-09-23; fastfetch 2.68.1, src/common/impl/io_unix.c). With
+    # no controlling terminal it cannot open /dev/tty, so it falls back to
+    # `foot --version` and the card comes out identical (~10 ms slower).
+    # The subshell is there because setsid only skips its own fork when it is not
+    # a process-group leader, and the trailing `:` stops bash exec'ing setsid in
+    # the subshell's place. fastfetch still reports bash and foot: it walks past
+    # shell names on its way up to the terminal.
+    ( setsid fastfetch; : )
     _omarchy_ff_shown=1
 fi
