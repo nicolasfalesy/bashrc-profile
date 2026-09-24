@@ -19,7 +19,7 @@
 #  work (toolchain, duration, jobs, next class, clock), separated by a faint
 #  dotted rule.
 #
-#     󰉋 ~/Projects/bashrc-profile  main ~2 ?1 ···  3.4s 󰃭 EC 270 in 25m 22:28
+#     󰉋 ~/Projects/bashrc-profile  main ~2 ?1 ··· 󰔛 3.4s 󰃭 EC 270 in 25m 22:28
 #    ❯ 
 #
 #  Line 1 is inset two columns so the path lines up with what you type after ❯.
@@ -41,7 +41,7 @@ command_timeout = 500
 scan_timeout = 30
 
 format = """
-  $os\
+  [ ](accent)\
 $username\
 $hostname\
 $directory\
@@ -65,7 +65,6 @@ $docker_context\
 $memory_usage\
 $cmd_duration\
 $jobs\
-$sudo\
 $status\
 $battery\
 ${custom.nextclass}\
@@ -75,20 +74,31 @@ $character"""
 
 # ── who and where ────────────────────────────────────────────────────────────
 
+# The Arch logo at the start of line 1 is written into `format` above as plain
+# text, and this module is off. It ran lsb_release (a shell script that starts
+# seven more programs) on every prompt, 17 ms each time, to print a logo that
+# never changes: this template is only used by the omarchy profile, which is
+# always Arch (measured with `starship timings`, 2026-09-23). On another distro,
+# put $os back in `format` and set disabled = false; the symbols are kept for that.
 [os]
-disabled = false
+disabled = true
 style = "accent"
 format = "[$symbol]($style)"
 
+# Nerd Font glyphs. Until 2026-09-23 every one of these was a plain space: the
+# characters in U+E000-U+F8FF (the Private Use Area) never made it into this
+# file on 2026-09-21, while the ones above U+FFFF (󰉋, 󰃭 ...) did. Check a
+# codepoint's glyph name in the font before trusting a cheat sheet, e.g.
+#   python3 -c "from fontTools.ttLib import TTFont; print(TTFont('<font>.ttf').getBestCmap()[0xF303])"
 [os.symbols]
-Arch = " "
-Ubuntu = " "
-Debian = " "
-Fedora = " "
-Macos = " "
-Windows = " "
-Linux = " "
-Raspbian = " "
+Arch = " "
+Ubuntu = " "
+Debian = " "
+Fedora = " "
+Macos = " "
+Windows = " "
+Linux = " "
+Raspbian = " "
 
 # Invisible in normal use. Starship still renders it when you are root or on the
 # far end of an SSH connection — which is exactly when you want to be told.
@@ -134,7 +144,7 @@ repo_root_format = "[󰉋 ](bold accent)[$before_root_path]($before_repo_root_st
 # ── git ──────────────────────────────────────────────────────────────────────
 
 [git_branch]
-symbol = " "
+symbol = " "
 style = "italic magenta"
 truncation_length = 24
 truncation_symbol = "…"
@@ -171,16 +181,23 @@ format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
 
 # ── next class ───────────────────────────────────────────────────────────────
 # "󰃭 EC 270 in 25m" when the calendar cache (the bar's gcal.json) has an event
-# starting within 90 minutes or on now; empty otherwise. omarchy-next-class is
-# in the omarchy-desktop repo. `when` keeps the module free when there is no
-# cache at all (a machine without the calendar widget).
+# starting within 90 minutes or on now; empty otherwise. The jq filter,
+# omarchy-next-class.jq, is in the omarchy-desktop repo.
+# jq runs the filter directly: one process per prompt. Until 2026-09-23 it was
+# four (bash for `when`, bash as the shell, the omarchy-next-class script, then
+# jq), 14 ms per prompt against 6 ms. bin/starship-omarchy-palette swaps the
+# HOME placeholder below for the real home folder when it renders this file:
+# starship does not expand ~ or $HOME in `shell`, and this repo is public.
+# With no cache or no filter file, jq fails quietly and the module shows only
+# its icon, as it does whenever nothing is on soon.
 # It sits on the right, next to the clock, in magenta: it is about time, not
 # place. Until 2026-09-23 it followed the path on the left in the same accent
 # colour, and he asked for the folder to be clearer and kept apart from it.
 [custom.nextclass]
-command = "omarchy-next-class"
-when = '[[ -s "$HOME/.cache/omarchy/gcal.json" ]] && command -v omarchy-next-class >/dev/null'
-shell = ["bash", "--noprofile", "--norc"]
+command = "<HOME>/.cache/omarchy/gcal.json"
+when = true
+shell = ["jq", "-r", "-f", "<HOME>/.local/share/omarchy-next-class.jq"]
+use_stdin = false
 style = "magenta"
 format = "[󰃭 $output]($style) "
 ignore_timeout = true
@@ -196,37 +213,37 @@ style = "rule"
 # ── toolchain (right half, only in a project that uses it) ───────────────────
 
 [c]
-symbol = " "
+symbol = " "
 style = "cyan"
 format = "[$symbol($version)]($style) "
 
 [elixir]
-symbol = " "
+symbol = " "
 style = "magenta"
 format = "[$symbol($version)]($style) "
 
 [elm]
-symbol = " "
+symbol = " "
 style = "cyan"
 format = "[$symbol($version)]($style) "
 
 [golang]
-symbol = " "
+symbol = " "
 style = "cyan"
 format = "[$symbol($version)]($style) "
 
 [haskell]
-symbol = " "
+symbol = " "
 style = "magenta"
 format = "[$symbol($version)]($style) "
 
 [java]
-symbol = " "
+symbol = " "
 style = "cyan"
 format = "[$symbol($version)]($style) "
 
 [julia]
-symbol = " "
+symbol = " "
 style = "magenta"
 format = "[$symbol($version)]($style) "
 
@@ -236,12 +253,12 @@ style = "yellow"
 format = "[$symbol($version)]($style) "
 
 [nodejs]
-symbol = " "
+symbol = " "
 style = "green"
 format = "[$symbol($version)]($style) "
 
 [python]
-symbol = " "
+symbol = " "
 style = "cyan"
 format = "[$symbol($version)( $virtualenv)]($style) "
 
@@ -251,7 +268,7 @@ style = "orange"
 format = "[$symbol($version)]($style) "
 
 [docker_context]
-symbol = " "
+symbol = " "
 style = "blue"
 only_with_files = true
 format = "[$symbol$context]($style) "
@@ -282,9 +299,12 @@ number_threshold = 1
 symbol_threshold = 1
 format = "[$symbol$number]($style) "
 
-# Shows only while sudo credentials are still cached.
+# Off since 2026-09-23, and $sudo is out of `format`. The check runs
+# `sudo -n true` on every prompt: about 20 ms and three journal lines each time,
+# and where sudo does not ask for a password the icon is always on and says
+# nothing. To bring it back: disabled = false, and $sudo back in `format`.
 [sudo]
-disabled = false
+disabled = true
 symbol = "󰞀"
 style = "red"
 format = "[$symbol]($style) "

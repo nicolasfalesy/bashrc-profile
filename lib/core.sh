@@ -15,7 +15,21 @@ HISTFILESIZE=100000                # lines kept on disk
 HISTCONTROL=ignoreboth:erasedups   # skip dupes + space-prefixed cmds, drop older dupes
 HISTTIMEFORMAT='%F %T '            # timestamps in `history`
 HISTIGNORE='ls:ll:l:c:clear:e:exit:bg:fg:history*'
-PROMPT_COMMAND='history -a'        # write each command immediately (starship keeps this)
+# Write each command to $HISTFILE immediately. Appended, never assigned: by now
+# PROMPT_COMMAND can be an array (Arch's /etc/bash.bashrc adds the window-title
+# printf to it) and `mise activate` puts its hook in element 0, which a plain
+# assignment overwrote, so mise's per-folder environment silently never ran
+# (found 2026-09-23). ${PROMPT_COMMAND@a} tells an array apart without the
+# $(declare -p) fork. The guard, which also looks where starship keeps what it
+# took over, stops `reload` adding it twice.
+if [[ " ${PROMPT_COMMAND[*]-} ${STARSHIP_PROMPT_COMMAND-} " != *'history -a'* ]]; then
+    if [[ ${PROMPT_COMMAND@a} == *a* ]]; then
+        PROMPT_COMMAND+=('history -a')
+    else
+        # shellcheck disable=SC2128,SC2178  # this branch only runs when it is a plain string
+        PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; }history -a"
+    fi
+fi
 
 # ── Readline / keys ──────────────────────────────────────────────────────────
 bind 'set bell-style visible'
@@ -25,7 +39,25 @@ bind 'set colored-stats on'                  # colour file types in completion l
 bind 'set colored-completion-prefix on'      # highlight the part already typed
 bind 'set mark-symlinked-directories on'
 bind '"\C-z": undo'
-stty -ixon 2>/dev/null                       # free Ctrl-S for forward history search
+# Free Ctrl-S for forward history search. ble.sh turns ixon off itself when it
+# attaches and never turns it back on, so with ble.sh loaded this stty would
+# only cost a fork and an exec (~3 ms) for nothing.
+[[ ${BASHRC_BLESH-} == 1 && -n ${BLE_VERSION-} ]] || stty -ixon 2>/dev/null
+
+# ── Output of a builtin into $REPLY, without forking ────────────────────────
+# $(...) forks a copy of the whole shell: ~0.7 ms in a plain bash and ~1.8 ms
+# once ble.sh (24 MB) is loaded, several times per new terminal. bash 5.3 runs
+# ${ cmd; } in the current shell instead. eval, so an older bash (the Pi, the
+# NAS, UW) never has to parse the new syntax; there it falls back to $(...).
+#   _bashrc_typep <cmd>    REPLY=$(type -P <cmd>), false when not found
+#   _bashrc_fndef <func>   REPLY=$(declare -f <func>), false when not defined
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 503 )); then
+    eval '_bashrc_typep() { REPLY=${ type -P "$1" 2>/dev/null; }; [[ -n $REPLY ]]; }
+          _bashrc_fndef() { REPLY=${ declare -f "$1" 2>/dev/null; }; [[ -n $REPLY ]]; }'
+else
+    _bashrc_typep() { REPLY=$(type -P "$1" 2>/dev/null); [[ -n $REPLY ]]; }
+    _bashrc_fndef() { REPLY=$(declare -f "$1" 2>/dev/null); [[ -n $REPLY ]]; }
+fi
 
 # ── XDG base directories ─────────────────────────────────────────────────────
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"

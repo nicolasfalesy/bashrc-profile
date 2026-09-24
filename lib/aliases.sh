@@ -193,7 +193,10 @@ HELP
                     echo "✓ saved — re-rendered with the current theme's colours"
             else
                 echo "✓ saved — starship re-reads its config at the next prompt"
-            fi ;;
+            fi
+            # A right_format added or taken out: tell the patched
+            # starship_precmd whether to ask for a right prompt (lib/prompt.sh).
+            if declare -F _bashrc_starship_rps1_check >/dev/null; then _bashrc_starship_rps1_check; fi ;;
         *)      echo "✓ saved $f" ;;
     esac
 }

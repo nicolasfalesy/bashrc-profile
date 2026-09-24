@@ -43,8 +43,8 @@ installed for you — the installer only warns if they are missing.
 
 Defaults: ble.sh on (highlighting, autosuggestions, menu completion; ~30 ms at
 start), fastfetch off. Flip either in `bt config`. `blerc` delays suggestions by
-100 ms after a keystroke so a Pi over ssh does not recompute on every key; raise
-`complete_auto_delay` there if it ever feels laggy.
+300 ms after a keystroke, so ble.sh does not work one out for every key you type;
+lower `complete_auto_delay` there if you want them sooner.
 
 `cloud <sub>` needs `CF_TUNNEL` and `CF_DOMAIN` in `~/.bashrc.local`.
 
@@ -133,9 +133,10 @@ What it adds on top of Omarchy:
   `omarchy theme set`.
 - **Next class in the prompt.** Starship's `[custom.nextclass]` module shows the
   next calendar event when it starts within 90 minutes, on the right next to the
-  clock (the folder you are in keeps the left to itself). It needs an
-  `omarchy-next-class` command on `PATH` and a calendar cache at
-  `~/.cache/omarchy/gcal.json`; without them the module simply stays hidden.
+  clock (the folder you are in keeps the left to itself). starship runs jq on
+  the filter `~/.local/share/omarchy-next-class.jq` (from the omarchy-desktop
+  repo) against the calendar cache `~/.cache/omarchy/gcal.json`; without them
+  the module shows only its icon.
 - **Themed lazygit.** If the current theme has a `lazygit.yml`, `LG_CONFIG_FILE`
   loads it after your own `config.yml`, so it only adds colours.
 - **fastfetch card on a new terminal window.** Only in the first shell of a real

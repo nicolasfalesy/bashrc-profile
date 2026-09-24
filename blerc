@@ -13,7 +13,19 @@ bleopt highlight_variable=1
 #   ignore it:               just keep typing
 bleopt complete_auto_complete=1
 bleopt complete_auto_history=1
-bleopt complete_auto_delay=100        # ms to wait after a keystroke before suggesting (kind to a Pi)
+# ms to wait after a keystroke before suggesting. 300, not 100 (since
+# 2026-09-23): at 100 ms the pause between two keys was often long enough, so
+# ble.sh worked out a suggestion for nearly every key and threw it away. Typing
+# "git status -s" at 150 ms a key: 72 ms of CPU per key at 100, 47 at 300.
+# The grey text now shows 0.3 s after you stop typing.
+bleopt complete_auto_delay=300
+# ...and wake every 10 ms, not 20, while a suggestion is pending. ble.sh waits
+# for that timer in 20 ms naps and only notices a key between naps, so with the
+# 300 ms wait a key typed 150-250 ms after the last one took ~29 ms to appear
+# instead of ~15. At 10 ms it is ~18 ms, for ~2 ms more CPU per key; nothing
+# wakes while no suggestion is pending (0 ms of CPU idle, measured). Measured in
+# a pty stand-in for kitty, 2026-09-23: "git status -s" at 150/250 ms a key.
+bleopt idle_interval=10
 ble-face auto_complete='fg=242'       # grey
 
 # ── Tab completion menu
@@ -44,7 +56,14 @@ fi
 unset -v _blerc_parent
 
 # ── History
-bleopt history_share=1               # commands from other terminals show up immediately
+# history_share OFF since 2026-09-23. On, every Enter re-read
+# $HISTFILE for other terminals' commands: 2 more sed and 1 more gawk per
+# command, ~22 ms and ~33 ms of CPU each time. Off, each terminal still writes
+# every command at once (lib/core.sh's `history -a`), and a new terminal starts
+# with all of them; only terminals already open do not pick them up.
+# NB ble.sh switches a boolean off with an EMPTY value: `history_share=0` would
+# still be on. Turn it back on with history_share=1.
+bleopt history_share=
 bleopt history_lazyload=1
 
 # history_share + HISTTIMEFORMAT: repair ble.sh's line bookkeeping (upstream bug, still in
@@ -64,7 +83,15 @@ bleopt history_lazyload=1
 #   also "fix" it; this keeps both.
 #   The guard matches the exact buggy call in .write, so once upstream changes that code
 #   these advices switch themselves off instead of double-correcting. Undo = delete the block.
-if [[ $(declare -f ble/builtin/history/.write) == *'.add-rskip "$file" "$_ble_builtin_history_histapp_count"'* ]]; then
+#   Read with ble.sh's own ble/function#getdef, which does not fork (it was a
+#   $(declare -f ...), ~1.8 ms). The advices only matter while history_share is
+#   on, and cost nothing otherwise, so they stay for when it is switched back.
+_blerc_write_is_buggy() {
+    local def
+    ble/function#getdef ble/builtin/history/.write &&
+        [[ $def == *'.add-rskip "$file" "$_ble_builtin_history_histapp_count"'* ]]
+}
+if _blerc_write_is_buggy; then
     # Line count of $HISTFILE as this shell starts, i.e. what bash itself is about to load.
     # .initialize runs lazily at the FIRST command, and counting then would skip whatever
     # another terminal wrote in between (measured: its first command never showed up here).
@@ -93,6 +120,7 @@ if [[ $(declare -f ble/builtin/history/.write) == *'.add-rskip "$file" "$_ble_bu
         ADVICE_WORDS[1]=$((max-_ble_builtin_history_prevmax))
         ble/function#advice/do'
 fi
+unset -f _blerc_write_is_buggy
 
 # ── Misc
 bleopt edit_bell=abell                # flash instead of beep
