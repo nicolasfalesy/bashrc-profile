@@ -39,7 +39,9 @@
 #            beats settings.json, so the alias would quietly defeat it. Omarchy's
 #            `cx` already covers the pre-set case.
 
-export TERMINAL=/usr/bin/foot
+# The desktop default terminal (kitty since 2026-09-23) is picked by xdg-terminal-exec
+# from ~/.config/xdg-terminals.list; a fixed path here would override that choice.
+export TERMINAL=xdg-terminal-exec
 export NOTES_FILE="${NOTES_FILE:-$HOME/Documents/quick-notes.txt}"
 
 # Our starship theme, without touching ~/.config/starship.toml — that file is
