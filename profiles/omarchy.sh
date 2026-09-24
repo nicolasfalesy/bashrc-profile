@@ -70,13 +70,57 @@ _omarchy_rename_fn() {   # <old> <new>
     # back): just drop the duplicate. This is the common path and costs nothing.
     if declare -F "$2" >/dev/null 2>&1; then unset -f "$1" 2>/dev/null; return 0; fi
     declare -F "$1" >/dev/null 2>&1 || return 0
-    # One command substitution, and bash's own prefix-strip instead of piping
-    # through grep and sed — this runs on every new shell, so three renames used
-    # to mean nine forked processes before the prompt appeared.
-    local body; body=$(declare -f "$1")
+    # bash's own prefix-strip instead of piping through grep and sed — this runs
+    # on every new shell, so three renames used to mean nine forked processes
+    # before the prompt appeared. _bashrc_fndef (lib/core.sh) reads the body
+    # without forking at all on bash 5.3 (it was one $(...) each, ~1.8 ms with
+    # ble.sh loaded).
+    _bashrc_fndef "$1" || return 0
+    local body=$REPLY
     eval "$2${body#"$1"}" && unset -f "$1"
     return 0
 }
+
+# ── mise: per-folder tools, checked only when the folder changes ─────────────
+# `mise activate` (run by Omarchy's rc) hooks every prompt: `mise hook-env`,
+# ~25 ms each time, to notice a new folder or an edited mise.toml. Until
+# 2026-09-23 that hook never ran at all (lib/core.sh overwrote it), and
+# Omarchy's `cd` alias (zoxide's `builtin cd`) skips mise's own cd wrapper, so
+# per-folder tools (a folder's .mise.toml, e.g. ~/Work adding ~/Work/bin) never
+# applied after the shell started. Now it runs only on the first prompt in a
+# new folder, which costs nothing the rest of the time. Trade-off: `mise use`
+# in the folder you are in applies after the next cd (or `mise hook-env`).
+# The start-up `_mise_hook --force` still runs and sets up the first folder.
+if declare -F _mise_hook_chpwd >/dev/null 2>&1; then
+    _mise_pwd_hook() {
+        local s=$?
+        if [[ $PWD != "${_mise_last_pwd-}" ]]; then
+            _mise_last_pwd=$PWD
+            # pushd/popd go through mise's cd wrapper, which already ran it.
+            [[ ${__MISE_BASH_CHPWD_RAN-0} == 1 ]] || _mise_hook_chpwd
+        fi
+        # Cleared on every prompt, as mise's own hook does. Cleared only on a
+        # folder change, a `pushd .` (the wrapper runs, the folder stays) left
+        # it set, and the next real cd then skipped mise: ~/Work/bin never
+        # arrived (seen in a kitty stand-in, 2026-09-23).
+        __MISE_BASH_CHPWD_RAN=0
+        return "$s"
+    }
+    _mise_last_pwd=$PWD
+    # Swap mise's per-prompt hook for this one. Rebuilt rather than edited in
+    # place: `reload` re-runs `mise activate`, which puts its hook back in front,
+    # and it also drops starship_precmd, which lib/prompt.sh puts back in
+    # element 0 (plain bash) with this hook saved inside it, so nothing runs twice.
+    # (A PROMPT_COMMAND that was a plain string, e.g. on the text console, is
+    # one element here; mise's hook inside it becomes the no-op `:`.)
+    _pc=()
+    for _m in "${PROMPT_COMMAND[@]}"; do
+        [[ $_m == _mise_hook_prompt_command || $_m == _mise_pwd_hook || $_m == starship_precmd ]] ||
+            _pc+=("${_m//_mise_hook_prompt_command/:}")
+    done
+    PROMPT_COMMAND=(_mise_pwd_hook "${_pc[@]}")
+    unset _pc _m
+fi
 
 # ── collisions ───────────────────────────────────────────────────────────────
 alias o='opencode --auto'                  # Omarchy's `c`, rehomed (ours is clear)

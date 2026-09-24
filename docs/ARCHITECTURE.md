@@ -111,9 +111,11 @@ shells, so `bash -ic exit` timings never include it.
 - `HISTTIMEFORMAT='%F %T '` — `history` shows when each command ran (the old value
   lacked the trailing space, so the time ran into the command).
 - `HISTIGNORE` — `ls`, `ll`, `c`, `e`, … are not worth remembering.
-- `PROMPT_COMMAND='history -a'` — append each command to the file immediately, so a
+- `history -a` in `PROMPT_COMMAND` — append each command to the file immediately, so a
   crash or a second terminal never loses it. Starship wraps `PROMPT_COMMAND` and
-  keeps running this.
+  keeps running this. It is *appended* (to the array, or the string), never assigned:
+  `mise activate` keeps its hook in element 0, and assigning over it switched mise's
+  per-folder environment off without a word.
 
 **Readline (`bind`)**
 - `bell-style visible` — flash, never beep.
@@ -125,7 +127,8 @@ shells, so `bash -ic exit` timings never include it.
 - `"\C-z": undo` — Ctrl-Z undoes edits on the command line (the job-control meaning of
   Ctrl-Z still applies while a program is running).
 - `stty -ixon` — turn off XON/XOFF flow control so Ctrl-S becomes *forward* history
-  search (the partner of Ctrl-R) instead of freezing the terminal.
+  search (the partner of Ctrl-R) instead of freezing the terminal. Skipped when ble.sh
+  is loaded: ble.sh does the same when it attaches, so the extra fork bought nothing.
 
 **XDG directories** — set with `${VAR:-default}` so an existing value (e.g. from a
 desktop session) is respected. Several tools (nvim, starship, zoxide) read them.
@@ -225,10 +228,21 @@ binary's path comes from `${BASH_CMDS[name]}` (bash's own hash table — no fork
 `[[ $binary -nt $cache ]]` triggers a rebuild after an upgrade. `bup` and `prereqs`
 clear the cache too.
 
-The starship script is patched once, when cached:
+The starship script is patched once, when cached (and again whenever `lib/prompt.sh`
+is newer than the cache):
 - `PS2="$(starship prompt --continuation)"` → the literal string (one fork saved per start);
 - `$(starship time)` → `$(( ${EPOCHREALTIME/./} / 1000 ))` — bash ≥ 5 can tell the time
-  itself, saving the two forks starship would otherwise do *around every command*.
+  itself, saving the two forks starship would otherwise do *around every command*; the
+  same for the `$(starship_preexec_ps0)` in `PS0` (plain bash);
+- with ble.sh, `starship prompt --right` (a second starship run per prompt, for ble.sh's
+  right prompt) only runs when the config has a `right_format`; none of the themes here
+  do. `_bashrc_starship_rps1_check` looks at startup and after `bt theme`;
+- bash ≥ 5.3: `$(jobs -p)` → `${ jobs -p; }`, which runs without forking.
+
+Startup avoids forking elsewhere too: `$BASHOPTS` instead of `$(shopt -p …)`, and
+`_bashrc_typep` / `_bashrc_fndef` (lib/core.sh) instead of `$(type -P …)` /
+`$(declare -f …)` on bash ≥ 5.3. A fork copies the whole shell: ~0.7 ms in a plain
+bash, ~1.8 ms once ble.sh is loaded.
 
 fzf: only `key-bindings.bash` is loaded (Ctrl-R fuzzy history, Ctrl-T file picker,
 Alt-C cd). `completion.bash` (the `vim **<Tab>` feature) costs ~25 ms because it
@@ -237,13 +251,15 @@ want it. With ble.sh on, the ble contrib integrations are used instead.
 
 If starship is missing you get a plain green/blue `user@host:path$` prompt.
 
-**PROMPT_COMMAND and history.** `lib/core.sh` sets `PROMPT_COMMAND='history -a'`.
-starship's init replaces `PROMPT_COMMAND` with `starship_precmd` and stores the old
-value in `STARSHIP_PROMPT_COMMAND`, which `starship_precmd` evals every prompt — so
+**PROMPT_COMMAND and history.** `lib/core.sh` appends `history -a` to `PROMPT_COMMAND`.
+Without ble.sh, starship's init puts `starship_precmd` in element 0 and stores what was
+there in `STARSHIP_PROMPT_COMMAND`, which `starship_precmd` evals every prompt — so
 each command still lands in the history file immediately (verified). With ble.sh
-attached, ble.sh takes over history entirely (`bleopt history_share=1` in `blerc`:
-other terminals' commands appear, and writes are ble.sh's), and it *unsets*
-`PROMPT_COMMAND` while a command runs. A function that reads `$PROMPT_COMMAND` at
+attached, starship hooks ble.sh's PRECMD instead, ble.sh emulates `history -a`, and
+it *unsets* `PROMPT_COMMAND` while a command runs. `bleopt history_share` is off in
+`blerc` (it re-read the whole history file after every command): a new terminal starts
+with every command written so far, but terminals already open do not pick up each
+other's. A function that reads `$PROMPT_COMMAND` at
 runtime under ble.sh sees it empty; that is normal.
 
 **ble.sh's shared history miscounts under `HISTTIMEFORMAT` — patched in `blerc`.** ble.sh

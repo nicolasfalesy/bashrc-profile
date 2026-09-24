@@ -160,7 +160,9 @@ fi
 # relies on an alias expanding inside a function body (that is why the modules
 # call `command ls`, `command rm` … in the first place), so switch expansion off
 # for the load and restore whatever the shell had afterwards.
-_bashrc_ea=$(shopt -p expand_aliases)
+# $BASHOPTS lists the shopt options that are on, so this needs no $(shopt -p)
+# fork (~1.8 ms once ble.sh is loaded).
+if [[ :$BASHOPTS: == *:expand_aliases:* ]]; then _bashrc_ea='shopt -s expand_aliases'; else _bashrc_ea='shopt -u expand_aliases'; fi
 [[ $BASHRC_PROFILE == omarchy ]] && shopt -u expand_aliases
 
 # 3–8. Shared modules, in order. clipboard.sh borrows _size_fmt from files.sh, so it follows it.
