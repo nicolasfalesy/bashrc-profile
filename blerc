@@ -18,6 +18,19 @@ ble-face command_file='fg=10,bold' command_function='fg=10,bold' \
 # 17, which kitty-accent.conf sets to the accent on every theme switch, so it
 # follows the theme like the Claude status line does (his pick, 2026-09-26).
 ble-face command_keyword='fg=17'
+# ...but some themes (Kanagawa) set the accent to the text colour, and then
+# keywords look like plain text. There, use the terminal's bright blue instead
+# (his pick, 2026-09-26). Checked once per new shell from the theme's
+# colors.toml, with read (no fork), so a theme switch reaches new terminals only.
+_blerc_accent= _blerc_fg=
+if [[ -r ${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/current/theme/colors.toml ]]; then
+    while IFS= read -r _blerc_line; do
+        [[ $_blerc_line =~ ^[[:space:]]*(accent|foreground)[[:space:]]*=[[:space:]]*\"([^\"]*)\" ]] || continue
+        [[ ${BASH_REMATCH[1]} == accent ]] && _blerc_accent=${BASH_REMATCH[2],,} || _blerc_fg=${BASH_REMATCH[2],,}
+    done < "${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/current/theme/colors.toml"
+    [[ $_blerc_accent && $_blerc_accent == "$_blerc_fg" ]] && ble-face command_keyword='fg=12'
+fi
+unset -v _blerc_accent _blerc_fg _blerc_line
 # Typos (and real syntax errors) in red text, not the white-on-red block.
 ble-face syntax_error='fg=9'
 
@@ -62,6 +75,32 @@ ble-face menu_complete_selected='fg=17,bg=8,bold' menu_complete_match='bold' \
 # menu-complete-display-prefix on, and ble.sh honours it by printing the whole
 # path in each entry. Omarchy's rc loads its inputrc before this file runs.
 builtin bind 'set menu-complete-display-prefix off'
+# A Nerd Font icon before each file in the menu (his pick, 2026-09-26). ble.sh
+# has no file icons, but every file entry goes through
+# ble/complete/action:file/init-menu-item, which may set `prefix` (drawn before
+# the name). The advice picks the icon from the type, then the extension: a
+# bash `case`, no forks, so a 300-entry menu costs next to nothing. Written as
+# \u escapes so no editor can strip the Private Use glyphs. Icons are nf-fa /
+# nf-oct names from the Nerd Fonts cheat sheet; codepoints drift between font
+# versions, so re-render them after a font update.
+blehook/eval-after-load complete '
+ble/function#advice after ble/complete/action:file/init-menu-item "
+    local ret; ble/complete/action:file/.get-filename; local f=\$ret
+    if [[ -h \$f ]]; then prefix=\$'\''\uf481 '\''          # nf-oct-file_symlink_file
+    elif [[ -d \$f ]]; then prefix=\$'\''\uf114 '\''        # nf-fa-folder_o (outline, like the rest)
+    else
+        case \${f##*.} in
+        png|jpg|jpeg|gif|webp|svg|bmp|ico|avif|heic) prefix=\$'\''\uf1c5 '\'' ;;  # nf-fa-file_image_o
+        mp3|flac|ogg|opus|wav|m4a) prefix=\$'\''\uf1c7 '\'' ;;                  # nf-fa-file_audio_o
+        mp4|mkv|webm|mov|avi) prefix=\$'\''\uf1c8 '\'' ;;                        # nf-fa-file_video_o
+        zip|tar|gz|xz|zst|bz2|7z|rar|tgz) prefix=\$'\''\uf1c6 '\'' ;;            # nf-fa-file_archive_o
+        pdf) prefix=\$'\''\uf1c1 '\'' ;;                                         # nf-fa-file_pdf_o
+        md|txt|log|rst) prefix=\$'\''\uf0f6 '\'' ;;                              # nf-fa-file_text_o
+        sh|bash|py|js|ts|rs|c|h|cpp|go|lua|qml|java|json|toml|yaml|yml|css|html|conf) prefix=\$'\''\uf1c9 '\'' ;;  # nf-fa-file_code_o
+        *) [[ -x \$f ]] && prefix=\$'\''\uf489 '\'' || prefix=\$'\''\uf016 '\'' ;;  # nf-oct-terminal / nf-fa-file_o
+        esac
+    fi"
+'
 
 # ── Character widths: tell ble.sh what foot uses instead of letting it ask
 #   WHY: the default (char_width_mode=auto) makes every new shell print test characters
@@ -151,5 +190,7 @@ unset -f _blerc_write_is_buggy
 
 # ── Misc
 bleopt edit_bell=abell                # flash instead of beep
-bleopt exec_errexit_mark=$'\e[91m[exit %d]\e[m'   # the red "[exit N]" line after a failed command
+# No "[exit N]" line after a failed command (his pick, 2026-09-26): the prompt's
+# ❯ already turns red. Was $'\e[91m[exit %d]\e[m'.
+bleopt exec_errexit_mark=
 bleopt prompt_eol_mark=$'\e[94m⏎\e[m'  # marks output that lacked a final newline
