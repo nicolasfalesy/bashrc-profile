@@ -194,7 +194,7 @@ format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
 # starship does not expand ~ or $HOME in `shell`, and this repo is public.
 # With no cache or no filter file, jq fails quietly and the module shows only
 # its icon, as it does whenever nothing is on soon.
-# It sits on the right, next to the clock, in magenta: it is about time, not
+# It sits on the right, next to the clock, in the accent: it is about time, not
 # place. Until 2026-09-23 it followed the path on the left in the same accent
 # colour, and he asked for the folder to be clearer and kept apart from it.
 [custom.nextclass]
@@ -202,7 +202,7 @@ command = "<HOME>/.cache/omarchy/gcal.json"
 when = true
 shell = ["jq", "-r", "-f", "<HOME>/.local/share/omarchy-next-class.jq"]
 use_stdin = false
-style = "magenta"
+style = "accent"   # magenta until 2026-09-26; he asked for the accent
 format = "[󰃭 $output]($style) "
 ignore_timeout = true
 

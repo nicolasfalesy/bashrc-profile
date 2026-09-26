@@ -48,6 +48,13 @@ bleopt complete_ambiguous=1           # match "abc" inside candidates, not only 
 bleopt complete_menu_style=align-nowrap
 bleopt complete_menu_maxlines=12
 bleopt complete_menu_filter=1         # keep typing to filter the open menu
+# Softer menu colours (his pick, 2026-09-26: "more elegant"). The defaults are
+# harsh: the picked item is flipped (reverse) and the text you filter with sits
+# on a pale yellow block. Now the picked item is bold accent on the theme's grey
+# (palette 8 = muted, 17 = accent via kitty-accent.conf, so both follow the
+# theme), and the letters you typed are bold in each entry.
+ble-face menu_complete_selected='fg=17,bg=8,bold' menu_complete_match='bold' \
+         menu_filter_input='fg=17,bold'
 
 # ── Character widths: tell ble.sh what foot uses instead of letting it ask
 #   WHY: the default (char_width_mode=auto) makes every new shell print test characters
