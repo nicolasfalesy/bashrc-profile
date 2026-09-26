@@ -54,7 +54,9 @@ bleopt complete_menu_filter=1         # keep typing to filter the open menu
 # (palette 8 = muted, 17 = accent via kitty-accent.conf, so both follow the
 # theme), and the letters you typed are bold in each entry.
 ble-face menu_complete_selected='fg=17,bg=8,bold' menu_complete_match='bold' \
-         menu_filter_input='fg=17,bold'
+         menu_filter_input='fg=17,bold' region_insert='fg=17,bg=8'
+# region_insert is the menu pick previewed on the command line (default: blue
+# on a white block, the harshest thing left in the 2026-09-26 screenshot).
 # Show only the new part of each name in the menu ("systemd/", not
 # ".local/share/systemd/" on every entry). Omarchy's inputrc turns
 # menu-complete-display-prefix on, and ble.sh honours it by printing the whole
