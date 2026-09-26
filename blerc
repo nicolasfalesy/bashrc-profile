@@ -193,4 +193,6 @@ bleopt edit_bell=abell                # flash instead of beep
 # No "[exit N]" line after a failed command (his pick, 2026-09-26): the prompt's
 # ❯ already turns red. Was $'\e[91m[exit %d]\e[m'.
 bleopt exec_errexit_mark=
+# ...and no "[ble: exit]" line when the shell exits (his ask, 2026-09-26).
+bleopt exec_exit_mark=
 bleopt prompt_eol_mark=$'\e[94m⏎\e[m'  # marks output that lacked a final newline
