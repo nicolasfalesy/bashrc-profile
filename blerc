@@ -195,4 +195,7 @@ bleopt edit_bell=abell                # flash instead of beep
 bleopt exec_errexit_mark=
 # ...and no "[ble: exit]" line when the shell exits (his ask, 2026-09-26).
 bleopt exec_exit_mark=
+# ...nor "[ble: elapsed 12.3s (CPU 98%)]" after long commands: the prompt's
+# own timer already shows how long they took (his pick, 2026-09-26).
+bleopt exec_elapsed_mark=
 bleopt prompt_eol_mark=$'\e[94m⏎\e[m'  # marks output that lacked a final newline
