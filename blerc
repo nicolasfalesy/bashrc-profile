@@ -6,6 +6,16 @@
 bleopt highlight_syntax=1
 bleopt highlight_filename=1
 bleopt highlight_variable=1
+# Every command that will really run is bold bright green (his pick, 2026-09-26).
+# ble.sh's default gives each kind its own colour: functions purple (fg=99),
+# aliases teal, builtins red, programs green. Most of what he types here is
+# a function or an alias (nas, t, vpn, z, ls, cd), so it read as "not a real
+# command". fg=10 is the terminal's bright green, so it follows the theme.
+ble-face command_file='fg=10,bold' command_function='fg=10,bold' \
+         command_alias='fg=10,bold' command_builtin='fg=10,bold' \
+         command_builtin_dot='fg=10,bold' command_jobs='fg=10,bold'
+# Typos (and real syntax errors) in red text, not the white-on-red block.
+ble-face syntax_error='fg=9'
 
 # ── Autosuggestions (fish-style grey text from history / completion)
 #   accept whole suggestion: →  or End  or Ctrl-F
