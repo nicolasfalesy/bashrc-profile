@@ -14,6 +14,10 @@ bleopt highlight_variable=1
 ble-face command_file='fg=10,bold' command_function='fg=10,bold' \
          command_alias='fg=10,bold' command_builtin='fg=10,bold' \
          command_builtin_dot='fg=10,bold' command_jobs='fg=10,bold'
+# Keywords (if, then, for, while) in the theme's accent. fg=17 is palette slot
+# 17, which kitty-accent.conf sets to the accent on every theme switch, so it
+# follows the theme like the Claude status line does (his pick, 2026-09-26).
+ble-face command_keyword='fg=17'
 # Typos (and real syntax errors) in red text, not the white-on-red block.
 ble-face syntax_error='fg=9'
 
@@ -23,14 +27,13 @@ ble-face syntax_error='fg=9'
 #   ignore it:               just keep typing
 bleopt complete_auto_complete=1
 bleopt complete_auto_history=1
-# ms to wait after a keystroke before suggesting. 300, not 100 (since
-# 2026-09-23): at 100 ms the pause between two keys was often long enough, so
-# ble.sh worked out a suggestion for nearly every key and threw it away. Typing
-# "git status -s" at 150 ms a key: 72 ms of CPU per key at 100, 47 at 300.
-# The grey text now shows 0.3 s after you stop typing.
-bleopt complete_auto_delay=300
+# ms to wait after a keystroke before suggesting. 100 again since 2026-09-26:
+# he wants the grey text sooner. It was 300 from 2026-09-23 because at 100
+# ble.sh works out a suggestion for nearly every key and throws it away
+# ("git status -s" at 150 ms a key: 72 ms of CPU per key at 100, 47 at 300).
+bleopt complete_auto_delay=100
 # ...and wake every 10 ms, not 20, while a suggestion is pending. ble.sh waits
-# for that timer in 20 ms naps and only notices a key between naps, so with the
+# for that timer in 20 ms naps and only notices a key between naps, so with a
 # 300 ms wait a key typed 150-250 ms after the last one took ~29 ms to appear
 # instead of ~15. At 10 ms it is ~18 ms, for ~2 ms more CPU per key; nothing
 # wakes while no suggestion is pending (0 ms of CPU idle, measured). Measured in
