@@ -55,6 +55,11 @@ bleopt complete_menu_filter=1         # keep typing to filter the open menu
 # theme), and the letters you typed are bold in each entry.
 ble-face menu_complete_selected='fg=17,bg=8,bold' menu_complete_match='bold' \
          menu_filter_input='fg=17,bold'
+# Show only the new part of each name in the menu ("systemd/", not
+# ".local/share/systemd/" on every entry). Omarchy's inputrc turns
+# menu-complete-display-prefix on, and ble.sh honours it by printing the whole
+# path in each entry. Omarchy's rc loads its inputrc before this file runs.
+builtin bind 'set menu-complete-display-prefix off'
 
 # ── Character widths: tell ble.sh what foot uses instead of letting it ask
 #   WHY: the default (char_width_mode=auto) makes every new shell print test characters
