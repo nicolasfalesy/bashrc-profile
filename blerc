@@ -2,6 +2,21 @@
 # Docs: https://github.com/akinomyoga/ble.sh/blob/master/docs/ChangeLog.md
 #       https://github.com/akinomyoga/ble.sh/wiki/Manual-%C2%A71-Introduction
 
+# ── Plain terminals: no Nerd Font icons, bright blue instead of the accent
+# He almost always comes in over ssh from the laptop's kitty, which has a Nerd
+# Font and sets palette slot 17 to the theme accent. A shell on the NAS or Pi
+# that did NOT come in over ssh (the local console, a tmux started there) has
+# neither: the icons draw as boxes and slot 17 is a dull navy. There, drop the
+# icons and use fg=12 (bright blue) wherever the accent would go (his pick,
+# 2026-09-26). The laptop is left alone: its own kitty has both.
+# (The TrueNAS web shell never gets here: bashrc turns ble.sh off in it, see
+# 2b there. It sets no SSH_CONNECTION, so it would count as plain too.)
+# Plain variable tests only, no forks.
+_blerc_acc=17 _blerc_icons=1
+if [[ -z ${SSH_CONNECTION-} && ${BASHRC_PROFILE-} != omarchy ]]; then
+    _blerc_acc=12 _blerc_icons=
+fi
+
 # ── Syntax highlighting: commands green, unknown red, existing paths underlined
 bleopt highlight_syntax=1
 bleopt highlight_filename=1
@@ -17,7 +32,7 @@ ble-face command_file='fg=10,bold' command_function='fg=10,bold' \
 # Keywords (if, then, for, while) in the theme's accent. fg=17 is palette slot
 # 17, which kitty-accent.conf sets to the accent on every theme switch, so it
 # follows the theme like the Claude status line does (his pick, 2026-09-26).
-ble-face command_keyword='fg=17'
+ble-face command_keyword="fg=$_blerc_acc"
 # ...but some themes (Kanagawa) set the accent to the text colour, and then
 # keywords look like plain text. There, use the terminal's bright blue instead
 # (his pick, 2026-09-26). Checked once per new shell from the theme's
@@ -66,8 +81,8 @@ bleopt complete_menu_filter=1         # keep typing to filter the open menu
 # on a pale yellow block. Now the picked item is bold accent on the theme's grey
 # (palette 8 = muted, 17 = accent via kitty-accent.conf, so both follow the
 # theme), and the letters you typed are bold in each entry.
-ble-face menu_complete_selected='fg=17,bg=8,bold' menu_complete_match='bold' \
-         menu_filter_input='fg=17,bold' region_insert='fg=17,bg=8'
+ble-face menu_complete_selected="fg=$_blerc_acc,bg=8,bold" menu_complete_match='bold' \
+         menu_filter_input="fg=$_blerc_acc,bold" region_insert="fg=$_blerc_acc,bg=8"
 # region_insert is the menu pick previewed on the command line (default: blue
 # on a white block, the harshest thing left in the 2026-09-26 screenshot).
 # Show only the new part of each name in the menu ("systemd/", not
@@ -82,8 +97,9 @@ builtin bind 'set menu-complete-display-prefix off'
 # bash `case`, no forks, so a 300-entry menu costs next to nothing. Written as
 # \u escapes so no editor can strip the Private Use glyphs. Icons are nf-fa /
 # nf-oct names from the Nerd Fonts cheat sheet; codepoints drift between font
-# versions, so re-render them after a font update.
-blehook/eval-after-load complete '
+# versions, so re-render them after a font update. Skipped in a plain terminal
+# (see the top of this file), which has no Nerd Font.
+[[ $_blerc_icons ]] && blehook/eval-after-load complete '
 ble/function#advice after ble/complete/action:file/init-menu-item "
     local ret; ble/complete/action:file/.get-filename; local f=\$ret
     if [[ -h \$f ]]; then prefix=\$'\''\uf481 '\''          # nf-oct-file_symlink_file
@@ -199,3 +215,4 @@ bleopt exec_exit_mark=
 # own timer already shows how long they took (his pick, 2026-09-26).
 bleopt exec_elapsed_mark=
 bleopt prompt_eol_mark=$'\e[94m⏎\e[m'  # marks output that lacked a final newline
+unset -v _blerc_acc _blerc_icons
