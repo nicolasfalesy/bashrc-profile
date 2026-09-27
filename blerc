@@ -48,6 +48,28 @@ fi
 unset -v _blerc_accent _blerc_fg _blerc_line
 # Typos (and real syntax errors) in red text, not the white-on-red block.
 ble-face syntax_error='fg=9'
+# Colour a command by what he TYPED, not by the grey suggestion after it (his
+# report, 2026-09-26: "sl" showed green). ble.sh writes the suggestion into
+# the line itself, so "sl" + grey "abratetop-bpfcc" was checked as the real
+# command "slabratetop-bpfcc" and came out green while the typed word is not a
+# command. While a suggestion shows, the advice hands the check only the typed
+# part (the text up to the cursor). Only for a plain word, where the checked
+# name equals the text (no quotes or ~). Accept the suggestion and it re-checks
+# the full word. Side effect: a half-typed "gi" is now red until the "t".
+# wtxt and p0 are locals of the caller (ble/progcolor/highlight-filename/
+# .single.wattr), seen through bash's dynamic scoping; any other caller has no
+# wtxt matching the word, so it is left alone. No forks.
+blehook/eval-after-load syntax '
+ble/function#advice around ble/syntax/highlight/cmdtype "
+    if [[ \$_ble_edit_mark_active == auto_complete && \${p0-} && \${ADVICE_WORDS[2]} == \"\${wtxt-}\" &&
+          \${ADVICE_WORDS[1]} == \"\${ADVICE_WORDS[2]}\" ]] &&
+        ((p0 < _ble_edit_ind && _ble_edit_ind < p0 + \${#wtxt}))
+    then
+        ADVICE_WORDS[1]=\${_ble_edit_str:p0:_ble_edit_ind-p0}
+        ADVICE_WORDS[2]=\${ADVICE_WORDS[1]}
+    fi
+    ble/function#advice/do"
+'
 
 # ── Autosuggestions (fish-style grey text from history / completion)
 #   accept whole suggestion: →  or End  or Ctrl-F
