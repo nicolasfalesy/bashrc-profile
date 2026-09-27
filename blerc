@@ -47,7 +47,12 @@ if [[ -r ${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/current/theme/colors.toml
 fi
 unset -v _blerc_accent _blerc_fg _blerc_line
 # Typos (and real syntax errors) in red text, not the white-on-red block.
-ble-face syntax_error='fg=9'
+# A fixed red, not palette slot 9: some Omarchy themes have no red at all
+# (Hackerman's "bright red" is #85ff9d, a green), so fg=9 drew typos green
+# and they looked like real commands (his report, 2026-09-26). A remote
+# shell cannot read the laptop's theme, so a fixed colour is the only way to
+# stay red on every theme. ble.sh sends it as 24-bit colour.
+ble-face syntax_error='fg=#ff5555'
 # Colour a command by what he TYPED, not by the grey suggestion after it (his
 # report, 2026-09-26: "sl" showed green). ble.sh writes the suggestion into
 # the line itself, so "sl" + grey "abratetop-bpfcc" was checked as the real
