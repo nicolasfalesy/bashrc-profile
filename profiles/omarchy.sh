@@ -181,6 +181,11 @@ _omarchy_rename_fn gd wtd                  # wtd           → remove worktree +
 # pre-set-permission-mode shortcut on this machine.
 unalias claude 2>/dev/null
 
+# claude-account — switch this laptop's Claude login between saved accounts, the
+# twin of the NAS command of the same name. `claude-account -h` explains it; the
+# why (file swap, not a token, so Remote Control keeps working) is in the script.
+alias claude-account='"$BASHRC_PROFILE_DIR/bin/claude-account"'
+
 # ── packages (lib/aliases.sh only defines these for nala/apt) ────────────────
 alias ni='sudo pacman -S --needed'
 alias np='sudo pacman -Rns'

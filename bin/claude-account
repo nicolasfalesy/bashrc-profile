@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# bin/claude-account — switch the Claude Code login on this laptop between saved accounts.
+#
+# The laptop twin of the NAS's claude-account (2026-09-28, his ask: "the same thing in my omarchy
+# bash"). Same commands and the same look, but it switches something different. The NAS version
+# switches the one-year token its unattended jobs read. The laptop runs nothing unattended, so here
+# it switches the claude.ai login that `claude` itself uses.
+#
+# WHY SWAP FILES, NOT A TOKEN. A one-year `claude setup-token` in CLAUDE_CODE_OAUTH_TOKEN would be
+# simpler, but a session started that way cannot use Remote Control ("Claude.ai login was rejected",
+# seen on the NAS 2026-09-27). So a saved account is a copy of the real login, in two parts:
+#   ~/.claude/.credentials.json   the login itself (access + refresh token)
+#   ~/.claude.json .oauthAccount  who it belongs to (email, account id), shown by /status
+# Both are swapped together. Everything else in ~/.claude.json (projects, settings) is left alone.
+#
+# WHY IT SAVES BEFORE IT SWITCHES. Claude renews the login by itself and rewrites .credentials.json
+# with a new refresh token, which can make an older copy useless. So every switch first copies the
+# live login back into its own slot, and `check` copies a renewed login back too.
+#
+# WHY IT REFUSES WHILE CLAUDE IS OPEN. An open session keeps its login in memory. If it renews after
+# the switch, it writes the OLD account back over the new one, silently. Close Claude, then switch.
+#
+# Saved accounts live in ~/.config/claude-accounts/ (0700): <n>.json (the login, 0600),
+# <n>.account.json (the oauthAccount block), labels, history.log. No token is ever printed.
+set -uo pipefail
+umask 077
+
+CFG=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
+CRED=$CFG/.credentials.json
+# With CLAUDE_CONFIG_DIR set, Claude keeps .claude.json inside it; otherwise it sits in $HOME.
+if [[ -n ${CLAUDE_CONFIG_DIR-} ]]; then STATE=$CFG/.claude.json; else STATE=$HOME/.claude.json; fi
+ACC=${CLAUDE_ACCOUNTS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-accounts}
+
+if [[ -t 1 ]]; then B=$'\e[1m' D=$'\e[2m' G=$'\e[32m' Y=$'\e[33m' R=$'\e[0m'; else B='' D='' G='' Y='' R=''; fi
+die() { echo "${Y}$*$R" >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || die "claude-account needs jq. Install it with: sudo pacman -S jq"
+mkdir -p "$ACC" && chmod 700 "$ACC"
+
+accounts() { local f; for f in "$ACC"/*.json; do f=${f##*/}; [[ $f =~ ^([0-9]+)\.json$ ]] && echo "${BASH_REMATCH[1]}"; done | sort -n; }
+label() { local l; l=$(sed -n "s/^$1=//p" "$ACC/labels" 2>/dev/null | tail -1); echo "${l:-account $1}"; }
+email_of() { jq -r '.emailAddress // "unknown email"' "$ACC/$1.account.json" 2>/dev/null || echo "unknown email"; }
+uuid_live() { jq -r '.oauthAccount.accountUuid // empty' "$STATE" 2>/dev/null; }
+active() {   # the saved account whose id matches the live login, or "none"
+    local n u; u=$(uuid_live)
+    [[ -n $u ]] || { echo none; return; }
+    for n in $(accounts); do
+        [[ $(jq -r '.accountUuid // empty' "$ACC/$n.account.json" 2>/dev/null) == "$u" ]] && { echo "$n"; return; }
+    done
+    echo none
+}
+# Write a file by temp name and rename, so a Claude starting mid-switch never reads half a file.
+put() {   # <dest> < content
+    local tmp; tmp=$(mktemp "$1.XXXXXX") || return 1
+    cat > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$1"
+}
+# Claude processes of this user. A Claude session that runs `claude-account` itself counts too, on
+# purpose: it holds a login in memory like any other and could write it back.
+running() { pgrep -u "$(id -u)" -x claude 2>/dev/null | wc -l; }
+
+save_live_into() {   # <n>: copy the live login into slot n
+    [[ -s $CRED ]] || die "There is no Claude login on this laptop yet. Open claude and use /login first."
+    jq -e '.oauthAccount.accountUuid' "$STATE" >/dev/null 2>&1 \
+        || die "Claude has not recorded who is logged in yet. Open claude once, then try again."
+    put "$ACC/$1.json" < "$CRED" && jq '.oauthAccount' "$STATE" | put "$ACC/$1.account.json"
+}
+
+accounts_table() {
+    local a n; a=$(active)
+    for n in $(accounts); do
+        if [[ $n == "$a" ]]; then
+            printf '  %s● %s  %-16s%s  %s%s, in use%s\n' "$G$B" "$n" "$(label "$n")" "$R" "$G" "$(email_of "$n")" "$R"
+        else
+            printf '    %s  %-16s  %s%s%s\n' "$n" "$(label "$n")" "$D" "$(email_of "$n")" "$R"
+        fi
+    done
+}
+
+status() {
+    local a; a=$(active)
+    if [[ -z $(accounts) ]]; then
+        echo "No saved accounts yet. Log in to Claude, then run: claude-account save 1"
+        return
+    fi
+    accounts_table; echo
+    if [[ $a != none ]]; then
+        echo "Claude on this laptop uses account $a, $(label "$a")."
+    elif [[ -n $(uuid_live) ]]; then
+        echo "${Y}Claude is logged in as $(jq -r '.oauthAccount.emailAddress' "$STATE"), which is not saved yet.$R"
+        echo "Save it with: claude-account save <number>"
+    else
+        echo "${Y}Claude is not logged in.$R"
+    fi
+}
+
+use() {
+    local n=$1 from; from=$(active)
+    [[ -s $ACC/$n.json ]] || die "There is no account $n. Saved accounts: $(accounts | tr '\n' ' ')"
+    if [[ $n == "$from" ]]; then echo "Already on account $n, $(label "$n")."; return; fi
+    local c; c=$(running)
+    if (( c > 0 )) && [[ -z ${CLAUDE_ACCOUNT_FORCE-} ]]; then
+        die "Claude is open ($c running). Close it first, then switch.
+An open Claude can write its old login back over the new one when it renews it."
+    fi
+    # Keep the live login's latest renewal before replacing it (see the header).
+    [[ $from != none ]] && save_live_into "$from"
+    put "$CRED" < "$ACC/$n.json" || die "Could not write $CRED"
+    jq --slurpfile a "$ACC/$n.account.json" '.oauthAccount = $a[0]' "$STATE" | put "$STATE" \
+        || die "The login switched, but $STATE could not be updated. Run: claude-account use $n"
+    echo "$(date '+%F %T') ${from} -> $n" >> "$ACC/history.log"
+    echo "Switched Claude from $(label "$from") to ${G}$(label "$n")$R."
+    echo "${D}The next claude you open uses it.$R"
+}
+
+check() {   # one tiny call per account, each in a throw-away config folder
+    local n out tmp
+    for n in $(accounts); do
+        tmp=$(mktemp -d) || die "Could not make a temp folder."
+        cp "$ACC/$n.json" "$tmp/.credentials.json"
+        out=$(cd "$tmp" && env -u CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CONFIG_DIR="$tmp" ENABLE_CLAUDEAI_MCP_SERVERS=false \
+            timeout 90 claude -p --model claude-sonnet-5 --strict-mcp-config "Reply with the single word ok" 2>&1 | tail -1)
+        # If Claude renewed the login during the test, keep the renewed one (see the header).
+        if [[ -s $tmp/.credentials.json ]] && ! cmp -s "$tmp/.credentials.json" "$ACC/$n.json"; then
+            put "$ACC/$n.json" < "$tmp/.credentials.json"
+            [[ $n == "$(active)" && $(running) -eq 0 ]] && put "$CRED" < "$tmp/.credentials.json"
+        fi
+        rm -rf "$tmp"
+        case $out in
+            *[Oo]k*) printf '  %s  %-16s  %sworks%s\n' "$n" "$(label "$n")" "$G" "$R" ;;
+            *)       printf '  %s  %-16s  %s%s%s\n' "$n" "$(label "$n")" "$Y" "${out:0:90}" "$R" ;;
+        esac
+    done
+}
+
+help() {
+    cat <<HELP
+${B}claude-account${R} switches which Claude account this laptop is logged in to.
+
+$(accounts_table)
+
+${B}Commands${R}
+  claude-account                  Show which account is in use.
+  claude-account other            Switch to the other account. ${D}(The everyday one.)$R
+  claude-account use ${D}<number>$R     Switch to that account.
+  claude-account save ${D}<number> ["<name>"]$R
+                                  Save the account Claude is logged in to now.
+  claude-account check            Send one tiny test message from each account.
+                                  ${D}Says "works", or shows its usage-limit message.$R
+  claude-account name ${D}<number> "<name>"$R
+                                  Rename an account.
+  claude-account help             Show this help. ${D}(-h works too.)$R
+
+${B}Before you switch${R}
+  Close Claude first. The switch applies to the next claude you open.
+
+${B}Setting it up${R}
+  In Claude, /login with your first account, quit, then run: claude-account save 1
+  Do the same with the second account, then run:            claude-account save 2
+HELP
+}
+
+name() {
+    local tmp; tmp=$(mktemp "$ACC/labels.XXXXXX")
+    grep -v "^$1=" "$ACC/labels" 2>/dev/null > "$tmp"; echo "$1=$2" >> "$tmp"; mv -f "$tmp" "$ACC/labels"
+}
+
+case ${1:-status} in
+    status) status ;;
+    other|switch)
+        a=$(active); mapfile -t all < <(accounts)
+        (( ${#all[@]} == 2 )) || die "\"other\" needs exactly two saved accounts. Use: claude-account use <number>"
+        if [[ $a == "${all[0]}" ]]; then use "${all[1]}"; else use "${all[0]}"; fi ;;
+    use)
+        [[ -n ${2-} ]] || { echo "Which one? For example: claude-account use $(accounts | head -1)"; echo; accounts_table; exit 1; }
+        use "$2" ;;
+    save)
+        [[ ${2-} =~ ^[0-9]+$ ]] || die 'Give it a number. For example: claude-account save 1 "Google (Main)"'
+        save_live_into "$2"
+        [[ -n ${3-} ]] && name "$2" "$3"
+        echo "Saved $(jq -r '.oauthAccount.emailAddress' "$STATE") as account $2, $(label "$2")." ;;
+    check) check ;;
+    name)
+        [[ -n ${2-} && -n ${3-} ]] || die 'For example: claude-account name 2 "Apple (Alt)"'
+        name "$2" "$3"; echo "Account $2 is now called \"$3\"." ;;
+    help|-h|--help) help ;;
+    *) echo "${Y}claude-account doesn't know \"$1\".$R"; echo; help; exit 1 ;;
+esac

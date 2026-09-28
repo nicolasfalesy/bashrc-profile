@@ -296,6 +296,7 @@ Where both sides define a name, this file settles it:
 | `htop` | `btop`, when htop is not installed |
 | `vpn` / `-s` / `-d` / `-t` | WireGuard `wg0` up / status / down / toggle, shared with the taskbar toggle |
 | `note`, `notes`, `apps`, `install_app` | same as the desktop profile |
+| `claude-account` | switch Claude's login between saved accounts: `other`, `use <n>`, `save <n> "name"`, `check`, `name`; `-h` for help. Close Claude before switching. |
 
 Also set up here: the Omarchy Auto prompt, which retints itself on every theme
 change and shows the next class when one starts within 90 minutes; lazygit
