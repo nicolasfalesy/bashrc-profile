@@ -75,6 +75,19 @@ ble/function#advice around ble/syntax/highlight/cmdtype "
     fi
     ble/function#advice/do"
 '
+# ...and re-check the word when a suggestion ENDS (his report, 2026-09-27: "pw"
+# + Enter showed red, "pw" + space green). The advice above checks only the
+# typed part while a suggestion shows, so "p" + grey "w" is checked as "p" (not
+# a command, red). Typing the "w" yourself ends the suggestion WITHOUT changing
+# the text (ble.sh only moves the cursor through the suggestion, then cancels
+# it with an empty replace), so nothing marked the word for re-colouring and
+# the red stuck until the next real edit - a space. Marking the whole line
+# dirty after any cancel makes ble re-run the colouring on the next redraw; a
+# command line is short, so re-parsing all of it costs nothing noticeable.
+blehook/eval-after-load complete '
+ble/function#advice after ble/widget/auto_complete/cancel "
+    ble-edit/content/.update-dirty-range 0 \${#_ble_edit_str} \${#_ble_edit_str}"
+'
 
 # ── Autosuggestions (fish-style grey text from history / completion)
 #   accept whole suggestion: →  or End  or Ctrl-F
