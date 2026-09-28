@@ -110,3 +110,12 @@ pw() {
     unset p
     echo "pw: written to $file ($(sudo stat -c '%a %U' "$file")) — tell the helper it is there"
 }
+
+# ── Open links on the laptop ─────────────────────────────────────────────────
+# Over ssh (or in tmux, whose panes may have outlived the ssh login that
+# started them), programs that want a browser hand the link to bin/open-on-laptop,
+# which asks kitty on the laptop to open it in Brave. Local console keeps
+# whatever BROWSER it had. Added 2026-09-28; the laptop half is a kitty watcher.
+if [[ -n ${SSH_CONNECTION-}${TMUX-} ]] && [[ -x $HOME/.local/bin/open-on-laptop ]]; then
+    export BROWSER=open-on-laptop
+fi

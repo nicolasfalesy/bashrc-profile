@@ -1,0 +1,30 @@
+#!/bin/sh
+# open-on-laptop <url> — ask the laptop's terminal (kitty) to open a link in Brave.
+#
+# Why: over ssh, tools like `gh auth login` or a `claude` login want to open a web
+# page, and the NAS has no browser. kitty on the laptop runs a watcher
+# (~/.config/kitty/nic_open_url.py there, added 2026-09-28) that listens for an
+# invisible "user variable" escape code and opens the URL. It needs no port
+# forwarding, which is good, because the NAS sshd blocks forwarding.
+# The laptop side only opens http/https and at most one link every 2 s; this side
+# checks the scheme too, so junk never reaches the terminal.
+# profiles/nas.sh points BROWSER here for ssh and tmux shells.
+# Other terminals ignore the code, so the exit status cannot tell "opened" from "ignored".
+url=$1
+case $url in
+    http://*|https://*) ;;
+    *) echo "open-on-laptop: only http(s) links: $url" >&2; exit 1 ;;
+esac
+# -w0 would be GNU-only; tr keeps it portable to the Pi and the laptop.
+b64=$(printf %s "$url" | base64 | tr -d '\n')
+seq=$(printf '\033]1337;SetUserVar=nic_open_url=%s\007' "$b64")
+if [ -n "$TMUX" ]; then
+    # tmux drops unknown escape codes unless they are wrapped for passthrough
+    # (and ~/.tmux.conf has allow-passthrough on). The payload has one ESC, at
+    # the start; the extra \033 after "tmux;" is tmux's required doubling of it.
+    # shellcheck disable=SC1003  # the \\ is printf's backslash, the end of the tmux wrapper
+    seq=$(printf '\033Ptmux;\033%s\033\\' "$seq")
+fi
+# /dev/tty, not stdout: callers often capture or discard stdout. With no terminal
+# this fails, and the caller falls back to printing the link.
+printf '%s' "$seq" > /dev/tty
