@@ -217,7 +217,7 @@ Two implementation notes, both found the hard way and both load-bearing:
 | `pubip` | public IP only |
 | `weather [-s] [place]` | wttr.in report; default `$WEATHER_LOCATION` |
 | `t <name>` | tmux: create or attach · `t -l` list · `t -a` attach · `t -p` kill one · `t -k` kill all *(tmux)* |
-| `tkeep <name>...` | kill every tmux session EXCEPT the ones named (and the one you are in); lists them and asks first · `-n` dry run · `-y` no question *(tmux)* |
+| `tkill <name>...` | kill every tmux session EXCEPT the ones named (and the one you are in); lists them and asks first · `-n` dry run · `-y` no question *(tmux)* |
 | `rcon <cmd>` (`rc`) | Minecraft RCON via `mcrcon`; needs `RCON_IP/PORT/PASS` in `~/.bashrc.local` *(`install.sh --with-mcrcon`)* |
 
 ## C toolchain (lib/dev.sh — lazy-loaded; `prereqs --with-dev`)
@@ -253,7 +253,7 @@ Two implementation notes, both found the hard way and both load-bearing:
 | `smart <dev>` | `smartctl -a` |
 | `dsv [-n] [pattern]` | delete (with sudo) the files `zpool status -v` reports as damaged (default under `/mnt/$ZPOOL/`), confirm, then `zpool clear` |
 | `wn` | `watch -n 0.1 nvidia-smi` — only defined when `nvidia-smi` exists |
-| `cmd <N>` | start tmux sessions `claude1`..`claudeN` (1 to 16), each running Claude Code in `~`; ones already running are left alone, and you stay where you are · when Claude quits the pane drops to a shell · `BASHRC_CMD_RUN` swaps the command *(tmux)* |
+| `tmake <N>` | start tmux sessions `claude1`..`claudeN` (1 to 16), each running Claude Code in `~`; ones already running are left alone, and you stay where you are · when Claude quits the pane drops to a shell · `BASHRC_TMAKE_RUN` swaps the command *(tmux)* |
 | `sys` extra | one line per pool: health, used/size, capacity |
 
 Environment: if `~/nvim-linux-x86_64` exists (a hand-unpacked nvim release) it is put on
