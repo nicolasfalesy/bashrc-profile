@@ -179,6 +179,7 @@ Usage: t <name>        create or attach to a session
        t -p <name>     kill (purge) a session
        t -l            list sessions
        t -k            kill the server (all sessions)
+       tkeep <name>... kill every session EXCEPT these (see tkeep -h)
 HELP
             return 0 ;;
         -l) tmux list-sessions 2>/dev/null || echo "No tmux sessions." ;;
@@ -199,6 +200,85 @@ _t_completions() {
     else COMPREPLY=($(compgen -W "$sessions" -- "$cur")); fi
 }
 complete -F _t_completions t
+
+# tkeep <name>... — kill every tmux session EXCEPT the ones named (and the one you are in).
+# Added 2026-09-28 (his ask: "kill all tmux sessions except ones i name"). He runs several
+# Claude sessions (claude, claude2, ...) and drives them from his phone, so it always shows what
+# it will kill and asks first; -y skips the question, -n only shows.
+tkeep() {
+    command -v tmux >/dev/null 2>&1 || { echo "tkeep: tmux is not installed (run prereqs)" >&2; return 1; }
+    local yes=0 dry=0 arg s current='' ans
+    local -a keep=() kill=() missing=()
+    for arg in "$@"; do
+        case $arg in
+            -h|--help)
+                cat <<'HELP'
+tkeep - kill every tmux session except the ones you name.
+
+Usage: tkeep [options] <name> [name...]
+
+  Kills all tmux sessions whose names you did NOT list. The session you are
+  typing in is always kept too, so the command cannot cut itself off. Before
+  killing anything it lists what will go (and which of those have someone
+  attached, e.g. your phone) and asks y/N.
+
+Options:
+  -y, --yes       do not ask, just kill
+  -n, --dry-run   only show what would be killed and kept
+  -h, --help      this help
+
+Examples:
+  tkeep claude claude2       keep claude and claude2 (+ this one), kill the rest
+  tkeep -n claude            see what `tkeep claude` would do, change nothing
+  tkeep                      keep only the session you are in (asks first)
+
+Related: t -l lists sessions, t -p <name> kills one, t -k kills them all.
+HELP
+                return 0 ;;
+            -y|--yes) yes=1 ;;
+            -n|--dry-run) dry=1 ;;
+            -*) echo "tkeep: unknown option '$arg' (see tkeep -h)" >&2; return 2 ;;
+            *) keep+=("$arg") ;;
+        esac
+    done
+    tmux list-sessions >/dev/null 2>&1 || { echo "No tmux sessions."; return 0; }
+    [[ -n ${TMUX-} ]] && current=$(tmux display-message -p '#S' 2>/dev/null)
+    for arg in "${keep[@]}"; do
+        tmux has-session -t "=$arg" 2>/dev/null || missing+=("$arg")
+    done
+    (( ${#missing[@]} )) && echo "Note: no session named: ${missing[*]} (nothing to keep there)."
+    while IFS=$'\t' read -r s ans; do
+        [[ $s == "$current" ]] && continue
+        local k found=0
+        for k in "${keep[@]}"; do [[ $s == "$k" ]] && { found=1; break; }; done
+        (( found )) || kill+=("$s${ans:+$'\t'$ans}")
+    done < <(tmux list-sessions -F $'#{session_name}\t#{?session_attached,attached,}' 2>/dev/null)
+    local -a kept=()
+    for arg in "${keep[@]}"; do [[ " ${missing[*]} " == *" $arg "* ]] || kept+=("$arg"); done
+    echo "Keeping: ${kept[*]:-(none named)}${current:+  + this session ($current)}"
+    if (( ${#kill[@]} == 0 )); then echo "Nothing to kill."; return 0; fi
+    echo "Will kill ${#kill[@]}:"
+    for s in "${kill[@]}"; do
+        if [[ $s == *$'\t'attached ]]; then echo "  ${s%%$'\t'*}  (someone is attached)"; else echo "  $s"; fi
+    done
+    (( dry )) && { echo "(dry run, nothing killed)"; return 0; }
+    if (( ! yes )); then
+        read -r -p "Kill them? [y/N] " ans
+        [[ $ans == [yY]* ]] || { echo "Nothing killed."; return 1; }
+    fi
+    local n=0
+    for s in "${kill[@]}"; do
+        s=${s%%$'\t'*}
+        tmux kill-session -t "=$s" 2>/dev/null && { echo "Killed $s"; n=$((n+1)); }
+    done
+    echo "Done: killed $n, kept $(tmux list-sessions 2>/dev/null | wc -l)."
+}
+_tkeep_completions() {
+    local cur=${COMP_WORDS[COMP_CWORD]}
+    if [[ $cur == -* ]]; then COMPREPLY=($(compgen -W '-h --help -y --yes -n --dry-run' -- "$cur"))
+    else COMPREPLY=($(compgen -W "$(tmux list-sessions -F '#{session_name}' 2>/dev/null)" -- "$cur")); fi
+}
+complete -F _tkeep_completions tkeep
 
 # rcon <command...> — send a command to a Minecraft server (mcrcon).
 # RCON_IP / RCON_PORT / RCON_PASS come from ~/.bashrc.local.

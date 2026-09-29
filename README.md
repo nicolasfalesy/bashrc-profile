@@ -21,7 +21,7 @@ Or from a clone: `bash install.sh` (add `--dry-run` to preview, `--help` for opt
 | Navigation | `cd` auto-lists, `ll`, `up 3`, `mkcd`, `take <url>`, `tre` |
 | Files | `extract`, `ftext`, `size`, `bak`/`bak -r`, `diff2`, `path` |
 | Clipboard | `cpy` / `pst` on every machine — `cat notes.txt \| cpy` puts it on your laptop's clipboard straight out of an SSH session (OSC 52), and `cpy -p` catches a paste coming the other way |
-| System | `sys`, `psg`, `port`, `killport`, `topp`, `myip`, `weather`, `t` (tmux) |
+| System | `sys`, `psg`, `port`, `killport`, `topp`, `myip`, `weather`, `t` (tmux), `tkeep` (kill every tmux session except the ones you name) |
 | Services | git (`gs`, `gcm`, `glog`…), systemd (`scs`, `screstart`, `sclog`…), Docker Compose (`dcu`, `dcd`, `dcr`, `dcl`, `dps`) |
 | C dev | `ru` / `run` / `rud` / `rund` (valgrind) / `rut` (test suite) / `mkt` — lazy-loaded |
 | Per machine | **pi**: `temp`, `wt`, `cloud` (Cloudflare tunnel) · **nas**: ZFS shortcuts, `dsv`, `wn` · **desktop**: `vpn`, `note`, Alacritty/GRUB helpers · **omarchy**: layered on top of Omarchy's own bash setup, prompt follows the desktop theme and shows your next class, themed lazygit, fastfetch card on a new terminal · **uw**: no-root student servers, Waterloo Gold prompt |

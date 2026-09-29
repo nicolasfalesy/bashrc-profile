@@ -217,6 +217,7 @@ Two implementation notes, both found the hard way and both load-bearing:
 | `pubip` | public IP only |
 | `weather [-s] [place]` | wttr.in report; default `$WEATHER_LOCATION` |
 | `t <name>` | tmux: create or attach · `t -l` list · `t -a` attach · `t -p` kill one · `t -k` kill all *(tmux)* |
+| `tkeep <name>...` | kill every tmux session EXCEPT the ones named (and the one you are in); lists them and asks first · `-n` dry run · `-y` no question *(tmux)* |
 | `rcon <cmd>` (`rc`) | Minecraft RCON via `mcrcon`; needs `RCON_IP/PORT/PASS` in `~/.bashrc.local` *(`install.sh --with-mcrcon`)* |
 
 ## C toolchain (lib/dev.sh — lazy-loaded; `prereqs --with-dev`)

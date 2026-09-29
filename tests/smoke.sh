@@ -85,6 +85,14 @@ _t "psg"         psg bash
 _t "port -h"     port -h
 _t "topp"        topp 1
 _t "t -h"        t -h
+_t "tkeep -h"    tkeep -h
+# tkeep on a private tmux server (own TMUX_TMPDIR, TMUX unset): never touches a real session
+_tkeep_rt() ( unset TMUX; export TMUX_TMPDIR="$T/tmux"; mkdir -p "$TMUX_TMPDIR"
+              command -v tmux >/dev/null || exit 0
+              tmux new-session -d -s keepme && tmux new-session -d -s dropme &&
+              tkeep -y keepme && tmux has-session -t =keepme && ! tmux has-session -t =dropme; rc=$?
+              tmux kill-server 2>/dev/null; exit $rc )
+_t "tkeep keeps" _tkeep_rt
 _t "weather -h"  weather -h
 _t "rcon -h"     rcon -h
 _t "ru lazy"     ru -h
