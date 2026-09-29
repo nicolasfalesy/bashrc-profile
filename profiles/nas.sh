@@ -111,6 +111,57 @@ pw() {
     echo "pw: written to $file ($(sudo stat -c '%a %U' "$file")) — tell the helper it is there"
 }
 
+# ── A pile of Claude sessions ────────────────────────────────────────────────
+# cmd <N> — start tmux sessions claude1..claudeN, each running Claude Code in ~.
+# Added 2026-09-29 (his ask: "cmd 8 makes 8 tmux sessions with claude inside").
+# His picks: names claude1..claudeN; ones already running are left alone and
+# only the missing ones are made; it stays where you are (no attach). NAS only.
+# Claude runs as the pane's command (not typed in with send-keys), so it starts
+# the same way every time; when it quits, the pane drops to a shell instead of
+# closing. BASHRC_CMD_RUN replaces the claude command (the smoke test uses it).
+cmd() {
+    command -v tmux >/dev/null 2>&1 || { echo "cmd: tmux is not installed (run prereqs)" >&2; return 1; }
+    case ${1-} in
+        -h|--help|'')
+            cat <<'HELP'
+cmd - start tmux sessions with Claude Code running in each one.
+
+Usage: cmd <N>     make claude1..claudeN (1 to 16), each running claude in ~
+
+Sessions that already exist are left alone; only the missing ones are made.
+You stay where you are. Get to one with: t claude3
+Kill the extras later with: tkeep claude1 claude2
+HELP
+            return 0 ;;
+    esac
+    # Capped at 16: a typo like "cmd 80" would start 80 Claudes, and each one
+    # holds a few hundred MB of RAM on a box that is already short of it.
+    if ! [[ $1 =~ ^[0-9]+$ ]] || (( 10#$1 < 1 || 10#$1 > 16 )); then
+        echo "cmd: give a number from 1 to 16 (cmd -h for help)" >&2; return 1
+    fi
+    local n=$((10#$1)) i s run
+    local -a made=() had=()
+    if [[ -n ${BASHRC_CMD_RUN-} ]]; then run=$BASHRC_CMD_RUN
+    else
+        local bin; bin=$(type -P claude) || { echo "cmd: claude is not on PATH" >&2; return 1; }
+        # Same flag as the claude alias in lib/aliases.sh; an alias does not reach a pane command.
+        run="$(printf %q "$bin") --dangerously-skip-permissions"
+    fi
+    # BROWSER: the pane command skips bashrc, so pass on what this shell has
+    # (open-on-laptop over ssh), or claude's login links would go nowhere.
+    local -a env=()
+    [[ -n ${BROWSER-} ]] && env=(-e "BROWSER=$BROWSER")
+    for (( i = 1; i <= n; i++ )); do
+        s=claude$i
+        if tmux has-session -t "=$s" 2>/dev/null; then had+=("$s"); continue; fi
+        if tmux new-session -d -s "$s" -c "$HOME" "${env[@]}" "$run; exec bash -l"; then made+=("$s")
+        else echo "cmd: could not make $s" >&2; fi
+    done
+    (( ${#made[@]} )) && echo "Made ${#made[@]}: ${made[*]}"
+    (( ${#had[@]} )) && echo "Already running, left alone: ${had[*]}"
+    echo "Jump in with: t claude1"
+}
+
 # ── Open links on the laptop ─────────────────────────────────────────────────
 # Over ssh (or in tmux, whose panes may have outlived the ssh login that
 # started them), programs that want a browser hand the link to bin/open-on-laptop,
