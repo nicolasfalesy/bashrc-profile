@@ -179,7 +179,7 @@ Usage: t <name>        create or attach to a session
        t -p <name>     kill (purge) a session
        t -l            list sessions
        t -k            kill the server (all sessions)
-       tkeep <name>... kill every session EXCEPT these (see tkeep -h)
+       tkill <name>... kill every session EXCEPT these (see tkill -h)
 HELP
             return 0 ;;
         -l) tmux list-sessions 2>/dev/null || echo "No tmux sessions." ;;
@@ -201,21 +201,23 @@ _t_completions() {
 }
 complete -F _t_completions t
 
-# tkeep <name>... — kill every tmux session EXCEPT the ones named (and the one you are in).
+# tkill <name>... — kill every tmux session EXCEPT the ones named (and the one you are in).
 # Added 2026-09-28 (his ask: "kill all tmux sessions except ones i name"). He runs several
 # Claude sessions (claude, claude2, ...) and drives them from his phone, so it always shows what
 # it will kill and asks first; -y skips the question, -n only shows.
-tkeep() {
-    command -v tmux >/dev/null 2>&1 || { echo "tkeep: tmux is not installed (run prereqs)" >&2; return 1; }
+# Named tkeep until 2026-09-29, when he renamed it tkill: the name should say what it does
+# (it kills), even though the names you give are the ones it keeps.
+tkill() {
+    command -v tmux >/dev/null 2>&1 || { echo "tkill: tmux is not installed (run prereqs)" >&2; return 1; }
     local yes=0 dry=0 arg s current='' ans
     local -a keep=() kill=() missing=()
     for arg in "$@"; do
         case $arg in
             -h|--help)
                 cat <<'HELP'
-tkeep - kill every tmux session except the ones you name.
+tkill - kill every tmux session except the ones you name.
 
-Usage: tkeep [options] <name> [name...]
+Usage: tkill [options] <name> [name...]
 
   Kills all tmux sessions whose names you did NOT list. The session you are
   typing in is always kept too, so the command cannot cut itself off. Before
@@ -228,16 +230,16 @@ Options:
   -h, --help      this help
 
 Examples:
-  tkeep claude claude2       keep claude and claude2 (+ this one), kill the rest
-  tkeep -n claude            see what `tkeep claude` would do, change nothing
-  tkeep                      keep only the session you are in (asks first)
+  tkill claude claude2       keep claude and claude2 (+ this one), kill the rest
+  tkill -n claude            see what `tkill claude` would do, change nothing
+  tkill                      keep only the session you are in (asks first)
 
 Related: t -l lists sessions, t -p <name> kills one, t -k kills them all.
 HELP
                 return 0 ;;
             -y|--yes) yes=1 ;;
             -n|--dry-run) dry=1 ;;
-            -*) echo "tkeep: unknown option '$arg' (see tkeep -h)" >&2; return 2 ;;
+            -*) echo "tkill: unknown option '$arg' (see tkill -h)" >&2; return 2 ;;
             *) keep+=("$arg") ;;
         esac
     done
@@ -273,12 +275,12 @@ HELP
     done
     echo "Done: killed $n, kept $(tmux list-sessions 2>/dev/null | wc -l)."
 }
-_tkeep_completions() {
+_tkill_completions() {
     local cur=${COMP_WORDS[COMP_CWORD]}
     if [[ $cur == -* ]]; then COMPREPLY=($(compgen -W '-h --help -y --yes -n --dry-run' -- "$cur"))
     else COMPREPLY=($(compgen -W "$(tmux list-sessions -F '#{session_name}' 2>/dev/null)" -- "$cur")); fi
 }
-complete -F _tkeep_completions tkeep
+complete -F _tkill_completions tkill
 
 # rcon <command...> — send a command to a Minecraft server (mcrcon).
 # RCON_IP / RCON_PORT / RCON_PASS come from ~/.bashrc.local.
