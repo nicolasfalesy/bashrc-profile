@@ -102,7 +102,18 @@ _t "tre"         tre 1 "$T"
 _t "reload"      source "$HOME/.bashrc"
 case $BASHRC_PROFILE in
     pi)      _t "pi: temp"   declare -F temp;  _t "pi: cloud" declare -F cloud ;;
-    nas)     _t "nas: dsv"   declare -F dsv;   _t "nas: zh"   alias zh ;;
+    nas)     _t "nas: dsv"   declare -F dsv;   _t "nas: zh"   alias zh
+             _t "nas: cmd -h" cmd -h
+             # cmd on a private tmux server with a stand-in for claude: makes the missing
+             # sessions only, and leaves the running one alone
+             _cmd_rt() ( unset TMUX; export TMUX_TMPDIR="$T/tmux-cmd"; mkdir -p "$TMUX_TMPDIR"
+                         command -v tmux >/dev/null || exit 0
+                         export BASHRC_CMD_RUN="sleep 30"
+                         cmd 2 >/dev/null && out=$(cmd 3) && [[ $out == *"Made 1: claude3"* ]] &&
+                         [[ $(tmux list-sessions -F "#{session_name}" | sort | tr "\n" " ") == "claude1 claude2 claude3 " ]] &&
+                         ! cmd 17 2>/dev/null && ! cmd x 2>/dev/null; rc=$?
+                         tmux kill-server 2>/dev/null; exit $rc )
+             _t "nas: cmd makes" _cmd_rt ;;
     desktop) _t "desktop: vpn" declare -F vpn; _t "desktop: note" declare -F note ;;
     uw)      _t "uw: rm -iv" bash -c "[[ \"$(alias rm)\" == *-iv* ]]" ;;
 esac

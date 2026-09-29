@@ -253,6 +253,7 @@ Two implementation notes, both found the hard way and both load-bearing:
 | `smart <dev>` | `smartctl -a` |
 | `dsv [-n] [pattern]` | delete (with sudo) the files `zpool status -v` reports as damaged (default under `/mnt/$ZPOOL/`), confirm, then `zpool clear` |
 | `wn` | `watch -n 0.1 nvidia-smi` — only defined when `nvidia-smi` exists |
+| `cmd <N>` | start tmux sessions `claude1`..`claudeN` (1 to 16), each running Claude Code in `~`; ones already running are left alone, and you stay where you are · when Claude quits the pane drops to a shell · `BASHRC_CMD_RUN` swaps the command *(tmux)* |
 | `sys` extra | one line per pool: health, used/size, capacity |
 
 Environment: if `~/nvim-linux-x86_64` exists (a hand-unpacked nvim release) it is put on
