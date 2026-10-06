@@ -11,7 +11,7 @@
 #    5. lib/navigation.sh           ll, cd (auto-list), up, mkcd, take, tre
 #    6. lib/files.sh                extract, ftext, size, bak, diff2, path
 #    7. lib/clipboard.sh            cpy, pst (OSC 52 — works over SSH)
-#    8. lib/system.sh               sys, psg, port, killport, topp, myip, weather, t (tmux), rcon
+#    8. lib/system.sh               sys, psg, port, killport, topp, myip, weather, t + tkill (tmux), rcon
 #    9. lib/dev.sh                  C toolchain helpers — lazy-loaded on first use
 #   10. profiles/<profile>.sh       pi | nas | desktop | omarchy | uw | server
 #                                  (omarchy layers under Omarchy's own rc chain and

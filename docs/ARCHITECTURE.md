@@ -19,7 +19,7 @@ How the profile is put together, in the order things happen when a shell starts.
      ├── lib/navigation.sh    ll · cd · up · mkcd · take · tre
      ├── lib/files.sh         extract · ftext · size · bak · diff2 · path
      ├── lib/clipboard.sh     cpy · pst        (OSC 52 — works over SSH)
-     ├── lib/system.sh        sys · psg · port · killport · topp · myip · weather · t · rcon
+     ├── lib/system.sh        sys · psg · port · killport · topp · myip · weather · t · tkill · rcon
      ├── (lib/dev.sh)         ru run rud rund rut mkt   ← stubs only; loaded on first use
      │
      ├── profiles/pi.sh | nas.sh | desktop.sh | uw.sh | server.sh
