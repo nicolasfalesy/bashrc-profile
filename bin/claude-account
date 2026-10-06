@@ -246,7 +246,10 @@ check() {   # one tiny message per account: its login, and its job token where j
             out=$(ask)
             # If Claude renewed the login during the test, keep the renewed one, or the older copy may stop working.
             # The live file takes it too (open sessions reload it), unless a session renewed it meanwhile.
-            if [[ -s $tmp/cfg/.credentials.json ]] && ! cmp -s "$tmp/cfg/.credentials.json" "$tmp/orig"; then
+            # But not a blanked one: when a refresh fails, Claude rewrites the file with empty tokens (NAS
+            # 2026-10-05, a dead account 2), and saving that would turn a stale login into an empty one.
+            if [[ -s $tmp/cfg/.credentials.json ]] && ! cmp -s "$tmp/cfg/.credentials.json" "$tmp/orig" \
+                && jq -e '(.claudeAiOauth.refreshToken // "x") != ""' "$tmp/cfg/.credentials.json" >/dev/null 2>&1; then
                 put "$ACC/$n.login.json" < "$tmp/cfg/.credentials.json"
                 [[ $n == "$cur" ]] && cmp -s "$CRED" "$tmp/orig" && put "$CRED" < "$tmp/cfg/.credentials.json"
             elif [[ $n == "$cur" ]]; then

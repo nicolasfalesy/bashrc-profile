@@ -7,6 +7,15 @@ set -uo pipefail
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 T=${CLAUDE_ACCOUNT_BIN:-$here/bin/claude-account}   # a different copy, to show the tests can fail
 top=$(mktemp -d) || exit 2
+# The stubs below must be able to run. On a noexec /tmp (the NAS) bash skips them and finds the REAL claude and
+# sudo further down PATH (NAS 2026-10-05: the real sudo wrote a factagent-owned file into the sandbox). So test
+# for exec, and fall back to the cache folder.
+printf '#!/bin/sh\n' > "$top/x" && chmod +x "$top/x"
+if ! "$top/x" 2>/dev/null; then
+    rm -rf -- "$top"; mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+    top=$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/claude-account-test.XXXXXX") || exit 2
+fi
+rm -f -- "$top/x"
 trap 'rm -rf -- "$top"' EXIT
 fails=0
 ok()   { printf 'ok    %s\n' "$1"; }
@@ -33,7 +42,8 @@ echo "argv: $*" >> "$STUB_LOG"
 if [[ -n ${CLAUDE_CODE_OAUTH_TOKEN-} ]]; then echo "token: $CLAUDE_CODE_OAUTH_TOKEN" >> "$STUB_LOG"; echo ok; exit 0; fi
 f=$CLAUDE_CONFIG_DIR/.credentials.json
 [[ -s $f ]] || { echo "Not logged in"; exit 1; }
-grep -q dead "$f" && { echo "Failed to authenticate: OAuth session expired"; exit 1; }
+# a dead login: like the real one, blank the tokens in the file, then fail
+grep -q dead "$f" && { echo '{"claudeAiOauth":{"accessToken":"","refreshToken":""}}' > "$f"; echo "Failed to authenticate: OAuth session expired"; exit 1; }
 [[ -n ${STUB_RENEW-} ]] && jq -c '. + {renewed: true}' "$f" > "$f.n" && mv "$f.n" "$f"
 echo ok
 EOF
@@ -48,6 +58,8 @@ EOF
     chmod +x "$S/bin/claude" "$S/bin/sudo"
     export CLAUDE_CONFIG_DIR=$S/cfg CLAUDE_ACCOUNTS_DIR=$S/acc CLAUDE_ACCOUNT_OFFLINE=1 STUB_LOG=$S/stub.log PATH=$S/bin:$PATH
     unset CLAUDE_ACCOUNT_YES STUB_RENEW
+    [[ $(command -v claude) == "$S/bin/claude" && $(command -v sudo) == "$S/bin/sudo" ]] \
+        || { echo "FAIL  the stubs cannot run here, so the real claude and sudo would; stopping"; exit 2; }
 }
 live() { jq -r '.oauthAccount.accountUuid' "$S/cfg/.claude.json"; }
 cred() { jq -r '.tok' "$S/cfg/.credentials.json"; }
@@ -118,6 +130,7 @@ t "check prints no shell error and leaves no temp folder behind" \
 t "check reports each account" '[ "$(grep -c works <<<"$out")" -eq 2 ] && grep -q "3  Label 3 .*expired" <<<"$out"'
 t "check tests the job token too, where jobs run" 'grep -q "2  Label 2 .*login works, job token works" <<<"$out"'
 t "check keeps a renewal for the slot and the live login" '[ "$(jq -r .renewed "$S/acc/1.login.json"):$(jq -r .renewed "$S/cfg/.credentials.json"):$(jq -r .renewed "$S/acc/2.login.json")" = true:true:true ]'
+t "check never saves the blanked file a dead login leaves" '[ "$(jq -r .tok "$S/acc/3.login.json")" = dead ]'
 t "check passes the job token in the environment, never in argv" 'grep -q "token: token2" "$S/stub.log" && ! grep -q "argv:.*token2" "$S/stub.log"'
 
 # 9. it never prints a token or a login
