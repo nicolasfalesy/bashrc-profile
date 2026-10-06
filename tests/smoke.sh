@@ -20,7 +20,7 @@ red=$'\033[0;31m' green=$'\033[0;32m' dim=$'\033[2m' n=$'\033[0m'
 
 echo "── syntax"
 for f in "$here"/bashrc "$here"/lib/*.sh "$here"/profiles/*.sh "$here"/bin/* "$here"/hooks/* \
-         "$here"/install.sh "$here"/tests/smoke.sh; do
+         "$here"/install.sh "$here"/tests/smoke.sh "$here"/tests/claude-account.sh; do
     if bash -n "$f"; then :; else echo "${red}FAIL${n} bash -n $f"; fail=1; fi
 done
 (( fail )) || echo "${green}ok${n}   all files parse"
@@ -30,7 +30,7 @@ sc=()
 if command -v shellcheck >/dev/null 2>&1; then sc=(shellcheck)
 elif command -v uvx >/dev/null 2>&1; then sc=(uvx --from shellcheck-py shellcheck); fi
 if (( ${#sc[@]} )); then
-    if (cd "$here" && "${sc[@]}" bashrc lib/*.sh profiles/*.sh bin/* hooks/* install.sh tests/smoke.sh); then
+    if (cd "$here" && "${sc[@]}" bashrc lib/*.sh profiles/*.sh bin/* hooks/* install.sh tests/smoke.sh tests/claude-account.sh); then
         echo "${green}ok${n}   shellcheck"
     else
         echo "${red}FAIL${n} shellcheck"; fail=1
@@ -146,6 +146,19 @@ for p in "${profiles[@]}"; do
     done <<< "$out"
     rm -rf "$tmp"
 done
+
+# claude-account has its own sandboxed suite (fake logins, stub claude and sudo; never Anthropic).
+echo "── claude-account"
+if command -v jq >/dev/null 2>&1; then
+    while IFS= read -r line; do
+        case $line in
+            ok\ *)   echo "${green}ok${n}   ${line#ok }" ;;
+            FAIL\ *) echo "${red}FAIL${n} ${line#FAIL }"; fail=1 ;;
+        esac
+    done < <(bash "$here/tests/claude-account.sh" 2>&1 || echo "FAIL tests/claude-account.sh exited non-zero")
+else
+    echo "${dim}skip claude-account (jq not installed)${n}"
+fi
 
 echo
 if (( fail )); then echo "${red}smoke test FAILED${n}"; exit 1; else echo "${green}smoke test passed${n}"; fi

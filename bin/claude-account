@@ -1,27 +1,47 @@
 #!/usr/bin/env bash
-# bin/claude-account — switch the Claude Code login on this laptop between saved accounts.
+# bin/claude-account — pick which of Nico's Claude accounts a machine uses.
 #
-# The laptop twin of the NAS's claude-account (2026-09-28, his ask: "the same thing in my omarchy
-# bash"). Same commands and the same look, but it switches something different. The NAS version
-# switches the one-year token its unattended jobs read. The laptop runs nothing unattended, so here
-# it switches the claude.ai login that `claude` itself uses.
+# ONE script for the laptop and the NAS (his ask, 2026-10-05: "i want it to be the exact same"). Until then
+# each machine had its own copy (the NAS's from 2026-09-27, the laptop's twin from 2026-09-28), and they had
+# drifted: the NAS switched live and asked Anthropic who was logged in, the laptop cycled through 3 accounts.
+# This is the two merged. Both machines get it from this repo; nothing in it is specific to one machine.
 #
-# WHY SWAP FILES, NOT A TOKEN. A one-year `claude setup-token` in CLAUDE_CODE_OAUTH_TOKEN would be
-# simpler, but a session started that way cannot use Remote Control ("Claude.ai login was rejected",
-# seen on the NAS 2026-09-27). So a saved account is a copy of the real login, in two parts:
-#   ~/.claude/.credentials.json   the login itself (access + refresh token)
-#   ~/.claude.json .oauthAccount  who it belongs to (email, account id), shown by /status
-# Both are swapped together. Everything else in ~/.claude.json (projects, settings) is left alone.
+# WHAT IT SWITCHES
+# 1. Claude, the sessions he types in (every machine). They use the claude.ai login, in two parts:
+#      ~/.claude/.credentials.json   the login itself (access + refresh token)
+#      ~/.claude.json .oauthAccount  who it belongs to (email, ids), shown by /status
+#    A saved login is a copy of both, swapped together: exactly what /login writes. Open sessions follow the
+#    switch: Claude Code watches the login file's mtime and reloads it when it changes ("credentialsChangedOnDisk",
+#    read from the binary on the NAS at 2.1.284 and on the laptop at 2.1.290), so they move over on their next
+#    message, the same as a /login. So it no longer asks for Claude to be closed (the laptop's copy did).
+#    A one-year `claude setup-token` token is not used for these: a session started that way cannot use Remote
+#    Control ("Claude.ai login was rejected", NAS 2026-09-27).
+# 2. The unattended jobs, only on a machine with $ACC/jobs.conf (the NAS). Each job reads a one-year token from
+#    a file when it starts, so switching = rewriting those files; nothing restarts. jobs.conf names them, so no
+#    machine's paths sit in this public repo. One entry per line, paths without spaces, # starts a comment:
+#      token <path> [owner]   a file that holds the token. With an owner it is written through `sudo -n`, as
+#                             that user's file (the NAS's fact agent cannot read the main user's home).
+#      prom <path>            a node-exporter textfile for the claude_account_* metrics
+#    The first token line is the main one: it decides which account "the jobs use".
 #
-# WHY IT SAVES BEFORE IT SWITCHES. Claude renews the login by itself and rewrites .credentials.json
-# with a new refresh token, which can make an older copy useless. So every switch first copies the
-# live login back into its own slot, and `check` copies a renewed login back too.
+# WHY IT SAVES BEFORE IT SWITCHES. Claude renews the login by itself and rewrites .credentials.json with a new
+# refresh token, which can make an older copy useless. So every switch first copies the live login back into its
+# own slot, and `check` keeps a renewed login too. WHICH slot is decided by asking Anthropic who the live login
+# is (GET /api/oauth/profile), with ~/.claude.json only as the offline fallback, never by what was last written:
+# a session renewing at the wrong moment could have put another account back, and saving by assumption would then
+# file account A's login under account B, silently. (On 2026-10-05 a /login typed straight into Claude replaced
+# the laptop's account 2 before its newest renewal was saved, and the saved copy had expired. Hence the "Adding an
+# account" steps in the help: save the live one first.)
 #
-# WHY IT REFUSES WHILE CLAUDE IS OPEN. An open session keeps its login in memory. If it renews after
-# the switch, it writes the OLD account back over the new one, silently. Close Claude, then switch.
+# WHERE THINGS LIVE: ~/.config/claude/accounts/ (0700), on every machine:
+#   <n>.login.json  the saved claude.ai login (0600)      <n>.account.json  its oauthAccount block
+#   <n>.token       the one-year job token (only where jobs run; saved by hand after `claude setup-token`)
+#   labels, history.log, jobs.conf
+# Nothing here ever prints a token: token copies are compared by sha256, logins by account id, and the token
+# reaches curl on stdin, never in argv where `ps` shows it. Each machine's backup must leave this folder out.
 #
-# Saved accounts live in ~/.config/claude-accounts/ (0700): <n>.json (the login, 0600),
-# <n>.account.json (the oauthAccount block), labels, history.log. No token is ever printed.
+# For tests: CLAUDE_CONFIG_DIR, CLAUDE_ACCOUNTS_DIR, CLAUDE_ACCOUNT_OFFLINE=1 (skip Anthropic, trust
+# ~/.claude.json) and CLAUDE_ACCOUNT_YES=1 (no question on a first save).
 set -uo pipefail
 umask 077
 
@@ -29,45 +49,101 @@ CFG=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 CRED=$CFG/.credentials.json
 # With CLAUDE_CONFIG_DIR set, Claude keeps .claude.json inside it; otherwise it sits in $HOME.
 if [[ -n ${CLAUDE_CONFIG_DIR-} ]]; then STATE=$CFG/.claude.json; else STATE=$HOME/.claude.json; fi
-ACC=${CLAUDE_ACCOUNTS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-accounts}
+ACC=${CLAUDE_ACCOUNTS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude/accounts}
+JOBS=$ACC/jobs.conf
+CLAUDE_BIN=$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")
 
+# Colour only on a terminal, so a pipe or a log gets plain text.
 if [[ -t 1 ]]; then B=$'\e[1m' D=$'\e[2m' G=$'\e[32m' Y=$'\e[33m' R=$'\e[0m'; else B='' D='' G='' Y='' R=''; fi
 die() { echo "${Y}$*$R" >&2; exit 1; }
-command -v jq >/dev/null 2>&1 || die "claude-account needs jq. Install it with: sudo pacman -S jq"
+for c in jq curl sha256sum; do command -v "$c" >/dev/null 2>&1 || die "claude-account needs $c."; done
 mkdir -p "$ACC" && chmod 700 "$ACC"
 
-accounts() { local f; for f in "$ACC"/*.json; do f=${f##*/}; [[ $f =~ ^([0-9]+)\.json$ ]] && echo "${BASH_REMATCH[1]}"; done | sort -n; }
+# ── saved accounts ───────────────────────────────────────────────────────────────────────────────────────────
+accounts() { local f; for f in "$ACC"/*.login.json "$ACC"/*.token; do f=${f##*/}; [[ $f =~ ^([0-9]+)\. ]] && echo "${BASH_REMATCH[1]}"; done | sort -un; }
 label() { local l; l=$(sed -n "s/^$1=//p" "$ACC/labels" 2>/dev/null | tail -1); echo "${l:-account $1}"; }
-email_of() { jq -r '.emailAddress // "unknown email"' "$ACC/$1.account.json" 2>/dev/null || echo "unknown email"; }
-uuid_live() { jq -r '.oauthAccount.accountUuid // empty' "$STATE" 2>/dev/null; }
-active() {   # the saved account whose id matches the live login, or "none"
-    local n u; u=$(uuid_live)
-    [[ -n $u ]] || { echo none; return; }
-    for n in $(accounts); do
-        [[ $(jq -r '.accountUuid // empty' "$ACC/$n.account.json" 2>/dev/null) == "$u" ]] && { echo "$n"; return; }
-    done
-    echo none
-}
-# Write a file by temp name and rename, so a Claude starting mid-switch never reads half a file.
+email_of() { local e; e=$(jq -r '.emailAddress // empty' "$ACC/$1.account.json" 2>/dev/null); echo "${e:-no login saved}"; }
+slot_uuid() { jq -r '.accountUuid // empty' "$ACC/$1.account.json" 2>/dev/null; }
+# Write a file by temp name and rename, so nothing starting mid-switch ever reads half a file.
 put() {   # <dest> < content
     local tmp; tmp=$(mktemp "$1.XXXXXX") || return 1
     cat > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$1"
 }
-# Claude processes of this user. A Claude session that runs `claude-account` itself counts too, on
-# purpose: it holds a login in memory like any other and could write it back.
-running() { pgrep -u "$(id -u)" -x claude 2>/dev/null | wc -l; }
-
-save_live_into() {   # <n>: copy the live login into slot n
-    [[ -s $CRED ]] || die "There is no Claude login on this laptop yet. Open claude and use /login first."
-    jq -e '.oauthAccount.accountUuid' "$STATE" >/dev/null 2>&1 \
-        || die "Claude has not recorded who is logged in yet. Open claude once, then try again."
-    put "$ACC/$1.json" < "$CRED" && jq '.oauthAccount' "$STATE" | put "$ACC/$1.account.json"
+name() {   # <n> <label>
+    local tmp; tmp=$(mktemp "$ACC/labels.XXXXXX")
+    grep -v "^$1=" "$ACC/labels" 2>/dev/null > "$tmp"; echo "$1=$2" >> "$tmp"; mv -f "$tmp" "$ACC/labels"
 }
 
-accounts_table() {
-    local a n; a=$(active)
+# ── the live login (Claude's) ────────────────────────────────────────────────────────────────────────────────
+# Who the live login really is (an account id), from Anthropic; ~/.claude.json only when that lookup fails
+# (offline, or an access token that just expired). Callers keep the answer in $LIVE: one lookup per command.
+live_uuid() {
+    local tok u=""
+    if [[ -z ${CLAUDE_ACCOUNT_OFFLINE-} ]] && tok=$(jq -re '.claudeAiOauth.accessToken' "$CRED" 2>/dev/null); then
+        u=$(printf 'Authorization: Bearer %s\n' "$tok" \
+            | curl -fsS --max-time 10 -H @- -H 'anthropic-beta: oauth-2025-04-20' https://api.anthropic.com/api/oauth/profile 2>/dev/null \
+            | jq -r '.account.uuid // empty' 2>/dev/null)
+    fi
+    [[ -n $u ]] || u=$(jq -r '.oauthAccount.accountUuid // empty' "$STATE" 2>/dev/null)
+    echo "$u"
+}
+LIVE=""
+login_of() {   # <account id> → the saved account with that login, or "none"
+    local n
+    if [[ -n $1 ]]; then for n in $(accounts); do [[ $(slot_uuid "$n") == "$1" ]] && { echo "$n"; return; }; done; fi
+    echo none
+}
+save_live_into() {   # <n>: copy the live login into slot n. Refuses if Anthropic and ~/.claude.json disagree.
+    local blk
+    [[ -n $LIVE && -s $CRED ]] || { echo "${Y}There is no working Claude login to save. Use /login inside Claude first.$R" >&2; return 1; }
+    blk=$(jq -ce --arg u "$LIVE" '.oauthAccount | select(.accountUuid == $u)' "$STATE" 2>/dev/null) \
+        || { echo "${Y}Claude has not recorded who is logged in yet. Send any message in Claude, then try again.$R" >&2; return 1; }
+    put "$ACC/$1.login.json" < "$CRED" && printf '%s\n' "$blk" | put "$ACC/$1.account.json"
+}
+
+# ── the unattended jobs (only with jobs.conf) ────────────────────────────────────────────────────────────────
+job_tokens() { [[ -f $JOBS ]] && sed 's/#.*//' "$JOBS" | awk '$1 == "token" { print $2, $3 }'; }   # "<path> [owner]"
+main_token() { job_tokens | awk 'NR == 1 { print $1 }'; }
+has_jobs() { [[ -n $(main_token) ]]; }
+sum() { [[ -n ${2-} ]] && { sudo -n sha256sum "$1" 2>/dev/null | cut -c1-16; return; }; sha256sum "$1" 2>/dev/null | cut -c1-16; }   # <path> [owner]
+jobs_active() {   # which account's token is in the main file (by hash), or "none"
+    local m n; m=$(sum "$(main_token)")
+    if [[ -n $m ]]; then for n in $(accounts); do [[ -s $ACC/$n.token && $(sum "$ACC/$n.token") == "$m" ]] && { echo "$n"; return; }; done; fi
+    echo none
+}
+copies_match() {   # every token file holds the same token as the main one
+    local m p o; m=$(sum "$(main_token)"); [[ -n $m ]] || return 1
+    while read -r p o <&3; do [[ $(sum "$p" "$o") == "$m" ]] || return 1; done 3< <(job_tokens)
+}
+write_token() {   # <n> <path> [owner]
+    if [[ -n ${3-} ]]; then
+        sudo -n install -o "$3" -g "$3" -m 0600 "$ACC/$1.token" "$2.tmp" && sudo -n mv -f "$2.tmp" "$2"
+    else
+        put "$2" < "$ACC/$1.token"
+    fi
+}
+write_prom() {
+    local p a l n lab; p=$([[ -f $JOBS ]] && sed 's/#.*//' "$JOBS" | awk '$1 == "prom" { print $2; exit }')
+    [[ -n $p ]] || return 0
+    a=$(jobs_active); l=$(login_of "$LIVE")
+    {
+        echo "# HELP claude_account_active Which Claude account the unattended jobs use (label = his name for it)"
+        echo "# TYPE claude_account_active gauge"
+        for n in $(accounts); do lab=$(label "$n" | tr -d '\\"'); echo "claude_account_active{account=\"$n\",label=\"$lab\"} $([[ $n == "$a" ]] && echo 1 || echo 0)"; done
+        echo "# HELP claude_account_login_active Which saved claude.ai login the interactive Claude Code sessions use"
+        echo "# TYPE claude_account_login_active gauge"
+        for n in $(accounts); do lab=$(label "$n" | tr -d '\\"'); echo "claude_account_login_active{account=\"$n\",label=\"$lab\"} $([[ $n == "$l" ]] && echo 1 || echo 0)"; done
+        echo "# HELP claude_account_copies_match 1 = every job token copy equals the main token file"
+        echo "# TYPE claude_account_copies_match gauge"
+        echo "claude_account_copies_match $(copies_match && echo 1 || echo 0)"
+    } > "$p.tmp" && mv -f "$p.tmp" "$p"
+}
+
+# ── commands ─────────────────────────────────────────────────────────────────────────────────────────────────
+accounts_table() {   # one row per saved account; the one Claude uses is green with a dot
+    local n cur; cur=$(login_of "$LIVE")
     for n in $(accounts); do
-        if [[ $n == "$a" ]]; then
+        if [[ $n == "$cur" ]]; then
             printf '  %s● %s  %-16s%s  %s%s, in use%s\n' "$G$B" "$n" "$(label "$n")" "$R" "$G" "$(email_of "$n")" "$R"
         else
             printf '    %s  %-16s  %s%s%s\n' "$n" "$(label "$n")" "$D" "$(email_of "$n")" "$R"
@@ -76,64 +152,123 @@ accounts_table() {
 }
 
 status() {
-    local a; a=$(active)
-    if [[ -z $(accounts) ]]; then
-        echo "No saved accounts yet. Log in to Claude, then run: claude-account save 1"
-        return
-    fi
+    local l a
+    if [[ -z $(accounts) ]]; then echo "No saved accounts yet. Log in to Claude, then run: claude-account save 1"; return; fi
+    l=$(login_of "$LIVE")
     accounts_table; echo
-    if [[ $a != none ]]; then
-        echo "Claude on this laptop uses account $a, $(label "$a")."
-    elif [[ -n $(uuid_live) ]]; then
-        echo "${Y}Claude is logged in as $(jq -r '.oauthAccount.emailAddress' "$STATE"), which is not saved yet.$R"
+    if [[ $l != none ]]; then
+        echo "Claude uses account $l, $(label "$l")."
+    elif [[ -n $LIVE ]]; then
+        echo "${Y}Claude is logged in as $(jq -r '.oauthAccount.emailAddress' "$STATE" 2>/dev/null), which is not saved yet.$R"
         echo "Save it with: claude-account save <number>"
     else
         echo "${Y}Claude is not logged in.$R"
     fi
+    if has_jobs; then
+        a=$(jobs_active)
+        if [[ $a == none ]]; then echo "${Y}The unattended jobs' token matches none of the saved accounts.$R"
+        elif [[ $a == "$l" ]]; then echo "The unattended jobs use the same account."
+        else echo "${Y}The unattended jobs use account $a, $(label "$a"). Put both on one with: claude-account use <number>$R"; fi
+        if copies_match; then echo "${D}Every job's token copy matches.$R"
+        else echo "${Y}A job's token copy does NOT match. Fix it with: claude-account use $a$R"; fi
+    elif compgen -G "$ACC/*.token" >/dev/null; then
+        echo "${Y}Job tokens are saved, but $JOBS is missing, so no job switches.$R"
+    fi
 }
 
 use() {
-    local n=$1 from; from=$(active)
-    [[ -s $ACC/$n.json ]] || die "There is no account $n. Saved accounts: $(accounts | tr '\n' ' ')"
-    if [[ $n == "$from" ]]; then echo "Already on account $n, $(label "$n")."; return; fi
-    local c; c=$(running)
-    if (( c > 0 )) && [[ -z ${CLAUDE_ACCOUNT_FORCE-} ]]; then
-        die "Claude is open ($c running). Close it first, then switch.
-An open Claude can write its old login back over the new one when it renews it."
+    local n=$1 from ja lnow p o bad=0
+    [[ -s $ACC/$n.login.json || -s $ACC/$n.token ]] || die "There is no account $n. Saved accounts: $(accounts | tr '\n' ' ')"
+    from=$(login_of "$LIVE"); ja=none
+    # Part 1, the jobs (only where jobs.conf names them).
+    if has_jobs; then
+        ja=$(jobs_active)
+        if [[ ! -s $ACC/$n.token ]]; then
+            echo "${Y}Account $n has no job token saved, so the jobs stay on $(label "$ja").$R"
+        elif [[ $ja == "$n" ]] && copies_match; then
+            echo "The unattended jobs were already on $(label "$n")."
+        else
+            while read -r p o <&3; do
+                write_token "$n" "$p" "$o" || { bad=1; echo "${Y}Could not write the job token file $p.$R"; }
+            done 3< <(job_tokens)
+            if (( bad )); then echo "${Y}Fix that, then run: claude-account use $n$R"
+            else echo "Switched the unattended jobs from $(label "$ja") to ${G}$(label "$n")$R."; fi
+        fi
     fi
-    # Keep the live login's latest renewal before replacing it (see the header).
-    [[ $from != none ]] && save_live_into "$from"
-    put "$CRED" < "$ACC/$n.json" || die "Could not write $CRED"
-    jq --slurpfile a "$ACC/$n.account.json" '.oauthAccount = $a[0]' "$STATE" | put "$STATE" \
-        || die "The login switched, but $STATE could not be updated. Run: claude-account use $n"
-    echo "$(date '+%F %T') ${from} -> $n" >> "$ACC/history.log"
-    echo "Switched Claude from $(label "$from") to ${G}$(label "$n")$R."
-    echo "${D}The next claude you open uses it.$R"
+    # Part 2, Claude's login (see the header for why it saves first, and by Anthropic's answer).
+    if [[ ! -s $ACC/$n.login.json ]]; then
+        echo "${Y}Account $n has no Claude login saved yet, so Claude did not switch.$R"
+        echo "To save it once: /login inside Claude with that account, then run: claude-account save $n"
+    elif [[ $from == "$n" ]]; then
+        echo "Claude was already on $(label "$n")."
+    elif [[ $from == none && -n $LIVE ]]; then
+        # Switching away from a login that is in no slot throws it away for good (NAS 2026-09-28: a fresh Google
+        # login was overwritten by Apple's this way). So stop, and have him save it first.
+        echo "${Y}Claude uses a login that is not saved yet, so it did not switch (that login would be lost).$R"
+        echo "Save it first with: claude-account save <number>. Then switch again."
+    else
+        if [[ $from != none ]]; then save_live_into "$from" || exit 1; fi
+        put "$CRED" < "$ACC/$n.login.json" || die "Could not write $CRED"
+        jq --slurpfile a "$ACC/$n.account.json" '.oauthAccount = $a[0]' "$STATE" | put "$STATE" \
+            || echo "${Y}The login switched, but $STATE could not be updated (only /status shows the old name). Run: claude-account use $n$R"
+        # Read it back from Anthropic, so a wrong or dead saved login shows up now, not at the next message.
+        LIVE=$(live_uuid); lnow=$(login_of "$LIVE")
+        if [[ $lnow == "$n" ]]; then
+            echo "Switched Claude from $(label "$from") to ${G}$(label "$n")$R."
+            echo "${D}Open sessions move over on their next message.$R"
+        else
+            echo "${Y}Wrote account $n's login, but Anthropic says Claude is on $(label "$lnow")."
+            echo "If it keeps happening: /login inside Claude with that account, then run: claude-account save $n$R"
+        fi
+    fi
+    echo "$(date '+%F %T') jobs $ja -> $(has_jobs && jobs_active || echo none), claude $from -> $(login_of "$LIVE")" >> "$ACC/history.log"
+    write_prom
 }
 
-check() {   # one tiny call per account, each in a throw-away config folder
-    local n out tmp
+check() {   # one tiny message per account: its login, and its job token where jobs.conf exists
+    local n cur out line
+    cur=$(login_of "$LIVE")
+    # Global, not local: the EXIT trap runs after check() has returned, when a local would be gone.
+    tmp=$(mktemp -d) || die "Could not make a temp folder."
+    trap 'rm -rf -- "$tmp"' EXIT
+    ask() {   # one message from a throw-away config folder, so nothing of his loads or changes
+        (cd "$tmp/cfg" && env -u CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CONFIG_DIR="$tmp/cfg" ENABLE_CLAUDEAI_MCP_SERVERS=false \
+            timeout 90 "$CLAUDE_BIN" -p --model claude-sonnet-5 --strict-mcp-config "Reply with the single word ok" 2>&1 | tail -1)
+    }
+    verdict() { case $1 in *[Oo]k*) echo "${G}works$R" ;; *) echo "$Y${1:0:90}$R" ;; esac; }
     for n in $(accounts); do
-        tmp=$(mktemp -d) || die "Could not make a temp folder."
-        cp "$ACC/$n.json" "$tmp/.credentials.json"
-        out=$(cd "$tmp" && env -u CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CONFIG_DIR="$tmp" ENABLE_CLAUDEAI_MCP_SERVERS=false \
-            timeout 90 claude -p --model claude-sonnet-5 --strict-mcp-config "Reply with the single word ok" 2>&1 | tail -1)
-        # If Claude renewed the login during the test, keep the renewed one (see the header).
-        if [[ -s $tmp/.credentials.json ]] && ! cmp -s "$tmp/.credentials.json" "$ACC/$n.json"; then
-            put "$ACC/$n.json" < "$tmp/.credentials.json"
-            [[ $n == "$(active)" && $(running) -eq 0 ]] && put "$CRED" < "$tmp/.credentials.json"
+        line=""
+        if [[ -s $ACC/$n.login.json ]]; then
+            rm -rf -- "$tmp/cfg"; mkdir -p "$tmp/cfg"
+            # The account Claude uses now is tested from the live file, its newest copy.
+            if [[ $n == "$cur" ]]; then cp "$CRED" "$tmp/orig"; else cp "$ACC/$n.login.json" "$tmp/orig"; fi
+            cp "$tmp/orig" "$tmp/cfg/.credentials.json"
+            out=$(ask)
+            # If Claude renewed the login during the test, keep the renewed one, or the older copy may stop working.
+            # The live file takes it too (open sessions reload it), unless a session renewed it meanwhile.
+            if [[ -s $tmp/cfg/.credentials.json ]] && ! cmp -s "$tmp/cfg/.credentials.json" "$tmp/orig"; then
+                put "$ACC/$n.login.json" < "$tmp/cfg/.credentials.json"
+                [[ $n == "$cur" ]] && cmp -s "$CRED" "$tmp/orig" && put "$CRED" < "$tmp/cfg/.credentials.json"
+            elif [[ $n == "$cur" ]]; then
+                put "$ACC/$n.login.json" < "$tmp/orig"
+            fi
+            line=$(verdict "$out")
         fi
-        rm -rf "$tmp"
-        case $out in
-            *[Oo]k*) printf '  %s  %-16s  %sworks%s\n' "$n" "$(label "$n")" "$G" "$R" ;;
-            *)       printf '  %s  %-16s  %s%s%s\n' "$n" "$(label "$n")" "$Y" "${out:0:90}" "$R" ;;
-        esac
+        if has_jobs && [[ -s $ACC/$n.token ]]; then
+            rm -rf -- "$tmp/cfg"; mkdir -p "$tmp/cfg"
+            # The token goes into the environment inside the subshell, never argv.
+            out=$(CLAUDE_CODE_OAUTH_TOKEN=$(<"$ACC/$n.token"); export CLAUDE_CODE_OAUTH_TOKEN
+                  cd "$tmp/cfg" && CLAUDE_CONFIG_DIR="$tmp/cfg" ENABLE_CLAUDEAI_MCP_SERVERS=false \
+                  timeout 90 "$CLAUDE_BIN" -p --model claude-sonnet-5 --strict-mcp-config "Reply with the single word ok" 2>&1 | tail -1)
+            line="${line:+login $line, }job token $(verdict "$out")"
+        fi
+        printf '  %s  %-16s  %s\n' "$n" "$(label "$n")" "${line:-nothing saved to test}"
     done
 }
 
 help() {
     cat <<HELP
-${B}claude-account${R} switches which Claude account this laptop is logged in to.
+${B}claude-account${R} switches which Claude account this machine uses.
 
 $(accounts_table)
 
@@ -149,43 +284,58 @@ ${B}Commands${R}
                                   Rename an account.
   claude-account help             Show this help. ${D}(-h works too.)$R
 
-${B}Before you switch${R}
-  Close Claude first. The switch applies to the next claude you open.
+${B}What it switches${R}
+  Claude, including sessions already open: each moves over on its next message.
+  On a machine with unattended jobs (the NAS), their token too. They pick it up
+  on their next run.
 
-${B}Setting it up${R}
-  In Claude, /login with your first account, quit, then run: claude-account save 1
-  Do the same with the second account, then run:            claude-account save 2
-  A third or later account works the same way:              claude-account save 3
+${B}Adding an account${R}
+  1. Run claude-account save <the number in use>, so its newest login is kept.
+  2. In Claude, /login with the new account.
+  3. Run claude-account save <new number> "<name>".
 HELP
 }
 
-name() {
-    local tmp; tmp=$(mktemp "$ACC/labels.XXXXXX")
-    grep -v "^$1=" "$ACC/labels" 2>/dev/null > "$tmp"; echo "$1=$2" >> "$tmp"; mv -f "$tmp" "$ACC/labels"
-}
-
 case ${1:-status} in
-    status) status ;;
+    status|"") LIVE=$(live_uuid); status ;;
     other|switch|next)
         # Cycles to the next saved account, wrapping back to the first (his pick on 2026-10-05, when a third
-        # account was added): with two it flips between them as before, with three it walks 1, 2, 3, 1.
-        a=$(active); mapfile -t all < <(accounts)
+        # account was added): with two it flips between them, with three it walks 1, 2, 3, 1.
+        LIVE=$(live_uuid); a=$(login_of "$LIVE")
+        [[ $a == none ]] && has_jobs && a=$(jobs_active)
+        mapfile -t all < <(accounts)
         (( ${#all[@]} >= 2 )) || die "\"other\" needs at least two saved accounts. Save one with: claude-account save <number>"
         nxt=${all[0]}
         for i in "${!all[@]}"; do [[ ${all[i]} == "$a" ]] && nxt=${all[(i + 1) % ${#all[@]}]}; done
         use "$nxt" ;;
     use)
-        [[ -n ${2-} ]] || { echo "Which one? For example: claude-account use $(accounts | head -1)"; echo; accounts_table; exit 1; }
-        use "$2" ;;
+        [[ -n ${2-} ]] || { LIVE=$(live_uuid); echo "Which one? For example: claude-account use $(accounts | head -1)"; echo; accounts_table; exit 1; }
+        LIVE=$(live_uuid); use "$2" ;;
     save)
         [[ ${2-} =~ ^[0-9]+$ ]] || die 'Give it a number. For example: claude-account save 1 "Google (Main)"'
-        save_live_into "$2"
+        LIVE=$(live_uuid); o=$(login_of "$LIVE")
+        # Refuse to file one account's login under another account's number (the silent mix-up this guards against).
+        [[ $o == none || $o == "$2" ]] || die "Claude is logged in as account $o, $(label "$o"), not account $2. Nothing saved."
+        # The guard above only knows logins already saved; a login's FIRST save cannot be checked that way. So a
+        # person confirms the email (on the NAS, 2026-09-28, a test saved Apple into slot 1). The question goes
+        # straight to the terminal: read -p writes to stderr, and with that hidden the command looked stuck.
+        e=$(jq -r '.oauthAccount.emailAddress // empty' "$STATE" 2>/dev/null)
+        if [[ $o == none && -z ${CLAUDE_ACCOUNT_YES-} ]]; then
+            if { printf '%s' "Save ${e:-this login} as account $2, ${3:-$(label "$2")}? [y/N] " >/dev/tty; } 2>/dev/null; then
+                read -r ok </dev/tty || ok=
+            else
+                die "No terminal to ask on. To save anyway: CLAUDE_ACCOUNT_YES=1 claude-account save $2"
+            fi
+            [[ $ok =~ ^[Yy] ]] || die "Nothing saved."
+        fi
+        save_live_into "$2" || exit 1
         [[ -n ${3-} ]] && name "$2" "$3"
-        echo "Saved $(jq -r '.oauthAccount.emailAddress' "$STATE") as account $2, $(label "$2")." ;;
-    check) check ;;
+        write_prom
+        echo "Saved $(email_of "$2") as account $2, $(label "$2")." ;;
+    check) LIVE=$(live_uuid); check ;;
     name)
         [[ -n ${2-} && -n ${3-} ]] || die 'For example: claude-account name 2 "Apple (Alt)"'
-        name "$2" "$3"; echo "Account $2 is now called \"$3\"." ;;
-    help|-h|--help) help ;;
-    *) echo "${Y}claude-account doesn't know \"$1\".$R"; echo; help; exit 1 ;;
+        name "$2" "$3"; write_prom; echo "Account $2 is now called \"$3\"." ;;
+    help|-h|--help) LIVE=$(live_uuid); help ;;
+    *) echo "${Y}claude-account doesn't know \"$1\".$R"; echo; LIVE=$(live_uuid); help; exit 1 ;;
 esac
