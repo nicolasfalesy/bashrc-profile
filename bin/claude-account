@@ -139,7 +139,7 @@ $(accounts_table)
 
 ${B}Commands${R}
   claude-account                  Show which account is in use.
-  claude-account other            Switch to the other account. ${D}(The everyday one.)$R
+  claude-account other            Switch to the next account, then back round. ${D}(The everyday one.)$R
   claude-account use ${D}<number>$R     Switch to that account.
   claude-account save ${D}<number> ["<name>"]$R
                                   Save the account Claude is logged in to now.
@@ -155,6 +155,7 @@ ${B}Before you switch${R}
 ${B}Setting it up${R}
   In Claude, /login with your first account, quit, then run: claude-account save 1
   Do the same with the second account, then run:            claude-account save 2
+  A third or later account works the same way:              claude-account save 3
 HELP
 }
 
@@ -165,10 +166,14 @@ name() {
 
 case ${1:-status} in
     status) status ;;
-    other|switch)
+    other|switch|next)
+        # Cycles to the next saved account, wrapping back to the first (his pick on 2026-10-05, when a third
+        # account was added): with two it flips between them as before, with three it walks 1, 2, 3, 1.
         a=$(active); mapfile -t all < <(accounts)
-        (( ${#all[@]} == 2 )) || die "\"other\" needs exactly two saved accounts. Use: claude-account use <number>"
-        if [[ $a == "${all[0]}" ]]; then use "${all[1]}"; else use "${all[0]}"; fi ;;
+        (( ${#all[@]} >= 2 )) || die "\"other\" needs at least two saved accounts. Save one with: claude-account save <number>"
+        nxt=${all[0]}
+        for i in "${!all[@]}"; do [[ ${all[i]} == "$a" ]] && nxt=${all[(i + 1) % ${#all[@]}]}; done
+        use "$nxt" ;;
     use)
         [[ -n ${2-} ]] || { echo "Which one? For example: claude-account use $(accounts | head -1)"; echo; accounts_table; exit 1; }
         use "$2" ;;
