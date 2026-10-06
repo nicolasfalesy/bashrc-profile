@@ -38,7 +38,9 @@
 #   <n>.token       the one-year job token (only where jobs run; saved by hand after `claude setup-token`)
 #   labels, history.log, jobs.conf
 # Nothing here ever prints a token: token copies are compared by sha256, logins by account id, and the token
-# reaches curl on stdin, never in argv where `ps` shows it. Each machine's backup must leave this folder out.
+# reaches curl on stdin, never in argv where `ps` shows it. A backup may keep this folder only ENCRYPTED, never
+# in plaintext (his pick, 2026-10-06: the NAS's encrypted nightly dump keeps it, and that copy can bring back a
+# login lost to a renewal). Never restore one machine's saved login onto the other machine.
 #
 # For tests: CLAUDE_CONFIG_DIR, CLAUDE_ACCOUNTS_DIR, CLAUDE_ACCOUNT_OFFLINE=1 (skip Anthropic, trust
 # ~/.claude.json) and CLAUDE_ACCOUNT_YES=1 (no question on a first save).
