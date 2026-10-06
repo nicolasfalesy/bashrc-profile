@@ -85,6 +85,14 @@ _t "psg"         psg bash
 _t "port -h"     port -h
 _t "topp"        topp 1
 _t "t -h"        t -h
+_t "tkill -h"    tkill -h
+# tkill on a private tmux server (own TMUX_TMPDIR, TMUX unset): never touches a real session
+_tkill_rt() ( unset TMUX; export TMUX_TMPDIR="$T/tmux"; mkdir -p "$TMUX_TMPDIR"
+              command -v tmux >/dev/null || exit 0
+              tmux new-session -d -s keepme && tmux new-session -d -s dropme &&
+              tkill -y keepme && tmux has-session -t =keepme && ! tmux has-session -t =dropme; rc=$?
+              tmux kill-server 2>/dev/null; exit $rc )
+_t "tkill keeps" _tkill_rt
 _t "weather -h"  weather -h
 _t "rcon -h"     rcon -h
 _t "ru lazy"     ru -h
@@ -94,7 +102,18 @@ _t "tre"         tre 1 "$T"
 _t "reload"      source "$HOME/.bashrc"
 case $BASHRC_PROFILE in
     pi)      _t "pi: temp"   declare -F temp;  _t "pi: cloud" declare -F cloud ;;
-    nas)     _t "nas: dsv"   declare -F dsv;   _t "nas: zh"   alias zh ;;
+    nas)     _t "nas: dsv"   declare -F dsv;   _t "nas: zh"   alias zh
+             _t "nas: tmake -h" tmake -h
+             # tmake on a private tmux server with a stand-in for claude: makes the missing
+             # sessions only, and leaves the running one alone
+             _tmake_rt() ( unset TMUX; export TMUX_TMPDIR="$T/tmux-tmake"; mkdir -p "$TMUX_TMPDIR"
+                         command -v tmux >/dev/null || exit 0
+                         export BASHRC_TMAKE_RUN="sleep 30"
+                         tmake 2 >/dev/null && out=$(tmake 3) && [[ $out == *"Made 1: claude3"* ]] &&
+                         [[ $(tmux list-sessions -F "#{session_name}" | sort | tr "\n" " ") == "claude1 claude2 claude3 " ]] &&
+                         ! tmake 17 2>/dev/null && ! tmake x 2>/dev/null; rc=$?
+                         tmux kill-server 2>/dev/null; exit $rc )
+             _t "nas: tmake makes" _tmake_rt ;;
     desktop) _t "desktop: vpn" declare -F vpn; _t "desktop: note" declare -F note ;;
     uw)      _t "uw: rm -iv" bash -c "[[ \"$(alias rm)\" == *-iv* ]]" ;;
 esac
