@@ -13,6 +13,9 @@ alias pi='ssh pi@192.0.2.11'
 alias home-pc='ssh user@example.com'      # from the UW servers back home
 
 # ── Minecraft RCON (rcon / rc) ───────────────────────────────────────────────
+# Server in Docker on this machine: set only this, no password needed (docker exec rcon-cli).
+# export RCON_CONTAINER=mc-mc-1
+# A remote server instead (needs mcrcon):
 export RCON_IP=192.0.2.10
 export RCON_PORT=25575
 export RCON_PASS='change-me'
