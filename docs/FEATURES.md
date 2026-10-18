@@ -254,6 +254,7 @@ Two implementation notes, both found the hard way and both load-bearing:
 | `dsv [-n] [pattern]` | delete (with sudo) the files `zpool status -v` reports as damaged (default under `/mnt/$ZPOOL/`), confirm, then `zpool clear` |
 | `wn` | `watch -n 0.1 nvidia-smi` — only defined when `nvidia-smi` exists |
 | `tmake <N>` | start tmux sessions `claude1`..`claudeN` (1 to 16), each running Claude Code in `~`; ones already running are left alone, and you stay where you are · when Claude quits the pane drops to a shell · `BASHRC_TMAKE_RUN` swaps the command *(tmux)* |
+| `pw` / `-c` | hand the vault master password to a Claude session: typed hidden, written to `/root/.bw-master` (root-only), shredded by the session once `bw status` says unlocked, or by a root timer after 10 minutes; `-c` removes it by hand |
 | `sys` extra | one line per pool: health, used/size, capacity |
 
 Environment: if `~/nvim-linux-x86_64` exists (a hand-unpacked nvim release) it is put on

@@ -89,14 +89,15 @@ complete -F _dsv_completions dsv
 
 # pw — hand the vault master password to a helper session, without it ever touching
 # the screen, the shell history or a command line. Prompts with no echo, writes the
-# value to a root-only file that the helper reads once and shreds. `pw -c` removes
-# the file yourself if the helper never picked it up.
+# value to a root-only file that the helper reads once and shreds. A root timer shreds
+# it after 10 minutes if nobody does; `pw -c` removes it yourself sooner.
 pw() {
-    local file=/root/.bw-master p
+    local file=/root/.bw-master unit=bw-master-expire ttl=600 p
     case ${1-} in
-        -h|--help) echo "pw       prompt for the vault master password -> $file (root-only, 0600)"
+        -h|--help) echo "pw       prompt for the vault master password -> $file (root-only, 0600, gone after $((ttl / 60)) min)"
                    echo "pw -c    remove that file without writing a new one"; return 0 ;;
-        -c) if sudo shred -u "$file" 2>/dev/null; then echo "pw: $file removed"; else echo "pw: nothing to remove"; fi; return 0 ;;
+        -c) sudo systemctl stop "$unit.timer" 2>/dev/null
+            if sudo shred -u "$file" 2>/dev/null; then echo "pw: $file removed"; else echo "pw: nothing to remove"; fi; return 0 ;;
         '') ;;
         *) echo "pw: unknown option '$1'" >&2; return 1 ;;
     esac
@@ -108,7 +109,16 @@ pw() {
     # stdin, not an argument: sudo logs its argv, and that log is shipped to Loki.
     if ! { printf '%s' "$p" | sudo tee "$file" >/dev/null && sudo chmod 600 "$file"; }; then unset p; return 1; fi
     unset p
-    echo "pw: written to $file ($(sudo stat -c '%a %U' "$file")) — tell the helper it is there"
+    # A forgotten password must not wait for pw -c. A transient systemd timer runs outside
+    # this shell, so it still fires if the ssh login drops; stopping the old one first means
+    # a second pw gets its own full 10 minutes. The sh guard makes a run after the helper
+    # already shredded the file a no-op instead of a failed unit, and --collect unloads it.
+    sudo systemctl stop "$unit.timer" 2>/dev/null
+    if ! sudo systemd-run --quiet --collect --unit="$unit" --on-active="$ttl" --timer-property=AccuracySec=1s \
+            /bin/sh -c '[ ! -e "$1" ] || exec shred -u "$1"' sh "$file"; then
+        sudo shred -u "$file"; echo "pw: could not set its expiry, so it was removed" >&2; return 1
+    fi
+    echo "pw: written to $file ($(sudo stat -c '%a %U' "$file")) for $((ttl / 60)) minutes — tell the helper it is there"
 }
 
 # ── A pile of Claude sessions ────────────────────────────────────────────────

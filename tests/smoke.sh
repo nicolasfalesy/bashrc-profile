@@ -113,7 +113,18 @@ case $BASHRC_PROFILE in
                          [[ $(tmux list-sessions -F "#{session_name}" | sort | tr "\n" " ") == "claude1 claude2 claude3 " ]] &&
                          ! tmake 17 2>/dev/null && ! tmake x 2>/dev/null; rc=$?
                          tmux kill-server 2>/dev/null; exit $rc )
-             _t "nas: tmake makes" _tmake_rt ;;
+             _t "nas: tmake makes" _tmake_rt
+             # pw against a stand-in for sudo (never the real /root): the password reaches
+             # tee on stdin only, a 10-minute root timer is set, an empty one writes nothing,
+             # and -c stops the timer before shredding
+             _pw_nas() ( log="$T/sudo"; : >"$log"; : >"$T/pwf"
+                         sudo() { echo "$*" >>"$log"; case $1 in tee) cat >"$T/pwf" ;; stat) echo "600 root" ;; esac; }
+                         pw <<< "s3cret pass" >/dev/null && [[ $(<"$T/pwf") == "s3cret pass" ]] &&
+                         grep -q "^systemd-run .*--unit=bw-master-expire --on-active=600 " "$log" &&
+                         ! grep -q s3cret "$log" && n=$(wc -l <"$log") &&
+                         ! pw <<< "" 2>/dev/null && [[ $(wc -l <"$log") == "$n" ]] &&
+                         pw -c >/dev/null && tail -2 "$log" | head -1 | grep -qx "systemctl stop bw-master-expire.timer" && ! pw -x 2>/dev/null )
+             _t "nas: pw timer" _pw_nas ;;
     desktop) _t "desktop: vpn" declare -F vpn; _t "desktop: note" declare -F note ;;
     omarchy) _t "omarchy: pw -h" pw -h
              # pw against stand-ins for keyctl and secret-tool (never the real keyrings):
