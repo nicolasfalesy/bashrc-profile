@@ -38,7 +38,9 @@
 #   <n>.token       the one-year job token (only where jobs run; saved by hand after `claude setup-token`)
 #   labels, history.log, jobs.conf
 # Nothing here ever prints a token: token copies are compared by sha256, logins by account id, and the token
-# reaches curl on stdin, never in argv where `ps` shows it. Each machine's backup must leave this folder out.
+# reaches curl on stdin, never in argv where `ps` shows it. A backup may keep this folder only ENCRYPTED, never
+# in plaintext (his pick, 2026-10-06: the NAS's encrypted nightly dump keeps it, and that copy can bring back a
+# login lost to a renewal). Never restore one machine's saved login onto the other machine.
 #
 # For tests: CLAUDE_CONFIG_DIR, CLAUDE_ACCOUNTS_DIR, CLAUDE_ACCOUNT_OFFLINE=1 (skip Anthropic, trust
 # ~/.claude.json) and CLAUDE_ACCOUNT_YES=1 (no question on a first save).
@@ -246,7 +248,10 @@ check() {   # one tiny message per account: its login, and its job token where j
             out=$(ask)
             # If Claude renewed the login during the test, keep the renewed one, or the older copy may stop working.
             # The live file takes it too (open sessions reload it), unless a session renewed it meanwhile.
-            if [[ -s $tmp/cfg/.credentials.json ]] && ! cmp -s "$tmp/cfg/.credentials.json" "$tmp/orig"; then
+            # But not a blanked one: when a refresh fails, Claude rewrites the file with empty tokens (NAS
+            # 2026-10-05, a dead account 2), and saving that would turn a stale login into an empty one.
+            if [[ -s $tmp/cfg/.credentials.json ]] && ! cmp -s "$tmp/cfg/.credentials.json" "$tmp/orig" \
+                && jq -e '(.claudeAiOauth.refreshToken // "x") != ""' "$tmp/cfg/.credentials.json" >/dev/null 2>&1; then
                 put "$ACC/$n.login.json" < "$tmp/cfg/.credentials.json"
                 [[ $n == "$cur" ]] && cmp -s "$CRED" "$tmp/orig" && put "$CRED" < "$tmp/cfg/.credentials.json"
             elif [[ $n == "$cur" ]]; then

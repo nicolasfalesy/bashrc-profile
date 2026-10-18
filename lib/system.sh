@@ -282,8 +282,12 @@ _tkill_completions() {
 }
 complete -F _tkill_completions tkill
 
-# rcon <command...> — send a command to a Minecraft server (mcrcon).
-# RCON_IP / RCON_PORT / RCON_PASS come from ~/.bashrc.local.
+# rcon <command...> — send a command to a Minecraft server.
+# Two modes, set in ~/.bashrc.local:
+#   RCON_CONTAINER=<name>  the server runs in Docker on THIS machine: `sudo docker exec <name> rcon-cli`, which reads
+#                          the password inside the container, so no password lives in your shell (2026-10-15: an
+#                          exported RCON_PASS sat in the environment of every shell and every program they started).
+#   RCON_IP / RCON_PORT / RCON_PASS  a remote server, through mcrcon (install.sh --with-mcrcon).
 rcon() {
     local G='\033[0;32m' R='\033[0;31m' N='\033[0m'
     case ${1-} in
@@ -292,17 +296,21 @@ rcon() {
 Send a command to a Minecraft server via RCON.
 
 Usage: rcon <command> [args...]      (alias: rc)
-Needs RCON_IP, RCON_PORT, RCON_PASS in ~/.bashrc.local and mcrcon installed
-(install.sh --with-mcrcon).
+Needs either RCON_CONTAINER (a local Docker container running itzg/minecraft-server)
+or RCON_IP, RCON_PORT, RCON_PASS plus mcrcon (install.sh --with-mcrcon) in ~/.bashrc.local.
 
 Examples: rcon list | rcon say Hello | rcon whitelist add Steve
 HELP
             return 0 ;;
     esac
-    command -v mcrcon >/dev/null 2>&1 || { echo -e "${R}rcon: mcrcon not found — run: install.sh --with-mcrcon${N}" >&2; return 1; }
-    [[ -n ${RCON_PASS-} ]] || { echo -e "${R}rcon: RCON_PASS is not set (bt local)${N}" >&2; return 1; }
     local out rc
-    out=$(mcrcon -H "${RCON_IP:-127.0.0.1}" -P "${RCON_PORT:-25575}" -p "$RCON_PASS" -w 5 "$*" 2>&1); rc=$?
+    if [[ -n ${RCON_CONTAINER-} ]]; then
+        out=$(sudo timeout 30 docker exec "$RCON_CONTAINER" rcon-cli "$*" 2>&1); rc=$?
+    else
+        command -v mcrcon >/dev/null 2>&1 || { echo -e "${R}rcon: mcrcon not found — run: install.sh --with-mcrcon${N}" >&2; return 1; }
+        [[ -n ${RCON_PASS-} ]] || { echo -e "${R}rcon: RCON_PASS is not set (bt local)${N}" >&2; return 1; }
+        out=$(mcrcon -H "${RCON_IP:-127.0.0.1}" -P "${RCON_PORT:-25575}" -p "$RCON_PASS" -w 5 "$*" 2>&1); rc=$?
+    fi
     if (( rc == 0 )); then echo -e "${G}RCON ok${N}"; [[ -n $out ]] && echo "$out"
     else echo -e "${R}RCON failed (exit $rc)${N}" >&2; [[ -n $out ]] && echo "$out"; return 1; fi
 }
