@@ -115,6 +115,28 @@ case $BASHRC_PROFILE in
                          tmux kill-server 2>/dev/null; exit $rc )
              _t "nas: tmake makes" _tmake_rt ;;
     desktop) _t "desktop: vpn" declare -F vpn; _t "desktop: note" declare -F note ;;
+    omarchy) _t "omarchy: pw -h" pw -h
+             # pw against stand-ins for keyctl and secret-tool (never the real keyrings):
+             # the password reaches keyctl on stdin only, with the name, user read and
+             # the 10-minute expiry; an empty one writes nothing; -c revokes it
+             _pw_rt() ( kc="$T/kc"; : >"$kc"; : >"$T/kv"
+                        keyctl() { echo "$*" >>"$kc"
+                                   case $1 in padd) cat >"$T/kv"; echo 42 ;; search) [[ -s $T/kv ]] && echo 42 ;; esac; }
+                        pw <<< "s3cret pass" && [[ $(<"$T/kv") == "s3cret pass" ]] &&
+                        grep -qx "padd user claude-bw-master @u" "$kc" && grep -qx "setperm 42 0x3f3f0000" "$kc" &&
+                        grep -qx "timeout 42 600" "$kc" && ! grep -q s3cret "$kc" &&
+                        ! pw <<< "" && [[ $(grep -c ^padd "$kc") == 1 ]] &&
+                        pw -c && grep -qx "revoke 42" "$kc" && ! pw -x )
+             _t "omarchy: pw keyring" _pw_rt
+             # pw --setup: both halves reach secret-tool on stdin; a client_id that is not
+             # "user.…" stores nothing
+             _pw_setup() ( st="$T/st"; : >"$st"
+                           secret-tool() { echo "$* = $(cat)" >>"$st"; }
+                           printf "user.abc\nsec123\n" | pw --setup &&
+                           grep -qx "store --label=Claude bw API key (client_id) service claude-bw key client_id = user.abc" "$st" &&
+                           grep -qx "store --label=Claude bw API key (client_secret) service claude-bw key client_secret = sec123" "$st" &&
+                           : >"$st" && ! printf "sec123\nuser.abc\n" | pw --setup && [[ ! -s $st ]] )
+             _t "omarchy: pw --setup" _pw_setup ;;
     uw)      _t "uw: rm -iv" bash -c "[[ \"$(alias rm)\" == *-iv* ]]" ;;
 esac
 exit

@@ -186,6 +186,54 @@ unalias claude 2>/dev/null
 # why (file swap, not a token, so Remote Control keeps working) is in the script.
 alias claude-account='"$BASHRC_PROFILE_DIR/bin/claude-account"'
 
+# pw — hand the vault master password to a Claude session, without it ever touching
+# chat, the screen, history or argv. The NAS twin (profiles/nas.sh) writes a root-only
+# file; here Claude runs as nic and sudo asks no password, so root-only would keep it
+# from nothing. It goes into the kernel keyring instead (user:claude-bw-master):
+# kernel memory, never a file, dropped by the kernel after 10 minutes if no session
+# picks it up. The session unlinks it once its unlock is proven. `pw -c` drops it by
+# hand; `pw --setup` keeps Claude's bw API key in the login keyring (secret-tool) so
+# its own bw data folder, separate from the bar panel's, can log itself back in.
+pw() {
+    local desc=claude-bw-master ttl=600 id p k
+    case ${1-} in
+        -h|--help) echo "pw          prompt for the vault master password -> kernel keyring (user:$desc, gone after $((ttl / 60)) min)"
+                   echo "pw -c       remove it without writing a new one"
+                   echo "pw --setup  store Claude's bw API key (client_id, client_secret) in the login keyring"; return 0 ;;
+        -c) if id=$(keyctl search @u user "$desc" 2>/dev/null) && keyctl revoke "$id" && keyctl unlink "$id" @u >/dev/null; then
+                echo "pw: removed"; else echo "pw: nothing to remove"; fi; return 0 ;;
+        --setup)
+            for k in client_id client_secret; do
+                read -rs -p "bw API key $k: " p || { echo; return 1; }
+                echo
+                [[ -n $p ]] || { echo "pw: empty $k, nothing more stored" >&2; return 1; }
+                # A client_id is "user.<uuid>"; anything else is a mispaste (often the secret).
+                [[ $k != client_id || $p == user.* ]] || { unset p; echo "pw: a client_id starts with 'user.'" >&2; return 1; }
+                printf '%s' "$p" | secret-tool store --label="Claude bw API key ($k)" service claude-bw key "$k" || { unset p; return 1; }
+            done
+            unset p
+            echo "pw: API key stored in the login keyring — tell the Claude session"; return 0 ;;
+        '') ;;
+        *) echo "pw: unknown option '$1'" >&2; return 1 ;;
+    esac
+    # read -rs: typed, not echoed. Type it rather than paste it — see cpy -p for why
+    # pasting into `read` is unreliable in some terminals.
+    read -rs -p 'master password: ' p || { echo; return 1; }
+    echo
+    [[ -n $p ]] || { echo "pw: empty, nothing written" >&2; return 1; }
+    # stdin (printf is a builtin), not an argument: argv is readable in /proc by anyone.
+    # padd replaces an older key of the same name.
+    if ! id=$(printf '%s' "$p" | keyctl padd user "$desc" @u); then unset p; return 1; fi
+    unset p
+    # 0x3f3f0000 lets the user read it, not only a possessor: a terminal and a Claude
+    # session can sit in different session keyrings. No expiry means no key.
+    if ! { keyctl setperm "$id" 0x3f3f0000 && keyctl timeout "$id" "$ttl"; }; then
+        keyctl revoke "$id"; keyctl unlink "$id" @u >/dev/null 2>&1
+        echo "pw: could not set its expiry, so it was removed" >&2; return 1
+    fi
+    echo "pw: in the kernel keyring for $((ttl / 60)) minutes — tell the Claude session it is there"
+}
+
 # ── packages (lib/aliases.sh only defines these for nala/apt) ────────────────
 alias ni='sudo pacman -S --needed'
 alias np='sudo pacman -Rns'
