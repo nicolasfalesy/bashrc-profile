@@ -299,6 +299,7 @@ Where both sides define a name, this file settles it:
 | `vpn` / `-s` / `-d` / `-t` | WireGuard `wg0` up / status / down / toggle, shared with the taskbar toggle |
 | `note`, `notes`, `apps`, `install_app` | same as the desktop profile |
 | `claude-account` | switch Claude's login (and, on the NAS, the unattended jobs' token) between saved accounts: `other` (cycles), `use <n>`, `save <n> "name"`, `check`, `name`; `-h` for help. One script on every machine; open sessions follow on their next message. |
+| `pw` / `-c` / `--setup` | hand the vault master password to a Claude session: typed hidden, kept in the kernel keyring for 10 minutes (never a file), removed by the session once its unlock works; `-c` removes it by hand; `--setup` stores Claude's bw API key in the login keyring |
 
 Also set up here: the Omarchy Auto prompt, which retints itself on every theme
 change and shows the next class when one starts within 90 minutes; lazygit
