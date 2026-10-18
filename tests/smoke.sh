@@ -20,7 +20,7 @@ red=$'\033[0;31m' green=$'\033[0;32m' dim=$'\033[2m' n=$'\033[0m'
 
 echo "── syntax"
 for f in "$here"/bashrc "$here"/lib/*.sh "$here"/profiles/*.sh "$here"/bin/* "$here"/hooks/* \
-         "$here"/install.sh "$here"/tests/smoke.sh "$here"/tests/claude-account.sh; do
+         "$here"/install.sh "$here"/tests/smoke.sh "$here"/tests/claude-account.sh "$here"/.githooks/pre-push; do
     if bash -n "$f"; then :; else echo "${red}FAIL${n} bash -n $f"; fail=1; fi
 done
 (( fail )) || echo "${green}ok${n}   all files parse"
@@ -30,7 +30,7 @@ sc=()
 if command -v shellcheck >/dev/null 2>&1; then sc=(shellcheck)
 elif command -v uvx >/dev/null 2>&1; then sc=(uvx --from shellcheck-py shellcheck); fi
 if (( ${#sc[@]} )); then
-    if (cd "$here" && "${sc[@]}" bashrc lib/*.sh profiles/*.sh bin/* hooks/* install.sh tests/smoke.sh tests/claude-account.sh); then
+    if (cd "$here" && "${sc[@]}" bashrc lib/*.sh profiles/*.sh bin/* hooks/* .githooks/pre-push install.sh tests/smoke.sh tests/claude-account.sh); then
         echo "${green}ok${n}   shellcheck"
     else
         echo "${red}FAIL${n} shellcheck"; fail=1

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Runs exactly what CI runs (.github/workflows/smoke.yml) before every push, so a
+# green push means green CI. Not in hooks/: that folder holds Omarchy theme hooks.
+# Turn it on in a clone with: git config core.hooksPath .githooks
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+bash tests/smoke.sh
+bash install.sh --profile server --dry-run --no-deps >/dev/null
