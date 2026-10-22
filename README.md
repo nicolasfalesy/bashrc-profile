@@ -73,7 +73,7 @@ edit later with `bt config`.
 | | pi | nas | desktop | omarchy | uw | server |
 |---|---|---|---|---|---|---|
 | System packages | apt/nala | ✗ (read-only root) | apt/nala | pacman (only what Omarchy lacks) | ✗ (no root) | apt/nala |
-| starship / fzf | apt, fallback `~/.local/bin` | `~/.local/bin` only | apt, fallback `~/.local/bin` | Omarchy's own | `~/.local/bin` only | apt, fallback |
+| starship / fzf | apt, fallback `~/.local/bin` (fzf: `~/.fzf`) | `~/.local/bin` only (fzf: `~/.fzf`) | apt, fallback `~/.local/bin` (fzf: `~/.fzf`) | Omarchy's own | `~/.local/bin` only (fzf: `~/.fzf`) | apt, fallback (fzf: `~/.fzf`) |
 | ble.sh (syntax highlighting) | on | on (`~/.local/share/blesh`) | on | on (costs ~205 ms per shell; `--no-blesh` to skip) | on | on |
 | fastfetch on new terminal | off | off | on | on, from `profiles/omarchy.sh` (first shell in a new window only; keep `BASHRC_FASTFETCH=0` or it draws twice) | off | off |
 | starship theme | Aurora | Aurora | Aurora | Omarchy Auto | Waterloo Gold | Aurora |
