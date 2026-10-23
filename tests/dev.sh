@@ -1502,7 +1502,7 @@ t_rund_survives_set_e() {   # valgrind exiting 1 must still end in the report, u
 t_rund_interrupted_forms() {   # Ctrl-C is told by the exit status alone, or by valgrind's own line alone
     fresh rif2; sq sq.c; local d out
     d=$(vgstub i1 'echo "==1== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)" >&2; exit 130')
-    ! out=$(PATH=$d:$PATH rund sq.c 2>&1) && [[ $out == *interrupted* ]] || { echo "status only: $out"; return 1; }
+    if out=$(PATH=$d:$PATH rund sq.c 2>&1) || [[ $out != *interrupted* ]]; then echo "status only: $out"; return 1; fi
     d=$(vgstub i2 'echo "==1== Process terminating with default action of signal 2 (SIGINT)" >&2; echo "==1== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)" >&2')
     ! out=$(PATH=$d:$PATH rund sq.c 2>&1) && [[ $out == *interrupted* ]]
 }
@@ -1510,7 +1510,7 @@ t_rund_leak_kinds() {
     fresh rlk; sq sq.c; local d out k
     for k in indirectly possibly; do
         d=$(vgstub "lk$k" "echo '==1==    $k lost: 8 bytes in 1 blocks' >&2; echo '==1== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)' >&2")
-        ! out=$(PATH=$d:$PATH rund sq.c 2>&1) && [[ $out == *LEAKS* ]] || { echo "$k lost: $out"; return 1; }
+        if out=$(PATH=$d:$PATH rund sq.c 2>&1) || [[ $out != *LEAKS* ]]; then echo "$k lost: $out"; return 1; fi
     done
 }
 t_rund_cleans_up() {   # no temp file left, no RETURN trap left, the log saved
@@ -1527,9 +1527,12 @@ t_rut_signal_codes() {
     fresh rsc; local n out
     for n in 131 132 134 135 136 137 139; do
         retc e.c "$n"; t1 a "" ok
-        ! out=$(rut e.c 2>&1) && [[ $out == *"crashed, signal $((n - 128))"* ]] || { echo "$n: $out"; return 1; }
+        if out=$(rut e.c 2>&1) || [[ $out != *"crashed, signal $((n - 128))"* ]]; then echo "$n: $out"; return 1; fi
     done
-    for n in 1 130 255; do retc e.c "$n"; out=$(rut e.c 2>&1) && [[ $out == *"All tests passed"* ]] || { echo "$n: $out"; return 1; }; done
+    for n in 1 130 255; do
+        retc e.c "$n"
+        if ! out=$(rut e.c 2>&1) || [[ $out != *"All tests passed"* ]]; then echo "$n: $out"; return 1; fi
+    done
 }
 t_rut_failure_details() {
     fresh rfd; sq sq.c; t1 a 3 wrong
@@ -1614,7 +1617,7 @@ t_mkmake_test_crash_codes() {   # fake crash codes (the program exits with them;
 t_mkmake_test_details() {
     command -v make >/dev/null || { echo "no make"; return 0; }
     fresh mtd; argse main.c; mkmake >/dev/null 2>&1 || return 1
-    local out; ! out=$(make -s test 2>&1) && [[ $out == *"no .in files here"* ]] || { echo "$out"; return 1; }
+    local out; if out=$(make -s test 2>&1) || [[ $out != *"no .in files here"* ]]; then echo "$out"; return 1; fi
     touch x1 x2; echo '*' > a.args; t1 a "" "[*]"; make -s test >/dev/null 2>&1   # an argument * stays *
 }
 t_mkmake_phony_clean_file() { command -v make >/dev/null || { echo "no make"; return 0; }; fresh mpf3; sq main.c; mkmake >/dev/null 2>&1 && make -s >/dev/null 2>&1 && touch clean && make -s clean >/dev/null 2>&1 && [[ ! -e mpf3 ]]; }
