@@ -848,6 +848,7 @@ EOF
 }
 
 # mkmake: write a Makefile for the C or C++ files here (same build as run)
+# shellcheck disable=SC2016  # $(PROG), $$s and the like are Makefile text, written literally
 mkmake() {
     case "${1:-}" in
         -h|--help|-H)
