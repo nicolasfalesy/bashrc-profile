@@ -1771,5 +1771,22 @@ if command -v make >/dev/null; then
     check make_cache_space       t_make_cache_space
 fi
 
+# ── crash line (2026-10-23): a crash under make run names the program, not the stand-in shell
+t_make_crash_line() {
+    fresh omarchy-crash-ml; ulimit -c 0
+    printf 'int main(void) { *(volatile int *)0 = 1; return 0; }\n' > main.c
+    printf 'omarchy-crash-ml: main.c\n\tcc -o omarchy-crash-ml main.c\nrun: omarchy-crash-ml\n\t./omarchy-crash-ml 5\n' > Makefile
+    local out rc; out=$(run 2>&1); rc=$?
+    [[ $rc == 139 && $out == *"./omarchy-crash-ml 5: Segmentation fault"* && $out != *make-shell* ]] || { echo "rc $rc: $out"; return 1; }
+}
+t_make_shell_error_shown() {   # what the stand-in's own shell says that isn't a crash still reaches you
+    fresh mse; printf 'SHELL := /nonexistent/sh\nall:\n\t@true\nrun:\n\t@true\n' > Makefile
+    local out; if out=$(run 2>&1) || [[ $out != */nonexistent/sh* ]]; then echo "$out"; return 1; fi
+}
+if command -v make >/dev/null; then
+    check make_crash_line        t_make_crash_line
+    check make_shell_error_shown t_make_shell_error_shown
+fi
+
 echo "$pass passed, $fail failed"
 (( fail == 0 ))

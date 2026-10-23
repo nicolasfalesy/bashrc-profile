@@ -609,13 +609,39 @@ _dev_make_run() {
     # renamed into place, so a run already using the
     # old one never sees a half-written script or "Text file busy".
     if [[ $wrap != *[[:space:]]* ]]; then
-        # shellcheck disable=SC2016  # the stand-in's own $ variables
-        if printf '%s\n' '#!/bin/sh' 'set -f' '$DEV_MAKE_SHELL "$@"' 'rc=$?' \
-            '[ "$rc" -ne 0 ] && echo "${MAKELEVEL:-0} $rc" >> "$DEV_MAKE_RC"' 'exit "$rc"' >| "$wrap.$BASHPID" \
-            && command chmod +x -- "$wrap.$BASHPID" && command mv -f -- "$wrap.$BASHPID" "$wrap"; then
+        # The stand-in keeps its own shell's messages apart (2> a file) so a crash
+        # reads "./prog 5: Segmentation fault (core dumped)", naming the recipe,
+        # not "make-shell: line 3: ... $DEV_MAKE_SHELL"; anything else it says is
+        # passed on as it was. (A dash /bin/sh says nothing there: no line at all.)
+        # The name is fixed here: an external command's redirection is expanded
+        # after its fork, where $BASHPID is already the child's.
+        local wtmp="$wrap.$BASHPID"
+        if command cat >| "$wtmp" <<'SH' \
+            && command chmod +x -- "$wtmp" && command mv -f -- "$wtmp" "$wrap"; then
+#!/bin/sh
+set -f
+m="$DEV_MAKE_RC.$$"
+if (: > "$m") 2>/dev/null; then
+    { $DEV_MAKE_SHELL "$@" 2>&3 3>&-; } 3>&2 2>"$m"
+    rc=$?
+    if [ -s "$m" ]; then
+        for cmd; do :; done
+        cmd=$(printf '%s\n' "$cmd" | head -n 1)
+        grep -vF '$DEV_MAKE_SHELL "$@"' "$m" >&2
+        grep -F '$DEV_MAKE_SHELL "$@"' "$m" | sed -n 's/^.*: [0-9][0-9]* \(.*\) \$DEV_MAKE_SHELL "\$@".*$/\1/p' | tr -s ' ' |
+            while IFS= read -r what; do printf '%s: %s\n' "$cmd" "$what" >&2; done
+    fi
+    rm -f "$m"
+else
+    $DEV_MAKE_SHELL "$@"
+    rc=$?
+fi
+[ "$rc" -ne 0 ] && echo "${MAKELEVEL:-0} $rc" >> "$DEV_MAKE_RC"
+exit "$rc"
+SH
             shellarg=("SHELL=$wrap")
         else
-            command rm -f -- "$wrap.$BASHPID"
+            command rm -f -- "$wtmp"
         fi
     fi
     # Ctrl-C stops the program, not this function: the code below still runs.
