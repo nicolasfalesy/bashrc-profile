@@ -40,7 +40,7 @@ lib/navigation.sh      ll, cd, up, mkcd, take, tre
 lib/files.sh           extract, ftext, size, bak, diff2, path
 lib/clipboard.sh       cpy, pst (OSC 52 — works over SSH)
 lib/system.sh          sys, psg, port, killport, topp, myip, weather, t, rcon
-lib/dev.sh             C toolchain (lazy-loaded)
+lib/dev.sh             dev commands for C, C++, Rust, Python, make (lazy-loaded)
 lib/prompt.sh          fzf, starship, ble.sh, optional zoxide (always last)
 profiles/{pi,nas,desktop,omarchy,uw,server}.sh
 themes/aurora.toml     starship theme, linked as ~/.config/starship.toml

@@ -220,16 +220,26 @@ Two implementation notes, both found the hard way and both load-bearing:
 | `tkill <name>...` | kill every tmux session EXCEPT the ones named (and the one you are in); lists them and asks first · `-n` dry run · `-y` no question *(tmux)* |
 | `rcon <cmd>` (`rc`) | Minecraft RCON via `mcrcon`; needs `RCON_IP/PORT/PASS` in `~/.bashrc.local` *(`install.sh --with-mcrcon`)* |
 
-## C toolchain (lib/dev.sh — lazy-loaded; `prereqs --with-dev`)
+## Dev commands (lib/dev.sh — lazy-loaded; `prereqs --with-dev`)
+
+Every command works on C, C++, Rust, Python and Makefile folders, the same way
+VS Code's Run button does (it calls `run`). The language comes from the file you
+name, else (first match) a Makefile here, a `Cargo.toml` here or above, then the
+`.c`, `.cpp`/`.cc`/`.cxx` or `.py` files here; a folder that mixes them asks you
+to name one. The program is named after the file (`run sq.c` makes `./sq`) or the
+folder. C builds with `clang -std=c17 -Wall -Wextra -g -O0 -fsanitize=address,undefined … -lm`
+(C++: `clang++ -std=c++20`; gcc/g++ where clang is missing), and a re-run skips the
+compiler when nothing changed (stamps in `~/.cache/bashrc-profile/run/`).
 
 | Command | Does |
 |---------|------|
-| `ru [-f files] [-O n] [-W flags] [-o name] [-- gcc-flags]` | compile with `gcc -std=c99 -g -Wall -Wextra -Wpedantic` → `./myprogram` |
-| `run …` | `ru` then execute the binary (honours `-o NAME`) |
-| `rud …` | debug build (`-O0`) |
-| `rund [-i input] [-- args]` | debug build, run under valgrind, colourised leak/error report, log saved |
-| `rut [-v] [-d dir] [-f files]` | compile, then run every `<stem>.in` against `<stem>.expect` (+ optional `<stem>.args`) |
+| `ru [file] [-f files] [-O n] [-W flags] [-o name] [-- flags]` | build: clang/gcc, `cargo build` (`-O` ≠ 0 = `--release`), `make`; Python has nothing to build |
+| `run [file] …` | build when needed, then run: `./name`, the Cargo program, `.venv/bin/python` or `python3` (`main.py` or the only `.py`), `make run` if the Makefile has it; then a dim `exit N, 0.02 s` line (red when N ≠ 0) and the program's exit code |
+| `rud [file] …` | debug build, then `lldb` (`gdb` without lldb); Python: `python -m pdb` |
+| `rund [file] [-i input] [-- args]` | build without sanitizers, run under valgrind, colourised leak/error report, log saved |
+| `rut [file] [-v] [-d dir] [-f files]` | build, then run every `<stem>.in` against `<stem>.expect` (+ optional `<stem>.args`), any language |
 | `mkt [-a] <stem>...` | create empty `.in`/`.expect` (and `.args`) test files |
+| `mkmake` | write a Makefile for the C or C++ files here: `all`, `run`, `debug`, `test`, `clean`; refuses to overwrite one |
 
 ## Profile: pi (profiles/pi.sh)
 
@@ -319,7 +329,7 @@ No root, so there is nothing to install system-wide. The installer links the
 | `rm` | `rm -iv` (no trash-cli on the servers) |
 | removed | `apt`, `ni`, `np`, `ns`, `nu`, `nclean`, `svim` |
 
-The C toolchain (`ru`… `mkt`) is the shared `lib/dev.sh`; put `alias home-pc=…` in
+The dev commands (`ru`… `mkmake`) are the shared `lib/dev.sh`; put `alias home-pc=…` in
 `~/.bashrc.local`.
 
 ## Environment variables you can set (bt config / bt local)

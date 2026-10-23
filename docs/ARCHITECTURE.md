@@ -20,7 +20,7 @@ How the profile is put together, in the order things happen when a shell starts.
      ├── lib/files.sh         extract · ftext · size · bak · diff2 · path
      ├── lib/clipboard.sh     cpy · pst        (OSC 52 — works over SSH)
      ├── lib/system.sh        sys · psg · port · killport · topp · myip · weather · t · tkill · rcon
-     ├── (lib/dev.sh)         ru run rud rund rut mkt   ← stubs only; loaded on first use
+     ├── (lib/dev.sh)         ru run rud rund rut mkt mkmake ← stubs only; loaded on first use
      │
      ├── profiles/pi.sh | nas.sh | desktop.sh | uw.sh | server.sh
      ├── ~/.bashrc.local      secrets, ssh hosts, per-machine overrides (never committed)
@@ -85,7 +85,7 @@ set → `desktop`; `$HOSTNAME` or a `search`/`domain` line in `/etc/resolv.conf`
 `lib/prompt.sh`.
 
 **Modules** are sourced in a fixed list; `lib/dev.sh` is not sourced — instead
-`_bashrc_lazy dev ru run rud rund rut mkt` installs stubs (see §4).
+`_bashrc_lazy dev ru run rud rund rut mkt mkmake` installs stubs (see §4).
 
 `BASHRC_TIMING=1 bash -i` prints the milliseconds the whole file took, including
 `ble-attach`. Run it in a real terminal: ble.sh refuses to load in `bash -c …`

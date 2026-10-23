@@ -94,7 +94,7 @@ Options
   --profile <p>        pi | nas | desktop | omarchy | uw | server | auto   (default: auto)
                        uw = UW CS student servers: no root, Waterloo Gold prompt
   --no-deps            skip dependency installation
-  --with-dev           C toolchain: gcc make gdb valgrind clang
+  --with-dev           dev toolchain for ru/run/rut: gcc make gdb valgrind clang
   --with-blesh         install ble.sh and enable it (default)
   --no-blesh           skip ble.sh. Worth measuring rather than assuming: on the
                        Omarchy laptop ble.sh costs ~205 ms of the ~215 ms startup
@@ -471,7 +471,7 @@ install_dependencies() {
              have cloudflared || warn "cloudflared not found — see https://pkg.cloudflare.com" ;;
         nas) have nvim || have vim || warn "no vim/nvim on this NAS — EDITOR will fall back to nano" ;;
         uw)  have nvim || warn "no nvim on this server — unpack a release into ~/.local (EDITOR falls back to vim)"
-             { have gcc && have valgrind; } || warn "gcc/valgrind missing — the C helpers (ru/rut) need them" ;;
+             { { have clang || have gcc; } && have valgrind; } || warn "a C compiler or valgrind is missing — the dev commands (ru, run, rut, rund) need them" ;;
     esac
     return 0
 }
