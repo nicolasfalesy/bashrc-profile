@@ -254,6 +254,7 @@ HELP
             return 0
             ;;
     esac
+    # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
     local -a srcs=() extra=()
     _dev_parse "$@" || return 1
