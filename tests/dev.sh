@@ -365,5 +365,55 @@ fi
 check make_run_exit          t_make_run_exit
 check make_run_file          t_make_run_file
 
+# ── polish (2026-10-22, his picks): rut crashes, program arguments, one cargo call, fallback notes
+t_rut_crash() {
+    fresh rcr; printf '#include <stdio.h>\n#include <stdlib.h>\nint main(void) { puts("ok"); fflush(stdout); abort(); }\n' > c.c
+    t1 a "" "ok"
+    local out rc; out=$(rut c.c 2>&1); rc=$?
+    [[ $rc != 0 && $out == *crashed* ]]
+}
+argsc() { printf '#include <stdio.h>\nint main(int c, char **v) { for (int i = 1; i < c; i++) printf("[%%s]", v[i]); puts(""); return 0; }\n' > "$1"; }
+t_run_args()   { fresh ra; argsc a.c; [[ $(run a.c -a 5 "x y" 2>&1) == *"[5][x y]"* ]]; }
+t_rud_args()   { fresh rda; argsc a.c; [[ $(PATH=$stub:$PATH rud a.c -a 5 2>&1) == *"LLDB -- ./a 5"* ]]; }
+t_rund_args()  { fresh rva; argsc a.c; [[ $(PATH=$stub:$PATH rund a.c -a 7 2>&1) == *"./a 7"* ]]; }
+t_run_args_py(){ fresh rap; echo 'import sys; print(sys.argv[1:])' > a.py; [[ $(run a.py -a 5 2>&1) == *"['5']"* ]]; }
+t_run_args_make() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh ram2; argsc main.c; mkmake >/dev/null 2>&1 || return 1
+    [[ $(run -a 5 6 2>&1) == *"[5][6]"* ]]
+}
+t_rust_one_cargo() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    local real; real=$(command -v cargo)
+    local d=$T/cargolog; mkdir -p "$d"
+    printf '#!/bin/sh\necho call >> "%s/calls"\nexec "%s" "$@"\n' "$d" "$real" > "$d/cargo"; chmod +x "$d/cargo"
+    fresh roc; "$real" new -q --vcs none sqr && cd sqr || return 1
+    PATH=$d:$PATH run >/dev/null 2>&1 || return 1
+    rm -f "$d/calls"; PATH=$d:$PATH run >/dev/null 2>&1
+    [[ $(wc -l < "$d/calls") == 1 ]]
+}
+t_gdb_note()   { fresh gn; sq sq.c; local p; p=$(nolldb); [[ $(PATH=$p rud sq.c 2>&1) == *"lldb not found, using gdb"* ]]; }
+t_venv_broken_note() {
+    fresh vb; echo 'print("RAN")' > a.py; mkdir -p .venv/bin; ln -s /nonexistent/python .venv/bin/python
+    local out; out=$(run a.py 2>&1); [[ $out == *RAN* && $out == *".venv/bin/python is broken"* ]]
+}
+t_mkmake_debug_gdb() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh mdg; sq main.c; mkmake >/dev/null 2>&1 && grep -q 'gdb --args' Makefile
+}
+
+check rut_crash        t_rut_crash
+check run_args         t_run_args
+check rud_args         t_rud_args
+check rund_args        t_rund_args
+check run_args_py      t_run_args_py
+if command -v make >/dev/null; then
+    check run_args_make    t_run_args_make
+    check mkmake_debug_gdb t_mkmake_debug_gdb
+fi
+if command -v cargo >/dev/null; then check rust_one_cargo t_rust_one_cargo; fi
+check gdb_note         t_gdb_note
+check venv_broken_note t_venv_broken_note
+
 echo "$pass passed, $fail failed"
 (( fail == 0 ))

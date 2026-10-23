@@ -94,7 +94,7 @@ _dev_name() {
 # _dev_parse ARGS...: the options every command shares. It fills the CALLER's
 # locals (bash dynamic scope), so each command declares these first:
 #   local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-#   local -a srcs=() extra=()
+#   local -a srcs=() extra=() pargs=()   (+ local rust_exe="" where _dev_prog runs)
 # `--` puts the rest in extra: compiler flags for ru/run/rud/rut, program
 # arguments for rund (it reads extra that way).
 _dev_parse() {
@@ -137,6 +137,8 @@ _dev_parse() {
                 test_dir=$2; shift 2
                 ;;
             --) shift; extra+=("$@"); break ;;
+            # -a: everything after it goes to the program (so it comes last).
+            -a) shift; pargs+=("$@"); break ;;
             -*) echo "Error: unknown option '$1'. Use -h for help." >&2; return 1 ;;
             *)
                 if [[ -n $file ]]; then echo "Error: name one file at a time ('$file' and '$1')" >&2; return 1; fi
@@ -277,6 +279,7 @@ Options:
                     lone .rs: rustc -C opt-level; ignored for Python and make)
   -W [FLAGS]        Warnings: alone = none, comma list = only those (e.g. all,error)
   -o NAME           Program name
+  -a ARGS...        Arguments for the program (run, rud, rund; put it last)
 
 Anything after -- goes to the compiler (C and C++ only).
 
@@ -292,7 +295,7 @@ HELP
     esac
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=()
+    local -a srcs=() extra=() pargs=()
     _dev_parse "$@" || return 1
     local lang
     if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
@@ -324,7 +327,7 @@ _dev_make_has_run() {
 _dev_make_run() {
     local err rc=0
     err=$(mktemp)
-    make --no-print-directory -s run 2>"$err" || rc=$?
+    make --no-print-directory -s run ${pargs[@]+"ARGS=${pargs[*]}"} 2>"$err" || rc=$?
     cat "$err" >&2
     if [[ $rc == 2 ]]; then
         local n; n=$(grep -o 'Error [0-9]*$' "$err" | tail -1 | grep -o '[0-9]*$')
@@ -345,9 +348,15 @@ _dev_build() {
             fi
             if _dev_use_cargo; then
                 _dev_need cargo cargo || return 1
-                local -a c=(cargo build -q)
+                # One cargo call: errors and warnings render on stderr as usual,
+                # and stdout carries JSON with the program's path for _dev_prog
+                # (rust_exe is the caller's local). grep, not jq, which not every
+                # machine has.
+                local -a c=(cargo build -q --message-format=json-render-diagnostics)
                 [[ $opt != 0 ]] && c+=(--release)
-                "${c[@]}"
+                local json
+                json=$("${c[@]}") || return 1
+                rust_exe=$(grep -o '"executable":"[^"]*"' <<<"$json" | tail -1 | cut -d'"' -f4)
             else
                 # A lone .rs file (outside a Cargo project, or not part of it).
                 [[ -n $file ]] || { echo "Error: name the .rs file to build: run x.rs" >&2; return 1; }
@@ -374,14 +383,9 @@ _dev_prog() {
         c|cpp) prog=("./$out") ;;
         rust)
             if _dev_use_cargo; then
-                # The binary's path from cargo itself (a no-op build after _dev_build);
-                # grep instead of jq, which not every machine has.
-                local -a c=(cargo build -q --message-format=json)
-                [[ $opt != 0 ]] && c+=(--release)
-                local exe
-                exe=$("${c[@]}" 2>/dev/null | grep -o '"executable":"[^"]*"' | tail -1 | cut -d'"' -f4)
-                [[ -n $exe ]] || { echo "Error: cargo built no program here (a library crate?)" >&2; return 1; }
-                prog=("$exe")
+                # _dev_build already asked cargo for the program's path.
+                [[ -n ${rust_exe:-} ]] || { echo "Error: cargo built no program here (a library crate?)" >&2; return 1; }
+                prog=("$rust_exe")
             else
                 prog=("./$out")
             fi
@@ -396,7 +400,11 @@ _dev_prog() {
                     else echo "Error: several Python files here; name one: run ${pys[0]}" >&2; return 1; fi
                 fi
             fi
-            if [[ -x .venv/bin/python ]]; then py=.venv/bin/python; else _dev_need python3 python3 || return 1; fi
+            if [[ -x .venv/bin/python ]]; then py=.venv/bin/python
+            else
+                [[ -L .venv/bin/python ]] && echo "Note: .venv/bin/python is broken (what it points to is gone); using python3" >&2
+                _dev_need python3 python3 || return 1
+            fi
             prog=("$py" "$f")
             ;;
         make)
@@ -426,7 +434,7 @@ run() {
 Build (when needed) and run the program, in whatever language it is. VS Code's
 Run button calls this too.
 
-Usage: run [FILE] [OPTIONS] [-- EXTRA_COMPILER_FLAGS...]
+Usage: run [FILE] [OPTIONS] [-- EXTRA_COMPILER_FLAGS...] [-a PROGRAM_ARGS...]
 
 Same language rules and options as ru (see ru -h). Then:
   C, C++, lone .rs   ./<name>
@@ -443,13 +451,15 @@ Examples:
   run sq.c          Build sq.c into ./sq and run it
   run main.py       Run main.py
   run -O 2          Optimised build, then run
+  run sq.c -a 5 10  Run ./sq 5 10 (a Makefile gets make run ARGS="5 10")
 HELP
             return 0
             ;;
     esac
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=() prog=()
+    local -a srcs=() extra=() prog=() pargs=()
+    local rust_exe=""
     _dev_parse "$@" || return 1
     local lang
     if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
@@ -461,7 +471,7 @@ HELP
         _dev_prog "$lang" || return 1
     fi
     local start=$EPOCHREALTIME rc=0
-    "${prog[@]}" || rc=$?
+    "${prog[@]}" "${pargs[@]}" || rc=$?
     _dev_exit_line "$rc" "$start"
     return "$rc"
 }
@@ -474,9 +484,10 @@ rud() {
 Build for debugging (no optimisation, debug info) and open the program in a
 debugger, in whatever language it is.
 
-Usage: rud [FILE] [OPTIONS] [-- EXTRA_COMPILER_FLAGS...]
+Usage: rud [FILE] [OPTIONS] [-- EXTRA_COMPILER_FLAGS...] [-a PROGRAM_ARGS...]
 
 Same language rules and options as ru (see ru -h); -O is ignored (always 0).
+Where lldb is missing it says so and uses gdb.
   C, C++, Rust, Makefile   lldb (gdb where lldb is missing)
   Python                   python -m pdb
 
@@ -487,13 +498,15 @@ Examples:
   rud               Debug whatever is in this folder
   rud sq.c          Build sq.c and open it in lldb
   rud main.py       Step through main.py with pdb
+  rud sq.c -a 5     Debug ./sq 5
 HELP
             return 0
             ;;
     esac
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=() prog=()
+    local -a srcs=() extra=() prog=() pargs=()
+    local rust_exe=""
     _dev_parse "$@" || return 1
     opt=0
     local lang
@@ -502,12 +515,13 @@ HELP
     _dev_build "$lang" run || return 1
     _dev_prog "$lang" || return 1
     if [[ $lang == python ]]; then
-        "${prog[0]}" -m pdb "${prog[@]:1}"
+        "${prog[0]}" -m pdb "${prog[@]:1}" "${pargs[@]}"
     elif command -v lldb &>/dev/null; then
-        lldb -- "${prog[@]}"
+        lldb -- "${prog[@]}" "${pargs[@]}"
     else
         _dev_need gdb "lldb or gdb" || return 1
-        gdb --args "${prog[@]}"
+        echo "Note: lldb not found, using gdb" >&2
+        gdb --args "${prog[@]}" "${pargs[@]}"
     fi
 }
 
@@ -526,13 +540,14 @@ folder uses the Makefile's own flags: for a mkmake Makefile run
 make clean && make SANITIZE= first. Returns 1 on errors, leaks, or when
 valgrind could not run the program.
 
-Usage: rund [FILE] [OPTIONS] [-- PROGRAM_ARGS...]
+Usage: rund [FILE] [OPTIONS] [-- PROGRAM_ARGS...]   (or -a PROGRAM_ARGS..., last)
 
 Options:
   -h, --help, -H    Show this help message
   -f FILE [FILE2..] Build these files together
   -i FILE           Feed FILE to the program's stdin
   -o NAME           Program name
+  -a ARGS...        Arguments for the program (rund only; put it last)
   -W [FLAGS]        Warnings (see ru -h)
 
 Program arguments go after --.
@@ -548,7 +563,8 @@ HELP
 
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=() prog=() prog_args=()
+    local -a srcs=() extra=() prog=() prog_args=() pargs=()
+    local rust_exe=""
     _dev_parse "$@" || return 1
     # For rund, everything after -- is the program's arguments, not compiler flags.
     prog_args=("${extra[@]}"); extra=(); opt=0
@@ -589,7 +605,7 @@ HELP
 
     # Build valgrind command
     local -a vcmd=(valgrind -s --leak-check=full --track-origins=yes "${prog[@]}")
-    vcmd+=("${prog_args[@]}")
+    vcmd+=("${prog_args[@]}" "${pargs[@]}")
 
     echo -e "\033[0;34m[valgrind]\033[0m ${vcmd[*]}"
     echo ""
@@ -788,13 +804,20 @@ _run_suite() {
         fi
 
         # Run program with optional stdin redirection
+        local prc=0
         if [[ -r "$in_file" ]]; then
-            "${PROGRAM[@]}" "${argv[@]}" < "$in_file" > "$TEMPFILE" 2>&1
+            "${PROGRAM[@]}" "${argv[@]}" < "$in_file" > "$TEMPFILE" 2>&1 || prc=$?
         else
-            "${PROGRAM[@]}" "${argv[@]}" > "$TEMPFILE" 2>&1
+            "${PROGRAM[@]}" "${argv[@]}" > "$TEMPFILE" 2>&1 || prc=$?
         fi
 
-        if diff "$TEMPFILE" "$expect_file" > /dev/null 2>&1; then
+        # A program killed by a signal (a crash, abort) fails even when its
+        # output matched up to that point; an ordinary non-zero exit doesn't.
+        if (( prc > 128 )); then
+            (( failed++ ))
+            echo -e "${RED}${BOLD}x Test failed:${RESET} ${UNDERLINE}$stem${RESET} (crashed, signal $(( prc - 128 )))"
+            _run_suite_details "$stem"
+        elif diff "$TEMPFILE" "$expect_file" > /dev/null 2>&1; then
             echo -e "${GREEN}${BOLD}> Passed:${RESET} $stem"
             if [[ "$VERBOSE" -eq 1 ]]; then
                 _run_suite_details "$stem"
@@ -826,6 +849,7 @@ Test cases are file stems: for a stem "foo", the runner looks for
   foo.in       (stdin input; cases are found by their .in)
   foo.expect   (expected stdout and stderr together, required)
   foo.args     (command-line arguments, optional)
+A test whose program crashes (killed by a signal) fails even if its output matched.
 mkt makes empty ones: mkt foo.
 
 Usage: rut [FILE] [-v] [-d DIR] [-f FILE...] [-- EXTRA_COMPILER_FLAGS...]
@@ -848,7 +872,8 @@ HELP
 
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=() prog=()
+    local -a srcs=() extra=() prog=() pargs=()
+    local rust_exe=""
     _dev_parse "$@" || return 1
 
     if [[ ! -d "$test_dir" ]]; then
@@ -990,11 +1015,14 @@ HELP
         echo "\$(PROG): \$(SRCS) \$(wildcard *.h *.hpp)"
         printf '\t$(%s) $(%s) $(SRCS) -o $@ $(LDLIBS)\n' "$cvar" "$fvar"
         echo
+        echo "# make run ARGS=\"5 10\" passes arguments (run -a 5 10 does this for you)."
         echo "run: \$(PROG)"
-        printf '\t./$(PROG)\n'
+        printf '\t./$(PROG) $(ARGS)\n'
         echo
+        echo "# lldb, or gdb where lldb is missing."
+        echo "DEBUGGER = \$(shell command -v lldb >/dev/null 2>&1 && echo 'lldb --' || echo 'gdb --args')"
         echo "debug: \$(PROG)"
-        printf '\tlldb -- ./$(PROG)\n'
+        printf '\t$(DEBUGGER) ./$(PROG) $(ARGS)\n'
         echo
         echo "# Every <stem>.in through the program, compared with <stem>.expect (and <stem>.args)."
         echo "test: \$(PROG)"
