@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# lib/dev.sh — C programming toolchain helpers (lazy-loaded on first use).
-#   ru    compile with gcc (C99, -Wall -Wextra -Wpedantic, -g)
-#   run   compile and execute ./myprogram
-#   rud   debug build (-O0)
-#   rund  debug build, then run under valgrind with a colourised report
-#   rut   compile and run the .in/.expect/.args test suite
-#   mkt   create test stems
-# Dependencies: gcc, make, valgrind  (install.sh --with-dev)
-
-# Requires: gcc, valgrind (for rund)
-# Compiles and runs C programs using gcc.
+# lib/dev.sh — build, run, debug and test programs in C, C++, Rust, Python or a
+# Makefile folder (lazy-loaded on first use). VS Code's Run button calls `run`.
+#   ru      build (clang C17 / C++20 with sanitizers; cargo; make)
+#   run     build when needed, then run; prints the exit code and time
+#   rud     debug build, then lldb (gdb without lldb; pdb for Python)
+#   rund    build without sanitizers, then valgrind with a colourised report
+#   rut     build, then run the .in/.expect/.args test cases
+#   mkt     create empty test case files
+#   mkmake  write a Makefile for the C or C++ files here
+# Dependencies: clang or gcc, make; optional cargo, python3, lldb or gdb, valgrind
+#   (install.sh --with-dev)
+#
 # Test runner expects .in (stdin), .expect (expected output), and
 # optionally .args (command-line arguments) files per test stem.
 #
 # Quirks:
-#   • This file is never sourced at startup: bashrc installs stubs for the six
+#   • This file is never sourced at startup: bashrc installs stubs for the seven
 #     public functions and the first call (or Tab) sources it — see
 #     _bashrc_lazy in lib/core.sh. Adding a new public function here means adding
 #     it to that `_bashrc_lazy dev …` line too, or it will not exist until
@@ -647,21 +648,21 @@ _run_suite() {
         shift
     fi
 
-    if [[ "$#" -ne 2 ]]; then
-        echo "Error: _run_suite expects 2 arguments: _run_suite [-v] <suite-file> <program>" >&2
+    if [[ "$#" -lt 2 ]]; then
+        echo "Error: _run_suite expects: _run_suite [-v] <suite-file> <program> [program args...]" >&2
         return 1
     fi
 
-    local SUITE_FILE="$1"
-    local PROGRAM="$2"
+    local SUITE_FILE="$1"; shift
+    local -a PROGRAM=("$@")   # a command: ./prog, or python3 main.py
 
     if [[ ! -r "$SUITE_FILE" ]]; then
         echo "Error: suite file '$SUITE_FILE' not found or unreadable" >&2
         return 1
     fi
 
-    if [[ ! -x "$PROGRAM" ]]; then
-        echo "Error: program '$PROGRAM' not found or not executable" >&2
+    if [[ ${#PROGRAM[@]} -eq 1 && ! -x "${PROGRAM[0]}" ]]; then
+        echo "Error: program '${PROGRAM[0]}' not found or not executable" >&2
         return 1
     fi
 
@@ -695,9 +696,9 @@ _run_suite() {
 
         # Run program with optional stdin redirection
         if [[ -r "$in_file" ]]; then
-            "$PROGRAM" "${argv[@]}" < "$in_file" > "$TEMPFILE" 2>&1
+            "${PROGRAM[@]}" "${argv[@]}" < "$in_file" > "$TEMPFILE" 2>&1
         else
-            "$PROGRAM" "${argv[@]}" > "$TEMPFILE" 2>&1
+            "${PROGRAM[@]}" "${argv[@]}" > "$TEMPFILE" 2>&1
         fi
 
         if diff "$TEMPFILE" "$expect_file" > /dev/null 2>&1; then
@@ -721,82 +722,52 @@ _run_suite() {
     fi
 }
 
-# rut: compile and run the test suite
+# rut: build, then run the program against every .in/.expect test case
 rut() {
-    case "$1" in
+    case "${1:-}" in
         -h|--help|-H)
-            cat <<'EOF'
-Compile C source files and run all test cases in the current directory.
+            cat <<'HELP'
+Build the program (any language, see ru -h) and run every test case here.
 
-Test cases are defined by file stems: for a stem "foo", the runner looks for:
-  foo.in       (stdin input, optional)
+Test cases are file stems: for a stem "foo", the runner looks for
+  foo.in       (stdin input)
   foo.expect   (expected output, required)
   foo.args     (command-line arguments, optional)
+mkt makes empty ones: mkt foo.
 
-Usage: rut [-h|--help] [-v] [-d DIR] [-f FILE...] [-- EXTRA_GCC_FLAGS...]
+Usage: rut [FILE] [-v] [-d DIR] [-f FILE...] [-- EXTRA_COMPILER_FLAGS...]
 
 Options:
-  -h, --help, -H   Show this help message
+  -h, --help, -H    Show this help message
   -v                Verbose: show details for passing tests too
-  -d DIR            Look for test files (.in/.expect) in DIR instead of cwd
-  -f FILE [FILE2..] Compile specific .c/.o files
-
-Anything after -- is passed directly to gcc via ru.
+  -d DIR            Look for test files in DIR instead of here
+  -f FILE [FILE2..] Build these files together
 
 Examples:
-  rut               Compile and run all tests
-  rut -v            Verbose output for all tests
+  rut               Build and run all tests
+  rut sq.c -v       Test sq.c, details for every test
+  rut main.py       Test a Python program
   rut -d tests      Use test files from ./tests/
-  rut -v -f main.c utils.c   Compile specific files, verbose test run
-  rut -- -DDEBUG    Compile with -DDEBUG and run tests
-EOF
+HELP
             return 0
             ;;
     esac
 
-    local verbose_arg=""
-    local compile_args=()
-    local test_dir="."
-
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -v)
-                verbose_arg="-v"
-                shift
-                ;;
-            -d)
-                if [[ -z "$2" || "$2" == -* ]]; then
-                    echo "Error: -d requires a directory" >&2
-                    return 1
-                fi
-                test_dir="$2"; shift 2
-                ;;
-            -f)
-                compile_args+=(-f)
-                shift
-                while [[ $# -gt 0 && "$1" != -* ]]; do
-                    compile_args+=("$1"); shift
-                done
-                ;;
-            --)
-                shift
-                compile_args+=(-- "$@")
-                break
-                ;;
-            *)
-                echo "Error: unknown option '$1'. Use -h for help." >&2
-                return 1
-                ;;
-        esac
-    done
+    # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
+    local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
+    local -a srcs=() extra=() prog=()
+    _dev_parse "$@" || return 1
 
     if [[ ! -d "$test_dir" ]]; then
         echo "Error: test directory '$test_dir' not found" >&2
         return 1
     fi
 
-    # Compile
-    ru "${compile_args[@]}" || return 1
+    local lang
+    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
+    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    _dev_build "$lang" run || return 1
+    _dev_prog "$lang" || return 1
 
     # Gather test stems from *.in files in the test directory
     local stems
@@ -812,7 +783,8 @@ EOF
     suite="$(mktemp)"
     printf '%s\n' "$stems" > "$suite"
 
-    _run_suite $verbose_arg "$suite" ./myprogram
+    # shellcheck disable=SC2086  # $verbose is empty or -v
+    _run_suite $verbose "$suite" "${prog[@]}"
     local rc=$?
 
     command rm -f "$suite"
@@ -875,12 +847,77 @@ EOF
     fi
 }
 
-# Tab completions for C programming functions
+# mkmake: write a Makefile for the C or C++ files here (same build as run)
+mkmake() {
+    case "${1:-}" in
+        -h|--help|-H)
+            cat <<'HELP'
+Write a Makefile for the C or C++ files in this folder, with the same build as
+run and VS Code. Refuses to overwrite an existing Makefile.
+
+Targets: all (the default: build), run, debug (lldb), test (every .in/.expect
+case, like rut), clean. The program is named after the folder.
+
+Usage: mkmake
+HELP
+            return 0
+            ;;
+    esac
+    if [[ -f Makefile || -f makefile || -f GNUmakefile ]]; then
+        echo "Error: Makefile already exists" >&2
+        return 1
+    fi
+    local lang; lang=$(_dev_detect) || return 1
+    local prog; prog=$(_dev_name "$lang")
+    local cc cvar flags fvar srcs
+    case $lang in
+        c)   cvar=CC;  fvar=CFLAGS;   flags=-std=c17;   srcs='$(wildcard *.c)'
+             if command -v clang &>/dev/null; then cc=clang; else cc=gcc; fi ;;
+        cpp) cvar=CXX; fvar=CXXFLAGS; flags=-std=c++20; srcs='$(wildcard *.cpp *.cc *.cxx)'
+             if command -v clang++ &>/dev/null; then cc=clang++; else cc=g++; fi ;;
+        *)   echo "Error: mkmake writes Makefiles for C and C++ (this folder is $lang)" >&2; return 1 ;;
+    esac
+    # Recipe lines must start with a real tab; printf '\t' keeps them.
+    {
+        echo "# Written by mkmake (bashrc-profile): the same build as run and VS Code's Run."
+        echo "$cvar      = $cc"
+        echo "$fvar  = $flags -Wall -Wextra -g -O0 -fsanitize=address,undefined"
+        echo "LDLIBS  = -lm"
+        echo "PROG    = $prog"
+        echo "SRCS    = $srcs"
+        echo
+        echo "all: \$(PROG)"
+        echo
+        echo "\$(PROG): \$(SRCS) \$(wildcard *.h *.hpp)"
+        printf '\t$(%s) $(%s) $(SRCS) -o $@ $(LDLIBS)\n' "$cvar" "$fvar"
+        echo
+        echo "run: \$(PROG)"
+        printf '\t./$(PROG)\n'
+        echo
+        echo "debug: \$(PROG)"
+        printf '\tlldb -- ./$(PROG)\n'
+        echo
+        echo "# Every <stem>.in through the program, compared with <stem>.expect (and <stem>.args)."
+        echo "test: \$(PROG)"
+        printf '\t@pass=0; fail=0; for t in *.in; do s=$${t%%.in}; \\\n'
+        printf '\t  if ./$(PROG) $$(cat $$s.args 2>/dev/null) < $$t 2>&1 | diff -q - $$s.expect >/dev/null; \\\n'
+        printf '\t  then echo "ok   $$s"; pass=$$((pass+1)); else echo "FAIL $$s"; fail=$$((fail+1)); fi; done; \\\n'
+        printf '\techo "$$pass passed, $$fail failed"; [ $$fail -eq 0 ]\n'
+        echo
+        echo "clean:"
+        printf '\trm -f $(PROG)\n'
+        echo
+        echo ".PHONY: all run debug test clean"
+    } > Makefile
+    echo "Wrote Makefile ($lang, program ./$prog). Try: make, make run, make test"
+}
+
+# Tab completions for the dev commands (source files of every language)
 _ru_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
-        -f) COMPREPLY=($(compgen -f -X '!*.@(c|o)' -- "$cur")); return ;;
+        -f) COMPREPLY=($(compgen -f -X '!*.@(c|cc|cpp|cxx|o|rs|py)' -- "$cur")); return ;;
         -O) COMPREPLY=($(compgen -W "0 1 2 3 s g" -- "$cur")); return ;;
         -W) COMPREPLY=($(compgen -W "all extra error pedantic all,extra all,extra,error" -- "$cur")); return ;;
         -o) COMPREPLY=($(compgen -f -- "$cur")); return ;;
@@ -890,7 +927,7 @@ _ru_completions() {
         return
     fi
     # Default to .c/.o file completion
-    COMPREPLY=($(compgen -f -X '!*.@(c|o)' -- "$cur"))
+    COMPREPLY=($(compgen -f -X '!*.@(c|cc|cpp|cxx|o|rs|py)' -- "$cur"))
 }
 complete -F _ru_completions ru run
 
@@ -898,7 +935,7 @@ _rut_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
-        -f) COMPREPLY=($(compgen -f -X '!*.@(c|o)' -- "$cur")); return ;;
+        -f) COMPREPLY=($(compgen -f -X '!*.@(c|cc|cpp|cxx|o|rs|py)' -- "$cur")); return ;;
         -d) COMPREPLY=($(compgen -d -- "$cur")); return ;;
     esac
     if [[ "$cur" == -* ]]; then
@@ -912,7 +949,7 @@ _rud_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
-        -f) COMPREPLY=($(compgen -f -X '!*.@(c|o)' -- "$cur")); return ;;
+        -f) COMPREPLY=($(compgen -f -X '!*.@(c|cc|cpp|cxx|o|rs|py)' -- "$cur")); return ;;
         -W) COMPREPLY=($(compgen -W "all extra error pedantic all,extra all,extra,error" -- "$cur")); return ;;
         -o) COMPREPLY=($(compgen -f -- "$cur")); return ;;
     esac
@@ -920,7 +957,7 @@ _rud_completions() {
         COMPREPLY=($(compgen -W "-h --help -H -f -W -o --" -- "$cur"))
         return
     fi
-    COMPREPLY=($(compgen -f -X '!*.@(c|o)' -- "$cur"))
+    COMPREPLY=($(compgen -f -X '!*.@(c|cc|cpp|cxx|o|rs|py)' -- "$cur"))
 }
 complete -F _rud_completions rud
 
@@ -928,7 +965,7 @@ _rund_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
-        -f) COMPREPLY=($(compgen -f -X '!*.@(c|o)' -- "$cur")); return ;;
+        -f) COMPREPLY=($(compgen -f -X '!*.@(c|cc|cpp|cxx|o|rs|py)' -- "$cur")); return ;;
         -i) COMPREPLY=($(compgen -f -- "$cur")); return ;;
         -W) COMPREPLY=($(compgen -W "all extra error pedantic all,extra all,extra,error" -- "$cur")); return ;;
         -o) COMPREPLY=($(compgen -f -- "$cur")); return ;;
@@ -937,7 +974,7 @@ _rund_completions() {
         COMPREPLY=($(compgen -W "-h --help -H -f -i -o -W --" -- "$cur"))
         return
     fi
-    COMPREPLY=($(compgen -f -X '!*.@(c|o)' -- "$cur"))
+    COMPREPLY=($(compgen -f -X '!*.@(c|cc|cpp|cxx|o|rs|py)' -- "$cur"))
 }
 complete -F _rund_completions rund
 
@@ -948,4 +985,10 @@ _mkt_completions() {
     fi
 }
 complete -F _mkt_completions mkt
+
+_mkmake_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    [[ "$cur" == -* ]] && COMPREPLY=($(compgen -W "-h --help -H" -- "$cur"))
+}
+complete -F _mkmake_completions mkmake
 

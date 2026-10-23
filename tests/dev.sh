@@ -233,5 +233,34 @@ check rund_plain       t_rund_plain
 check compat_rund      t_compat_rund
 check rund_py_refuses  t_rund_py_refuses
 
+# ── rut (tests), mkmake, the lazy-load line
+# t1 STEM IN EXPECT: one .in/.expect test case.
+t1() { printf '%s\n' "$2" > "$1.in"; printf '%s\n' "$3" > "$1.expect"; }
+t_rut_c()     { fresh tc; sq sq.c; t1 a 3 "Give me a number: 3 squared is 9"; rut sq.c 2>&1 | grep -q "All tests passed"; }
+t_rut_py()    { fresh tp; sqpy a.py; t1 b 4 "Give me a number: 4 squared is 16"; rut a.py 2>&1 | grep -q "All tests passed"; }
+t_rut_fails() { fresh tf; sq sq.c; t1 a 3 "wrong"; ! rut sq.c >/dev/null 2>&1; }
+t_compat_rut_flags() { fresh tx; sq sq.c; t1 a 2 "Give me a number: 2 squared is 4"; rut -- -DX >/dev/null 2>&1; }
+t_mkmake_builds() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh mkb; sq main.c
+    mkmake >/dev/null 2>&1 && make -s >/dev/null 2>&1 && [[ -x mkb ]] || return 1
+    [[ $(echo 4 | make -s run 2>&1) == *"4 squared is 16"* ]] || return 1
+    t1 a 5 "Give me a number: 5 squared is 25"; make -s test >/dev/null 2>&1
+}
+t_mkmake_refuses() { fresh mkr; sq main.c; touch Makefile; ! mkmake 2>/dev/null; }
+t_lazy_line()  { grep -q '^_bashrc_lazy dev .*\bmkmake\b' "$here/bashrc"; }
+
+check rut_c            t_rut_c
+check rut_py           t_rut_py
+check rut_fails        t_rut_fails
+check compat_rut_flags t_compat_rut_flags
+if command -v make >/dev/null; then
+    check mkmake_builds  t_mkmake_builds
+else
+    skip "mkmake_builds (no make)"
+fi
+check mkmake_refuses   t_mkmake_refuses
+check lazy_line        t_lazy_line
+
 echo "$pass passed, $fail failed"
 (( fail == 0 ))

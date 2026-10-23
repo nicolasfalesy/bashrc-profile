@@ -172,7 +172,7 @@ done
 unset _m
 
 # 9. lib/dev.sh is big and rarely needed: stubs load it on first call or Tab.
-_bashrc_lazy dev ru run rud rund rut mkt
+_bashrc_lazy dev ru run rud rund rut mkt mkmake
 
 # 10. Machine profile.
 [[ -r "$BASHRC_PROFILE_DIR/profiles/$BASHRC_PROFILE.sh" ]] && . "$BASHRC_PROFILE_DIR/profiles/$BASHRC_PROFILE.sh"
