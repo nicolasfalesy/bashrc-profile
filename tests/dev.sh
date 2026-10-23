@@ -1772,12 +1772,15 @@ if command -v make >/dev/null; then
 fi
 
 # ── crash line (2026-10-23): a crash under make run names the program, not the stand-in shell
-t_make_crash_line() {
+t_make_crash_line() {   # a bash recipe shell: the line names the recipe (on any system: the stand-in itself is bash)
     fresh omarchy-crash-ml; ulimit -c 0
     printf 'int main(void) { *(volatile int *)0 = 1; return 0; }\n' > main.c
-    printf 'omarchy-crash-ml: main.c\n\tcc -o omarchy-crash-ml main.c\nrun: omarchy-crash-ml\n\t./omarchy-crash-ml 5\n' > Makefile
+    printf 'SHELL := /bin/bash\nomarchy-crash-ml: main.c\n\tcc -o omarchy-crash-ml main.c\nrun: omarchy-crash-ml\n\t./omarchy-crash-ml 5\n' > Makefile
     local out rc; out=$(run 2>&1); rc=$?
-    [[ $rc == 139 && $out == *"./omarchy-crash-ml 5: Segmentation fault"* && $out != *make-shell* ]] || { echo "rc $rc: $out"; return 1; }
+    [[ $rc == 139 && $out == *"./omarchy-crash-ml 5: Segmentation fault"* && $out != *make-shell* ]] || { echo "bash: rc $rc: $out"; return 1; }
+    # The default shell: dash (Ubuntu's sh) reports the crash itself, as plain make shows it; the stand-in is never named.
+    sed -i 1d Makefile; out=$(run 2>&1); rc=$?
+    [[ $rc == 139 && $out == *"Segmentation fault"* && $out != *make-shell* ]] || { echo "sh: rc $rc: $out"; return 1; }
 }
 t_make_shell_error_shown() {   # what the stand-in's own shell says that isn't a crash still reaches you
     fresh mse; printf 'SHELL := /nonexistent/sh\nall:\n\t@true\nrun:\n\t@true\n' > Makefile

@@ -612,13 +612,13 @@ _dev_make_run() {
         # The stand-in keeps its own shell's messages apart (2> a file) so a crash
         # reads "./prog 5: Segmentation fault (core dumped)", naming the recipe,
         # not "make-shell: line 3: ... $DEV_MAKE_SHELL"; anything else it says is
-        # passed on as it was. (A dash /bin/sh says nothing there: no line at all.)
+        # passed on as it was. It runs under this bash ($BASH), never /bin/sh: dash
+        # (Ubuntu's sh) prints a bare "Segmentation fault" naming nothing.
         # The name is fixed here: an external command's redirection is expanded
         # after its fork, where $BASHPID is already the child's.
         local wtmp="$wrap.$BASHPID"
-        if command cat >| "$wtmp" <<'SH' \
+        if { printf '#!%s\n' "$BASH"; command cat <<'SH'; } >| "$wtmp" \
             && command chmod +x -- "$wtmp" && command mv -f -- "$wtmp" "$wrap"; then
-#!/bin/sh
 set -f
 m="$DEV_MAKE_RC.$$"
 if (: > "$m") 2>/dev/null; then
@@ -627,9 +627,16 @@ if (: > "$m") 2>/dev/null; then
     if [ -s "$m" ]; then
         for cmd; do :; done
         cmd=$(printf '%s\n' "$cmd" | head -n 1)
-        grep -vF '$DEV_MAKE_SHELL "$@"' "$m" >&2
-        grep -F '$DEV_MAKE_SHELL "$@"' "$m" | sed -n 's/^.*: [0-9][0-9]* \(.*\) \$DEV_MAKE_SHELL "\$@".*$/\1/p' | tr -s ' ' |
-            while IFS= read -r what; do printf '%s: %s\n' "$cmd" "$what" >&2; done
+        # bash pads the PID ("line 3:  1075 Segmentation fault"); a line that
+        # doesn't parse is shown as it is, never dropped.
+        while IFS= read -r line; do
+            case $line in
+                *'$DEV_MAKE_SHELL "$@"'*)
+                    what=$(printf '%s\n' "$line" | sed -n 's/^.*: *[0-9][0-9]* \(.*\) \$DEV_MAKE_SHELL "\$@".*$/\1/p' | tr -s ' ')
+                    if [ -n "$what" ]; then printf '%s: %s\n' "$cmd" "$what" >&2; else printf '%s\n' "$line" >&2; fi ;;
+                *) printf '%s\n' "$line" >&2 ;;
+            esac
+        done < "$m"
     fi
     rm -f "$m"
 else
