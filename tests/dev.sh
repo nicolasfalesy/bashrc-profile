@@ -515,7 +515,7 @@ t_c_same_mtime_edit() {
 }
 t_c_binary_replaced() {
     fresh cbr; sq sq.c; ru sq.c >/dev/null 2>&1 || return 1
-    printf '#!/bin/sh\necho OTHER\n' > sq; chmod +x sq               # say a Makefile rebuilt ./sq with other flags
+    command cp -f /bin/true sq                                         # say a Makefile rebuilt ./sq with other flags (a real program: a script there is refused)
     [[ $(ru sq.c 2>&1) == *'[compile]'* ]]
 }
 t_c_obj_change() {
@@ -1092,6 +1092,59 @@ t_alias_tools_safe() {
     [[ $out == *"first=0"* && $out == *SKIPPED* && $out == *RUT_OK* && $out == *"make=3"* ]] || { echo "$out"; return 1; }
 }
 check alias_tools_safe       t_alias_tools_safe
+
+# ── hardening round 3 (2026-10-23): separate programs, link hints, parallel runs,
+# live make output, the exit line after a partial line, temp files, small messages
+t_two_mains() {
+    fresh tm2; printf 'int main(void) { return 1; }\n' > a.c; printf 'int main(void) { return 2; }\n' > b.c
+    local out; ! out=$(run 2>&1) && [[ $out == *"each have a main()"* && $(grep -c . <<<"$out") -le 2 ]]
+}
+t_undefined_hint() {
+    fresh udh; printf 'int f(void);\nint main(void) { return f(); }\n' > main.c; printf 'int f(void) { return 0; }\n' > util.c
+    local out; ! out=$(run main.c 2>&1) && [[ $out == *"build them together"* ]]
+}
+t_parallel_runs() {
+    fresh par; printf '#include <unistd.h>\nint main(void) { usleep(200000); return 0; }\n' > r.c
+    local i; for i in 1 2 3; do
+        rm -f r; ( run r.c >"o1" 2>&1; echo "rc=$?" >>"o1" ) & ( run r.c >"o2" 2>&1; echo "rc=$?" >>"o2" ) & wait
+        if ! grep -q "rc=0" o1 || ! grep -q "rc=0" o2; then cat o1 o2; return 1; fi
+        ! grep -q "Text file busy" o1 o2 || { cat o1 o2; return 1; }
+    done
+}
+t_make_run_live_stderr() {
+    fresh mls; printf '#include <stdio.h>\n#include <unistd.h>\nint main(void) { fputs("PROMPT\\n", stderr); sleep(3); return 0; }\n' > main.c
+    printf 'all: prog\nprog: main.c\n\tcc -o prog main.c\nrun: prog\n\t./prog\n' > Makefile; make -s >/dev/null 2>&1
+    ( run > out.txt 2>&1 & ); sleep 1.5; grep -q PROMPT out.txt; local rc=$?; sleep 2; return $rc
+}
+t_exit_line_after_partial() {
+    command -v script >/dev/null || { echo "no script"; return 0; }
+    fresh elp; printf '#include <stdio.h>\nint main(void) { printf("answer: 42"); return 0; }\n' > nl.c
+    local out; out=$(COLUMNS=40 script -qec "bash -c '. \"$here/lib/dev.sh\"; run nl.c'" /dev/null 2>&1)
+    [[ $out =~ 42\ +$'\r' ]]
+}
+t_temp_files_in_cache() {
+    fresh tfc; sq sq.c; t1 a 3 "Give me a number: 3 squared is 9"; mkdir "$T/tt"
+    TMPDIR=$T/tt rut >/dev/null 2>&1; [[ -z $(ls -A "$T/tt") ]]
+}
+t_stale_temp_cleaned() {
+    fresh stc; sq sq.c; t1 a 3 "Give me a number: 3 squared is 9"
+    local d=$XDG_CACHE_HOME/bashrc-profile/tmp; mkdir -p "$d"; touch -d '2001-01-01' "$d/old.leftover"
+    rut >/dev/null 2>&1; [[ ! -e $d/old.leftover ]]
+}
+t_refuses_script()  { fresh rsc; sq hello.c; printf '#!/bin/sh\necho mine\n' > hello; chmod +x hello; fails_with "isn't a program" ru hello.c && grep -q mine hello; }
+t_py_missing()      { fresh pym; fails_with "'nosuch.py' not found" run nosuch.py; }
+t_rut_hint_tests()  { fresh rht; sq sq.c; mkdir tests; t1 tests/a 3 x; fails_with "rut -d tests" rut sq.c; }
+
+check two_mains              t_two_mains
+check undefined_hint         t_undefined_hint
+check parallel_runs          t_parallel_runs
+if command -v make >/dev/null; then check make_run_live_stderr t_make_run_live_stderr; fi
+check exit_line_after_partial t_exit_line_after_partial
+check temp_files_in_cache    t_temp_files_in_cache
+check stale_temp_cleaned     t_stale_temp_cleaned
+check refuses_script         t_refuses_script
+check py_missing             t_py_missing
+check rut_hint_tests         t_rut_hint_tests
 
 echo "$pass passed, $fail failed"
 (( fail == 0 ))

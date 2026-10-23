@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lib/dev.sh — build, run, debug and test programs in C, C++, Rust, Python or a
 # Makefile folder (lazy-loaded on first use). VS Code's Run button calls `run`.
-#   ru      build (clang C17 / C++20 with sanitizers; cargo; make)
+#   ru      build (clang gnu17 / gnu++20 with sanitizers; cargo; make)
 #   run     build when needed, then run; prints the exit code and time
 #   rud     debug build, then lldb (gdb without lldb; pdb for Python)
 #   rund    build without sanitizers, then valgrind with a colourised report
@@ -217,6 +217,16 @@ _dev_show() {
     printf '%s' "${s% }"
 }
 
+# _dev_tmp: a new temp file in ${XDG_CACHE_HOME:-~/.cache}/bashrc-profile/tmp, not
+# $TMPDIR. A Ctrl-C that aborts a command (ble.sh can) leaves its temp file
+# behind; here every later call clears the ones older than an hour.
+_dev_tmp() {
+    local d="${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile/tmp"
+    command mkdir -p -- "$d" || return 1
+    command find "$d" -maxdepth 1 -type f -mmin +60 -delete 2>/dev/null
+    command mktemp "$d/XXXXXXXX"
+}
+
 # _dev_need TOOL PACKAGE: status 1 with one line naming the package when TOOL is missing.
 _dev_need() {
     command -v "$1" &>/dev/null && return 0
@@ -326,7 +336,24 @@ _dev_build_cc() {
         [[ $(command realpath -m -- "$s") == "$oabs" ]] && { echo "Error: -o $out would overwrite the source file $s" >&2; return 1; }
     done
     [[ -d $out ]] && { echo "Error: '$out' is a folder; name the program with -o NAME" >&2; return 1; }
-    [[ -e $out && ! -x $out ]] && { echo "Error: '$out' exists and isn't a program; not overwriting it (name the program with -o NAME)" >&2; return 1; }
+    # A program here is an ELF file; a script or text with that name is yours.
+    if [[ -e $out ]]; then
+        local magic=""; IFS= read -r -n 4 magic < "$out" 2>/dev/null
+        [[ $magic == $'\x7f'ELF ]] || { echo "Error: '$out' exists and isn't a program; not overwriting it (name the program with -o NAME)" >&2; return 1; }
+    fi
+    # Several files each with their own main() are separate programs (a folder of
+    # lab exercises), not one: say so in one line instead of the linker's wall.
+    if [[ ${#sources[@]} -gt 1 ]]; then
+        local -a mains=()
+        for s in "${sources[@]}"; do
+            [[ $s == *.@(o|a|so) ]] && continue
+            command grep -qE '^[[:space:]]*(static[[:space:]]+)?(int|void)[[:space:]]+main[[:space:]]*\(' -- "$s" 2>/dev/null && mains+=("${s#./}")
+        done
+        if [[ ${#mains[@]} -gt 1 ]]; then
+            echo "Error: ${mains[0]} and ${mains[1]}$([[ ${#mains[@]} -gt 2 ]] && echo " (and others)") each have a main(); name one: run ${mains[0]} (or build files together with -f)" >&2
+            return 1
+        fi
+    fi
 
     local -a cmd=("$cc" "$std" "-O$opt" -g)
     case $warn in
@@ -347,19 +374,43 @@ _dev_build_cc() {
 
     # The fingerprint is taken BEFORE compiling: a file saved during the compile
     # then differs at the next run, which rebuilds instead of trusting old code.
-    local key fp=""; key=$(printf '%q ' "${cmd[@]}")
-    fp=$(_dev_fingerprint "$cc" "$std" "${sources[@]}") || fp=""
-    if [[ -n $fp && -x $out ]] && _dev_stamp_ok "$out" "$key"$'\n'"$fp"$'\n'"$(_dev_stat "$out")"; then
-        return 0
+    # The check and the build run in a subshell holding a lock on this program
+    # (flock), so two runs at once in one folder take turns instead of linking
+    # over each other ("Text file busy"); the lock goes with the subshell, even
+    # on Ctrl-C.
+    local key lock=/dev/null; key=$(printf '%q ' "${cmd[@]}")
+    if command -v flock &>/dev/null; then
+        lock=$(_dev_stamp_path "$out").lock
+        command mkdir -p -- "${lock%/*}" || lock=/dev/null
     fi
-    # On stderr, so `run > out.txt` keeps only the program's output.
-    printf '\033[0;34m[compile]\033[0m %s\n' "$(_dev_show "${cmd[@]}")" >&2
-    if "${cmd[@]}"; then
-        [[ -n $fp ]] && _dev_stamp_write "$out" "$key"$'\n'"$fp"$'\n'"$(_dev_stat "$out")"
-        return 0   # a stamp that can't be written only costs the next skip
-    else
-        command rm -f -- "$(_dev_stamp_path "$out")"; return 1
-    fi
+    (
+        [[ $lock == /dev/null ]] || command flock -w 300 9 || { echo "Error: another build of $out is still running" >&2; exit 1; }
+        fp=$(_dev_fingerprint "$cc" "$std" "${sources[@]}") || fp=""
+        if [[ -n $fp && -x $out ]] && _dev_stamp_ok "$out" "$key"$'\n'"$fp"$'\n'"$(_dev_stat "$out")"; then
+            exit 0
+        fi
+        # On stderr, so `run > out.txt` keeps only the program's output.
+        printf '\033[0;34m[compile]\033[0m %s\n' "$(_dev_show "${cmd[@]}")" >&2
+        # The compiler's messages are kept (colour kept for a terminal) to add a
+        # hint when a function is missing because it lives in another file here.
+        local -a ccolor=(); [[ -t 2 ]] && ccolor=(-fdiagnostics-color=always)
+        cerr=$(_dev_tmp) || cerr=/dev/null
+        if "${cmd[@]}" "${ccolor[@]}" 2>|"$cerr"; then
+            command cat -- "$cerr" >&2; [[ $cerr == /dev/null ]] || command rm -f -- "$cerr"
+            [[ -n $fp ]] && _dev_stamp_write "$out" "$key"$'\n'"$fp"$'\n'"$(_dev_stat "$out")"
+            exit 0   # a stamp that can't be written only costs the next skip
+        fi
+        command cat -- "$cerr" >&2
+        if [[ ${#sources[@]} -eq 1 ]] && command grep -qE 'undefined reference to|Undefined symbols' "$cerr" 2>/dev/null; then
+            local -a others=(); local o
+            while IFS= read -r -d '' o; do
+                [[ $(_dev_lang_of "$o") == "$lang" && $(command realpath -- "$o") != "$(command realpath -- "${sources[0]}")" ]] && others+=("${o#./}")
+            done < <(_dev_list)
+            [[ ${#others[@]} -gt 0 ]] && echo "Note: the missing function may be in another file here (${others[*]}); build them together: run -f ${sources[0]#./} ${others[0]} (or plain run)" >&2
+        fi
+        [[ $cerr == /dev/null ]] || command rm -f -- "$cerr"
+        command rm -f -- "$(_dev_stamp_path "$out")"; exit 1
+    ) 9>>"$lock"
 }
 
 # ru: build the program (C, C++, Rust; Python has nothing to build; a Makefile folder runs make)
@@ -412,7 +463,7 @@ HELP
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
     local -a srcs=() extra=() pargs=() penv=() mk_pre=()
-    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args=""
+    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args="" mk_shell=""
     _dev_parse "$@" || return 1
     _dev_refuse ru a i v d || return 1
     local lang; lang=$(_dev_pick_lang) || return 1
@@ -492,10 +543,10 @@ _dev_rust_pick() {
 # shellcheck disable=SC2016  # $(info ...), $(ARGS) are make syntax, written literally
 _dev_make_info() {
     [[ -n $mk_done ]] && return 0
-    mk_done=1 mk_goal="" mk_run="" mk_prog="" mk_args="" mk_pre=()
+    mk_done=1 mk_goal="" mk_run="" mk_prog="" mk_args="" mk_shell="" mk_pre=()
     local mf pf db line target="" prev=""
     for mf in GNUmakefile makefile Makefile; do [[ -f $mf ]] && break; done
-    pf=$(command mktemp) || return 1
+    pf=$(_dev_tmp) || return 1
     printf '%s\n' '$(info _DEV_PROG=$(strip $(if $(filter file override,$(origin PROG)),$(PROG))))' >| "$pf"
     # -r leaves out make's ~1,000 lines of built-in rules (a Makefile's own
     # targets, variables and includes are all still there).
@@ -503,6 +554,7 @@ _dev_make_info() {
     command rm -f -- "$pf"
     mk_prog=$(command sed -n 's/^_DEV_PROG=//p' <<<"$db" | command head -1)
     mk_goal=$(command sed -n 's/^\.DEFAULT_GOAL := //p' <<<"$db" | command tail -1)
+    mk_shell=$(command sed -n 's/^SHELL :\{0,2\}= //p' <<<"$db" | command tail -1)
     [[ $db == *'$(ARGS)'* ]] && mk_args=1
     # Only the lines that matter go through the (slow) read loop: blank lines,
     # target lines, "# Not a target:" and recipe markers.
@@ -519,17 +571,13 @@ _dev_make_info() {
     done <<<"$db"
 }
 
-# _dev_make_run: `make run`, returning the program's own exit code. make turns any
-# failing recipe into 2 and prints its own "make: *** [...] Error N" line (the
-# first is the innermost make, so recursive makes keep the program's code) or the
-# signal's name when the program crashed; this reads only make's lines, never the
-# program's own output. Ctrl-C is caught for the moment, so make's error output is
-# still shown and the temp file removed.
-# shortcut: make's stderr (and so the program's) is collected and shown when make
-# ends, not live; a live tee raced with the read (and $! is unset in $(...) under
-# set -u). Upgrade if a `make run` program ever needs live stderr.
+# _dev_make_run: `make run`, returning the program's own exit code and showing
+# its output live. make turns any failing recipe into exit 2, so make runs its
+# recipes through a tiny stand-in shell (SHELL=...make-shell, which runs the
+# Makefile's own SHELL) that writes down the first failing command's exit code:
+# the program's, through nested makes and crashes (139 for a segfault).
 _dev_make_run() {
-    local err rc=0 n mline saved
+    local rc=0 rcf wrap saved
     local -a margs=()
     if [[ ${#pargs[@]} -gt 0 ]]; then
         # shellcheck disable=SC2016  # $(ARGS) is make syntax
@@ -540,31 +588,21 @@ _dev_make_run() {
         for a in "${pargs[@]}"; do q+="'${a//\'/\'\\\'\'}' "; done
         margs=("ARGS=${q//\$/\$\$}")
     fi
-    err=$(command mktemp) || return 1
-    saved=$(trap -p INT)
-    trap ':' INT
-    # make's messages in English (LC_MESSAGES=C, and no LC_ALL to override it),
-    # so its "Error N" line can be read; the program keeps the rest of your locale.
-    command env -u LC_ALL LC_MESSAGES=C make --no-print-directory -s run "${margs[@]}" 2>|"$err" || rc=$?
-    if [[ -n $saved ]]; then eval "$saved"; else trap - INT; fi
-    command cat -- "$err" >&2
-    if [[ $rc == 2 ]]; then
-        mline=$(command grep -E -m1 '^make(\[[0-9]+\])?: \*\*\* ' "$err") || mline=""
-        if [[ $mline =~ Error\ ([0-9]+)$ ]]; then rc=${BASH_REMATCH[1]}
-        else
-            case $mline in
-                *"Segmentation fault"*)        rc=139 ;;
-                *Aborted*)                     rc=134 ;;
-                *"Bus error"*)                 rc=135 ;;
-                *"Floating point exception"*)  rc=136 ;;
-                *"Illegal instruction"*)       rc=132 ;;
-                *Killed*)                      rc=137 ;;
-                *Terminated*)                  rc=143 ;;
-                *Interrupt*)                   rc=130 ;;
-            esac
-        fi
+    rcf=$(_dev_tmp) || return 1
+    wrap="${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile/make-shell"
+    # shellcheck disable=SC2016  # the stand-in's own $ variables
+    if ! printf '%s\n' '#!/bin/sh' '"$DEV_MAKE_SHELL" "$@"' 'rc=$?' \
+        '[ "$rc" -ne 0 ] && [ ! -s "$DEV_MAKE_RC" ] && echo "$rc" > "$DEV_MAKE_RC"' 'exit "$rc"' >| "$wrap" \
+        || ! command chmod +x -- "$wrap"; then
+        command rm -f -- "$rcf"; return 1
     fi
-    command rm -f -- "$err"
+    # Ctrl-C stops the program, not this function: the code below still runs.
+    saved=$(trap -p INT); trap ':' INT
+    DEV_MAKE_SHELL=${mk_shell:-/bin/sh} DEV_MAKE_RC=$rcf \
+        command make --no-print-directory -s run SHELL="$wrap" "${margs[@]}" || rc=$?
+    if [[ -n $saved ]]; then eval "$saved"; else trap - INT; fi
+    [[ $rc != 0 && -s $rcf ]] && rc=$(<"$rcf")
+    command rm -f -- "$rcf"
     return "$rc"
 }
 
@@ -698,6 +736,7 @@ print(((list(s.submodule_search_locations or []) or [s.origin or ""])[0]) if s e
                     else echo "Error: several Python files here; name one: run ${pys[0]:-FILE.py}" >&2; return 1; fi
                 fi
             fi
+            [[ -f $f ]] || { echo "Error: '$f' not found" >&2; return 1; }
             prog=("$py" "$f")
             ;;
         make)
@@ -732,6 +771,13 @@ _dev_exit_line() {
     local secs colour='\033[2m' end=${EPOCHREALTIME/,/.}
     secs=$(command awk -v a="${2/,/.}" -v b="$end" 'BEGIN { printf "%.2f", b - a }')
     [[ $1 != 0 ]] && colour='\033[0;31m'
+    # In a terminal, a program whose last line has no newline ("Enter n: " then
+    # EOF) would get the exit line glued on. Width-1 spaces then \r: at column 0
+    # they fit and \r comes back; mid-line they wrap to a new line first.
+    if [[ -t 2 ]]; then
+        local cols=${COLUMNS:-0}; [[ $cols -gt 1 ]] || cols=$(command tput cols 2>/dev/null) || cols=80
+        printf '%*s\r' "$((cols - 1))" '' >&2
+    fi
     echo -e "${colour}exit $1, ${secs} s\033[0m" >&2
 }
 
@@ -751,9 +797,10 @@ the program's stdin. Then:
   Rust (Cargo)       the project's program, from target/
   Python             .venv/bin/python FILE when the folder has a .venv, else python3 FILE
                      (no FILE: main.py, or the only .py)
-  Makefile           make run when the Makefile has a run target; else the program
-                     it builds: -o NAME, its PROG, or its first target when that is a
-                     program (never a guess from the folder's name)
+  Makefile           -o NAME when given; else make run when the Makefile has a run
+                     target with a recipe; else the program it builds: its PROG, its
+                     first target when that is a program, or the one program among
+                     that target's prerequisites (never a guess from the folder's name)
 
 Afterwards one dim line shows the exit code and the time (red when it isn't 0),
 and run returns the program's exit code.
@@ -771,7 +818,7 @@ HELP
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
     local -a srcs=() extra=() prog=() pargs=() penv=() mk_pre=()
-    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args=""
+    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args="" mk_shell=""
     _dev_parse "$@" || return 1
     _dev_refuse run v d || return 1
     if [[ -n $in_file && ! -f $in_file ]]; then echo "Error: input file '$in_file' not found" >&2; return 1; fi
@@ -826,7 +873,7 @@ HELP
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
     local -a srcs=() extra=() prog=() pargs=() penv=() mk_pre=()
-    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args=""
+    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args="" mk_shell=""
     _dev_parse "$@" || return 1
     _dev_refuse rud i v d || return 1
     opt=0
@@ -883,7 +930,7 @@ HELP
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
     local -a srcs=() extra=() prog=() prog_args=() pargs=() penv=() mk_pre=()
-    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args=""
+    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args="" mk_shell=""
     _dev_parse "$@" || return 1
     _dev_refuse rund v d || return 1
     # For rund, everything after -- is the program's arguments, not compiler flags.
@@ -917,7 +964,7 @@ HELP
     local logfile
     logfile="valgrind_$(command date +"%Y%m%d-%H%M%S").log"
     local tmpfile
-    tmpfile="$(mktemp)"
+    tmpfile=$(_dev_tmp) || return 1
     # Removes the file when rund returns, then removes itself: a RETURN trap set
     # in a function otherwise stays set in the user's shell.
     # shellcheck disable=SC2064
@@ -1101,7 +1148,7 @@ _run_suite() {
     fi
 
     local TEMPFILE
-    TEMPFILE="$(mktemp)"
+    TEMPFILE=$(_dev_tmp) || return 1
     # shellcheck disable=SC2064
     trap "command rm -f '$TEMPFILE'; trap - RETURN" RETURN
 
@@ -1202,7 +1249,7 @@ HELP
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
     local -a srcs=() extra=() prog=() pargs=() penv=() mk_pre=()
-    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args=""
+    local rust_exe="" mk_done="" mk_goal="" mk_run="" mk_prog="" mk_args="" mk_shell=""
     _dev_parse "$@" || return 1
     _dev_refuse rut a i || return 1
 
@@ -1221,13 +1268,15 @@ HELP
     stems="$(compgen -G "$test_dir/*.in" 2>/dev/null | command sed 's/\.in$//' | command sort -u)"
 
     if [[ -z "$stems" ]]; then
-        echo "Error: no *.in files found in $test_dir" >&2
+        local hint=""
+        [[ $test_dir == . && -n $(compgen -G "tests/*.in" 2>/dev/null) ]] && hint=" (the tests are in tests/: rut -d tests)"
+        echo "Error: no *.in files found in $test_dir$hint" >&2
         return 1
     fi
 
     # Build a temp suite file for _run_suite
     local suite
-    suite="$(mktemp)"
+    suite=$(_dev_tmp) || return 1
     printf '%s\n' "$stems" >| "$suite"
 
     # Ctrl-C stops the running test and then the whole suite (dev_int, read by

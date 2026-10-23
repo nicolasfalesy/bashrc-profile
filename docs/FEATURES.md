@@ -245,8 +245,9 @@ and make's output go to stderr, so `run > out.txt` holds only the program's outp
 - **Python:** the nearest `.venv` (or `venv`) here or in a folder above; a package
   folder (`run pkg`, or inside it) runs as `python -m pkg`.
 - **Makefiles:** read through `make -pq` (includes, variables, multi-target lines).
-  `run` uses the `run` target when there is one; otherwise the program is `-o NAME`,
-  the Makefile's `PROG`, or its first target when that is a program file, never a
+  `run` runs `-o NAME` when given; else the `run` target when it has a recipe;
+  otherwise the program is the Makefile's `PROG`, its first target when that is a
+  program file, or the one program among that target's prerequisites, never a
   guess from the folder's name. A first target of `run`, `clean` or `test` is never
   made as the build step. `make run`'s exit code is the program's (also through
   recursive makes and crashes).
