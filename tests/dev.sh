@@ -949,5 +949,149 @@ check mkt_fails_readonly     t_mkt_fails_readonly
 check no_trap_leak           t_no_trap_leak
 check failglob_safe          t_failglob_safe
 
+# ── hardening round 2 (2026-10-23): .PHONY run, make's own error line, libraries,
+# stdlib-named packages, PROG through make, Rust src paths and examples, mkmake names
+progmk() {   # progmk: main.c printing RAN, built by a "prog" target
+    printf '#include <stdio.h>\nint main(void) { puts("RAN"); return 0; }\n' > main.c
+}
+t_make_phony_run_norecipe() {
+    fresh mpn; progmk; printf '.PHONY: all clean run\nall: prog\nprog: main.c\n\tcc -o prog main.c\nclean:\n\trm -f prog\n' > Makefile
+    [[ $(run 2>&1) == *RAN* ]]
+}
+t_make_run_prereq_only() {
+    fresh mrp; progmk; printf 'all: prog\nprog: main.c\n\tcc -o prog main.c\nrun: prog\n' > Makefile
+    [[ $(run 2>&1) == *RAN* ]]
+}
+t_make_exit_program_text() {
+    fresh met; printf '#include <stdio.h>\nint main(void) { fputs("Syntax Error 9\\n", stderr); return 1; }\n' > main.c
+    printf 'all: prog\nprog: main.c\n\tcc -o prog main.c\nrun: prog\n\t./prog\n' > Makefile
+    run >/dev/null 2>&1; [[ $? == 1 ]]
+}
+t_c_static_lib() {
+    local cc; cc=$(command -v clang || command -v gcc) || { echo "no cc"; return 0; }
+    fresh csl2; printf 'int f(void) { return 1; }\n' > x.c; "$cc" -c x.c -o x.o && ar rcs libx.a x.o
+    printf 'int f(void);\nint main(void) { return f(); }\n' > main.c
+    run main.c -f libx.a >/dev/null 2>&1; [[ $? == 1 ]] || return 1
+    printf 'int f(void) { return 2; }\n' > x.c; "$cc" -c x.c -o x.o && command rm -f libx.a && ar rcs libx.a x.o; later libx.a
+    run main.c -f libx.a >/dev/null 2>&1; [[ $? == 2 ]]
+}
+t_c_lib_flag() {
+    local cc; cc=$(command -v clang || command -v gcc) || { echo "no cc"; return 0; }
+    fresh clf; printf 'int f(void) { return 1; }\n' > x.c; "$cc" -c x.c -o x.o && ar rcs libx.a x.o
+    printf 'int f(void);\nint main(void) { return f(); }\n' > main.c
+    local out; out=$(run main.c -- -L. -lx 2>&1); [[ $out == *"main.c"*"-lx"* ]] || return 1   # libraries after the sources
+    printf 'int f(void) { return 3; }\n' > x.c; "$cc" -c x.c -o x.o && command rm -f libx.a && ar rcs libx.a x.o; later libx.a
+    run main.c -- -L. -lx >/dev/null 2>&1; [[ $? == 3 ]]
+}
+t_py_stdlib_name() { fresh psn; mkdir calendar; echo 'print("MINE")' > calendar/__main__.py; [[ $(run calendar 2>&1) == *MINE* ]]; }
+t_py_nested_pkg() {
+    fresh pnp; mkdir -p pkg/sub; touch pkg/__init__.py pkg/sub/__init__.py; echo 'X = "NESTED"' > pkg/util.py
+    printf 'from ..util import X\nprint(X)\n' > pkg/sub/__main__.py
+    [[ $(run pkg/sub 2>&1) == *NESTED* ]]
+}
+t_make_o_overrides_run() {
+    fresh moo; progmk; printf '#include <stdio.h>\nint main(void) { puts("OTHER"); return 0; }\n' > o.c
+    printf 'all: prog other\nprog: main.c\n\tcc -o prog main.c\nother: o.c\n\tcc -o other o.c\nrun: prog\n\t./prog\n' > Makefile
+    local out; out=$(run -o other 2>&1); [[ $out == *OTHER* && $out != *RAN* ]]
+}
+t_make_refuses_flags() { fresh mrf3; progmk; printf 'prog: main.c\n\tcc -o prog main.c\n' > Makefile; fails_with "Makefile" run -- -DX; }
+t_make_prog_comment() { fresh mpcm; progmk; printf 'PROG = app # the program\nall: $(PROG)\n$(PROG): main.c\n\tcc -o $(PROG) main.c\n' > Makefile; [[ $(run 2>&1) == *RAN* ]]; }
+t_make_prog_var()     { fresh mpv; progmk; printf 'NAME = app\nPROG = $(NAME)\nall: $(PROG)\n$(PROG): main.c\n\tcc -o $(PROG) main.c\n' > Makefile; [[ $(run 2>&1) == *RAN* ]]; }
+t_make_env_prog_ignored() { fresh mep; progmk; printf 'main: main.c\n\tcc -o main main.c\n' > Makefile; [[ $(PROG=zzz run 2>&1) == *RAN* ]]; }
+t_make_shell_evals() {
+    fresh mse; progmk; printf 'X := $(shell echo x >> calls.log)\nall: prog\nprog: main.c\n\tcc -o prog main.c\nrun: prog\n\t./prog\n' > Makefile
+    run >/dev/null 2>&1; [[ $(wc -l < calls.log) -le 3 ]]
+}
+# The Ctrl-C trap is put back exactly as it was (in a background job bash starts
+# with Ctrl-C ignored, which also shows in trap -p).
+t_make_no_int_trap() {
+    fresh mnt; printf 'all:\n\t@true\nrun:\n\t@echo hi\n' > Makefile; sq sq.c
+    local before; before=$(trap -p INT)
+    run >/dev/null 2>&1; [[ $(trap -p INT) == "$before" ]] || return 1
+    cd .. && mkdir mnt2 && cd mnt2 && sq sq.c && echo 1 | run sq.c >/dev/null 2>&1; [[ $(trap -p INT) == "$before" ]]
+}
+t_rust_renamed_main() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rrm; cargo new -q --vcs none r2 && cd r2 && mkdir -p src/bin/x || return 1
+    printf '\n[[bin]]\nname = "renamed"\npath = "src/main.rs"\n' >> Cargo.toml
+    echo 'fn main() { println!("RENAMED"); }' > src/main.rs; echo 'fn main() { println!("XBIN"); }' > src/bin/x/main.rs
+    printf '\n[[bin]]\nname = "x"\npath = "src/bin/x/main.rs"\n' >> Cargo.toml
+    [[ $(run src/main.rs 2>&1) == *RENAMED* ]]
+}
+t_rust_workspace_hint() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rwh; printf '[workspace]\nmembers = ["a", "b"]\nresolver = "2"\n' > Cargo.toml
+    cargo new -q --vcs none a && cargo new -q --vcs none b || return 1
+    fails_with "a/src/main.rs" run
+}
+t_rust_example() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rex; cargo new -q --vcs none --lib mylib && cd mylib && mkdir examples || return 1
+    echo 'pub fn f() -> i32 { 7 }' > src/lib.rs; echo 'fn main() { println!("EX{}", mylib::f()); }' > examples/ex.rs
+    [[ $(run examples/ex.rs 2>&1) == *EX7* ]]
+}
+t_rust_lone_project_edition() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rlpe; cargo new -q --vcs none --edition 2024 e24 && cd e24 && mkdir tools || return 1
+    echo 'fn main() { if let Some(x) = Some(1) && x > 0 { println!("LC{x}"); } }' > tools/t.rs   # let chains: 2024 only
+    [[ $(run tools/t.rs 2>&1) == *LC1* ]]
+}
+t_mkmake_upper_cpp() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh muc; printf '#include <iostream>\nint main() { std::cout << "UPCPP\\n"; }\n' > Main.CPP
+    mkmake >/dev/null 2>&1 && make -s >/dev/null 2>&1 && [[ $(./muc 2>&1) == *UPCPP* ]]
+}
+t_mkmake_folder_like_source() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh demo.c; sq main.c; mkmake >/dev/null 2>&1 && make -s >/dev/null 2>&1 || return 1
+    [[ $(echo 2 | run 2>&1) == *"2 squared is 4"* ]]
+}
+
+check make_phony_run_norecipe  t_make_phony_run_norecipe
+check make_run_prereq_only     t_make_run_prereq_only
+check make_exit_program_text   t_make_exit_program_text
+check c_static_lib             t_c_static_lib
+check c_lib_flag               t_c_lib_flag
+check py_stdlib_name           t_py_stdlib_name
+check py_nested_pkg            t_py_nested_pkg
+check make_o_overrides_run     t_make_o_overrides_run
+check make_refuses_flags       t_make_refuses_flags
+check make_prog_comment        t_make_prog_comment
+check make_prog_var            t_make_prog_var
+check make_env_prog_ignored    t_make_env_prog_ignored
+check make_shell_evals         t_make_shell_evals
+check make_no_int_trap         t_make_no_int_trap
+if command -v cargo >/dev/null; then
+    check rust_renamed_main          t_rust_renamed_main
+    check rust_workspace_hint        t_rust_workspace_hint
+    check rust_example               t_rust_example
+    check rust_lone_project_edition  t_rust_lone_project_edition
+fi
+if command -v make >/dev/null; then
+    check mkmake_upper_cpp           t_mkmake_upper_cpp
+    check mkmake_folder_like_source  t_mkmake_folder_like_source
+fi
+
+# hostile aliases on every tool dev.sh uses: loaded with alias expansion on (the
+# non-omarchy profiles), and used inside $(...) where aliases expand at run time.
+t_alias_tools_safe() {
+    fresh ats; sq sq.c; t1 a 3 "Give me a number: 3 squared is 9"
+    mkdir mk && printf 'all:\n\t@true\nrun:\n\t@exit 3\n' > mk/Makefile
+    local out
+    out=$(timeout 120 bash -c '
+        shopt -s expand_aliases
+        alias find="echo FIND" mktemp="mktemp -d" stat="echo STAT" grep="grep --color=always -n" cut="cut -d x" \
+              tail="tail -n 0" head="head -n 0" sort="sort -r" sed="echo SED" awk="echo AWK" make="echo MAKE" \
+              env="echo ENV" cat="echo CAT" date="echo DATE" sha1sum="echo SHA" realpath="echo RP" pwd="echo PWD" diff="echo DIFF"
+        . "$1"
+        echo 2 | run >/dev/null 2>&1; echo "first=$?"
+        out2=$(echo 2 | run 2>&1); [[ $out2 != *"[compile]"* ]] && echo SKIPPED
+        rut >/dev/null 2>&1 && echo RUT_OK
+        cd mk && run >/dev/null 2>&1; echo "make=$?"
+    ' _ "$here/lib/dev.sh" 2>&1)
+    [[ $out == *"first=0"* && $out == *SKIPPED* && $out == *RUT_OK* && $out == *"make=3"* ]] || { echo "$out"; return 1; }
+}
+check alias_tools_safe       t_alias_tools_safe
+
 echo "$pass passed, $fail failed"
 (( fail == 0 ))
