@@ -120,5 +120,80 @@ check compat_f       t_compat_f
 check compat_W       t_compat_W
 check unknown_opt    t_unknown_opt
 
+# ── run: every language, the exit line
+sqpy() { printf 'n = int(input("Give me a number: "))\nprint(f"{n} squared is {n * n}")\n' > "$1"; }
+sqrs() {
+    cat >"$1" <<'RS'
+use std::io::{self, Write};
+fn main() {
+    print!("Give me a number: ");
+    io::stdout().flush().unwrap();
+    let mut line = String::new();
+    io::stdin().read_line(&mut line).unwrap();
+    let n: i64 = line.trim().parse().unwrap();
+    println!("{n} squared is {}", n * n);
+}
+RS
+}
+t_run_c()         { fresh rc; sq sq.c; local out; out=$(echo 12 | run sq.c 2>&1); [[ $out == *"12 squared is 144"* && $out == *"exit 0, "*" s"* ]]; }
+t_stdin()         { fresh si; sq sq.c; [[ $(echo 7 | run sq.c 2>&1) == *"7 squared is 49"* ]]; }
+t_run_exit_code() {
+    fresh ec; printf 'int main(void) { return 3; }\n' > e.c
+    local out rc; out=$(run e.c 2>&1); rc=$?
+    [[ $rc == 3 && $out == *"exit 3, "* ]]
+}
+t_run_py()        { fresh rp; sqpy a.py; [[ $(echo 5 | run a.py 2>&1) == *"5 squared is 25"* ]]; }
+t_py_venv() {
+    fresh pv; sqpy a.py; mkdir -p .venv/bin
+    printf '#!/bin/sh\necho VENV "$@"\n' > .venv/bin/python; chmod +x .venv/bin/python
+    [[ $(run a.py 2>&1) == *"VENV a.py"* ]]
+}
+t_py_main()       { fresh pm; sqpy main.py; sqpy other.py; [[ $(echo 3 | run 2>&1) == *"3 squared is 9"* ]]; }
+t_run_make_target(){ fresh mt; printf 'all:\n\t@true\nrun:\n\t@echo MADE\n' > Makefile; [[ $(run 2>&1) == *MADE* ]]; }
+t_run_make_plain() {
+    fresh mkp; sq main.c
+    printf 'mkp: main.c\n\tcc -o mkp main.c\n' > Makefile
+    [[ $(echo 4 | run 2>&1) == *"4 squared is 16"* ]]
+}
+t_rust_run() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rr; cargo new -q --vcs none sqr && cd sqr && sqrs src/main.rs || return 1
+    [[ $(echo 6 | run 2>&1) == *"6 squared is 36"* ]]
+}
+t_rust_subdir() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rsd; cargo new -q --vcs none sqr && cd sqr && sqrs src/main.rs && cd src || return 1
+    [[ $(echo 6 | run 2>&1) == *"6 squared is 36"* ]]
+}
+t_rust_lone() {
+    command -v rustc >/dev/null || { echo "no rustc"; return 0; }
+    fresh rl; printf 'fn main() { println!("RS"); }\n' > a.rs
+    [[ $(run a.rs 2>&1) == *RS* && -x a ]]
+}
+t_rust_refuses_W() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rw; cargo new -q --vcs none sqr && cd sqr || return 1
+    ! ru -W all 2>/dev/null
+}
+t_compat_o()      { fresh co; sq sq.c; [[ $(echo 2 | run -o x sq.c 2>&1) == *"2 squared is 4"* && -x x ]]; }
+
+check run_c           t_run_c
+check stdin           t_stdin
+check run_exit_code   t_run_exit_code
+check run_py          t_run_py
+check py_venv         t_py_venv
+check py_main         t_py_main
+check run_make_target t_run_make_target
+check run_make_plain  t_run_make_plain
+if command -v cargo >/dev/null; then
+    check rust_run       t_rust_run
+    check rust_subdir    t_rust_subdir
+    check rust_refuses_W t_rust_refuses_W
+else
+    skip "rust (no cargo)"
+fi
+if command -v rustc >/dev/null; then check rust_lone t_rust_lone; else skip "rust_lone (no rustc)"; fi
+check compat_o        t_compat_o
+
 echo "$pass passed, $fail failed"
 (( fail == 0 ))

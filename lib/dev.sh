@@ -261,42 +261,137 @@ HELP
     local lang
     if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
     [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    if [[ $lang == python ]]; then echo "Nothing to build for Python; run it with: run ${file:-FILE.py}"; return 0; fi
     _dev_build "$lang" run
 }
 
-# _dev_build LANG MODE: build for LANG (Task 3 adds Rust, Python and make).
+# _dev_build LANG MODE: build for LANG. Sets out (the program's name) for C,
+# C++ and a lone .rs. MODE run = VS Code's build; plain = no sanitizers (rund).
 _dev_build() {
     case $1 in
         c|cpp) _dev_build_cc "$1" "$2" ;;
-        *) echo "Error: building $1 is not supported yet" >&2; return 1 ;;
+        rust)
+            if [[ $warn != default || ${#extra[@]} -gt 0 ]]; then
+                echo "Error: -W and compiler flags don't apply to Rust" >&2; return 1
+            fi
+            if _dev_cargo_root >/dev/null; then
+                _dev_need cargo cargo || return 1
+                local -a c=(cargo build -q)
+                [[ $opt != 0 ]] && c+=(--release)
+                "${c[@]}"
+            else
+                # A lone .rs file outside any Cargo project.
+                _dev_need rustc rust || return 1
+                [[ -n $out ]] || out=$(_dev_name rust "$file")
+                local -a c=(rustc -g -o "$out" "$file")
+                [[ $opt != 0 ]] && c+=("-Copt-level=$opt")
+                echo -e "\033[0;34m[compile]\033[0m ${c[*]}"
+                "${c[@]}"
+            fi
+            ;;
+        python) return 0 ;;
+        make)
+            _dev_need make make || return 1
+            make
+            ;;
     esac
 }
 
-# run: compile and execute
+# _dev_prog LANG: fill the caller's prog array with the command that runs the
+# program just built (after _dev_build, which set out).
+_dev_prog() {
+    case $1 in
+        c|cpp) prog=("./$out") ;;
+        rust)
+            if _dev_cargo_root >/dev/null; then
+                # The binary's path from cargo itself (a no-op build after _dev_build);
+                # grep instead of jq, which not every machine has.
+                local -a c=(cargo build -q --message-format=json)
+                [[ $opt != 0 ]] && c+=(--release)
+                local exe
+                exe=$("${c[@]}" 2>/dev/null | grep -o '"executable":"[^"]*"' | tail -1 | cut -d'"' -f4)
+                [[ -n $exe ]] || { echo "Error: cargo built no program here (a library crate?)" >&2; return 1; }
+                prog=("$exe")
+            else
+                prog=("./$out")
+            fi
+            ;;
+        python)
+            local f=$file py=python3
+            if [[ -z $f ]]; then
+                if [[ -f main.py ]]; then f=main.py
+                else
+                    local -a pys=(*.py)
+                    if [[ ${#pys[@]} -eq 1 && -f ${pys[0]} ]]; then f=${pys[0]}
+                    else echo "Error: several Python files here; name one: run ${pys[0]}" >&2; return 1; fi
+                fi
+            fi
+            if [[ -x .venv/bin/python ]]; then py=.venv/bin/python; else _dev_need python3 python3 || return 1; fi
+            prog=("$py" "$f")
+            ;;
+        make)
+            [[ -n $out ]] || out=$(_dev_name make)
+            [[ -x $out ]] || { echo "Error: make didn't build ./$out; add a run target to the Makefile" >&2; return 1; }
+            prog=("./$out")
+            ;;
+    esac
+}
+
+# _dev_exit_line RC START: one dim line after a run (red when RC isn't 0), on
+# stderr so `run > out.txt` keeps only the program's own output.
+_dev_exit_line() {
+    local secs colour='\033[2m'
+    secs=$(awk -v a="$2" -v b="$EPOCHREALTIME" 'BEGIN { printf "%.2f", b - a }')
+    [[ $1 != 0 ]] && colour='\033[0;31m'
+    echo -e "${colour}exit $1, ${secs} s\033[0m" >&2
+}
+
+# run: build (when needed) and run the program, in whatever language it is
 run() {
-    case "$1" in
+    case "${1:-}" in
         -h|--help|-H)
-            cat <<'EOF'
-Compile C source files and run the resulting program.
+            cat <<'HELP'
+Build (when needed) and run the program, in whatever language it is. VS Code's
+Run button calls this too.
 
-Usage: run [OPTIONS] [-- EXTRA_GCC_FLAGS...]
+Usage: run [FILE] [OPTIONS] [-- EXTRA_COMPILER_FLAGS...]
 
-Options:
-  -h, --help, -H   Show this help message
-  -f FILE [FILE2..] Compile specific .c/.o files
-  (all other options are passed to ru)
+Same language rules and options as ru (see ru -h). Then:
+  C, C++, lone .rs   ./<name>
+  Rust (Cargo)       the project's program, from target/
+  Python             .venv/bin/python FILE when the folder has a .venv, else python3 FILE
+                     (no FILE: main.py, or the only .py)
+  Makefile           make run when the Makefile has a run target, else ./<folder name>
+
+Afterwards one dim line shows the exit code and the time (red when it isn't 0),
+and run returns the program's exit code.
 
 Examples:
-  run                        Compile and run
-  run -f main.c utils.c      Compile specific files and run
-EOF
+  run               Build and run whatever is in this folder
+  run sq.c          Build sq.c into ./sq and run it
+  run main.py       Run main.py
+  run -O 2          Optimised build, then run
+HELP
             return 0
             ;;
     esac
-    # honour -o NAME so we run what we just built
-    local a prev='' out=myprogram
-    for a in "$@"; do [[ $prev == -o ]] && out=$a; [[ $a == -- ]] && break; prev=$a; done
-    ru "$@" && "./$out"
+    # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
+    local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
+    local -a srcs=() extra=() prog=()
+    _dev_parse "$@" || return 1
+    local lang
+    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
+    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    _dev_build "$lang" run || return 1
+    if [[ $lang == make ]] && make -n run &>/dev/null; then
+        prog=(make --no-print-directory run)
+    else
+        _dev_prog "$lang" || return 1
+    fi
+    local start=$EPOCHREALTIME rc=0
+    "${prog[@]}" || rc=$?
+    _dev_exit_line "$rc" "$start"
+    return "$rc"
 }
 
 # rud: compile C source files for debugging
