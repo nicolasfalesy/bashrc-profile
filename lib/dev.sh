@@ -219,11 +219,13 @@ _dev_show() {
 
 # _dev_tmp: a new temp file in ${XDG_CACHE_HOME:-~/.cache}/bashrc-profile/tmp, not
 # $TMPDIR. A Ctrl-C that aborts a command (ble.sh can) leaves its temp file
-# behind; here every later call clears the ones older than an hour.
+# behind; here every later call clears the ones older than a day. Not sooner: a
+# live run can leave its file untouched for hours (rund's valgrind log while the
+# program waits for input).
 _dev_tmp() {
     local d="${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile/tmp"
     command mkdir -p -- "$d" || return 1
-    command find "$d" -maxdepth 1 -type f -mmin +60 -delete 2>/dev/null
+    command find "$d" -maxdepth 1 -type f -mmin +1440 -delete 2>/dev/null
     command mktemp "$d/XXXXXXXX"
 }
 
@@ -341,20 +343,6 @@ _dev_build_cc() {
         local magic=""; IFS= read -r -n 4 magic < "$out" 2>/dev/null
         [[ $magic == $'\x7f'ELF ]] || { echo "Error: '$out' exists and isn't a program; not overwriting it (name the program with -o NAME)" >&2; return 1; }
     fi
-    # Several files each with their own main() are separate programs (a folder of
-    # lab exercises), not one: say so in one line instead of the linker's wall.
-    if [[ ${#sources[@]} -gt 1 ]]; then
-        local -a mains=()
-        for s in "${sources[@]}"; do
-            [[ $s == *.@(o|a|so) ]] && continue
-            command grep -qE '^[[:space:]]*(static[[:space:]]+)?(int|void)[[:space:]]+main[[:space:]]*\(' -- "$s" 2>/dev/null && mains+=("${s#./}")
-        done
-        if [[ ${#mains[@]} -gt 1 ]]; then
-            echo "Error: ${mains[0]} and ${mains[1]}$([[ ${#mains[@]} -gt 2 ]] && echo " (and others)") each have a main(); name one: run ${mains[0]} (or build files together with -f)" >&2
-            return 1
-        fi
-    fi
-
     local -a cmd=("$cc" "$std" "-O$opt" -g)
     case $warn in
         default) cmd+=(-Wall -Wextra) ;;
@@ -392,15 +380,34 @@ _dev_build_cc() {
         # On stderr, so `run > out.txt` keeps only the program's output.
         printf '\033[0;34m[compile]\033[0m %s\n' "$(_dev_show "${cmd[@]}")" >&2
         # The compiler's messages are kept (colour kept for a terminal) to add a
-        # hint when a function is missing because it lives in another file here.
+        # hint after a failed link. With nowhere to keep them (an unwritable
+        # cache) they go straight to the terminal, without the hints.
         local -a ccolor=(); [[ -t 2 ]] && ccolor=(-fdiagnostics-color=always)
-        cerr=$(_dev_tmp) || cerr=/dev/null
+        if ! cerr=$(_dev_tmp 2>/dev/null); then
+            "${cmd[@]}" && exit 0
+            command rm -f -- "$(_dev_stamp_path "$out")"; exit 1
+        fi
         if "${cmd[@]}" "${ccolor[@]}" 2>|"$cerr"; then
-            command cat -- "$cerr" >&2; [[ $cerr == /dev/null ]] || command rm -f -- "$cerr"
+            command cat -- "$cerr" >&2; command rm -f -- "$cerr"
             [[ -n $fp ]] && _dev_stamp_write "$out" "$key"$'\n'"$fp"$'\n'"$(_dev_stat "$out")"
             exit 0   # a stamp that can't be written only costs the next skip
         fi
-        command cat -- "$cerr" >&2
+        # Several files each with their own main() are separate programs (a folder
+        # of lab exercises), not one: once the linker has said so, one line names
+        # them instead of its wall. Checked only after the link failed, so a main()
+        # behind #ifdef or in a comment can never block a build that works.
+        local -a mains=(); local s
+        if [[ ${#sources[@]} -gt 1 ]] && command grep -qE "multiple definition of .main'|duplicate symbol.*[ _]main\b" "$cerr" 2>/dev/null; then
+            for s in "${sources[@]}"; do
+                [[ $s == *.@(o|a|so) || " ${mains[*]} " == *" ${s#./} "* ]] && continue
+                command grep -qE '^[[:space:]]*(static[[:space:]]+)?(int|void)[[:space:]]+main[[:space:]]*\(' -- "$s" 2>/dev/null && mains+=("${s#./}")
+            done
+        fi
+        if [[ ${#mains[@]} -gt 1 ]]; then
+            echo "Error: ${mains[0]} and ${mains[1]}$([[ ${#mains[@]} -gt 2 ]] && echo " (and others)") each have a main(); name one: run ${mains[0]}" >&2
+        else
+            command cat -- "$cerr" >&2
+        fi
         if [[ ${#sources[@]} -eq 1 ]] && command grep -qE 'undefined reference to|Undefined symbols' "$cerr" 2>/dev/null; then
             local -a others=(); local o
             while IFS= read -r -d '' o; do
@@ -408,8 +415,7 @@ _dev_build_cc() {
             done < <(_dev_list)
             [[ ${#others[@]} -gt 0 ]] && echo "Note: the missing function may be in another file here (${others[*]}); build them together: run -f ${sources[0]#./} ${others[0]} (or plain run)" >&2
         fi
-        [[ $cerr == /dev/null ]] || command rm -f -- "$cerr"
-        command rm -f -- "$(_dev_stamp_path "$out")"; exit 1
+        command rm -f -- "$cerr" "$(_dev_stamp_path "$out")"; exit 1
     ) 9>>"$lock"
 }
 
@@ -547,14 +553,15 @@ _dev_make_info() {
     local mf pf db line target="" prev=""
     for mf in GNUmakefile makefile Makefile; do [[ -f $mf ]] && break; done
     pf=$(_dev_tmp) || return 1
-    printf '%s\n' '$(info _DEV_PROG=$(strip $(if $(filter file override,$(origin PROG)),$(PROG))))' >| "$pf"
+    printf '%s\n' '$(info _DEV_PROG=$(strip $(if $(filter file override,$(origin PROG)),$(PROG))))' \
+        '$(info _DEV_SHELL=$(SHELL))' >| "$pf"
     # -r leaves out make's ~1,000 lines of built-in rules (a Makefile's own
     # targets, variables and includes are all still there).
     db=$(LC_ALL=C command make -pqr -f "$mf" -f "$pf" 2>/dev/null) || true
     command rm -f -- "$pf"
     mk_prog=$(command sed -n 's/^_DEV_PROG=//p' <<<"$db" | command head -1)
     mk_goal=$(command sed -n 's/^\.DEFAULT_GOAL := //p' <<<"$db" | command tail -1)
-    mk_shell=$(command sed -n 's/^SHELL :\{0,2\}= //p' <<<"$db" | command tail -1)
+    mk_shell=$(command sed -n 's/^_DEV_SHELL=//p' <<<"$db" | command head -1)
     [[ $db == *'$(ARGS)'* ]] && mk_args=1
     # Only the lines that matter go through the (slow) read loop: blank lines,
     # target lines, "# Not a target:" and recipe markers.
@@ -574,11 +581,16 @@ _dev_make_info() {
 # _dev_make_run: `make run`, returning the program's own exit code and showing
 # its output live. make turns any failing recipe into exit 2, so make runs its
 # recipes through a tiny stand-in shell (SHELL=...make-shell, which runs the
-# Makefile's own SHELL) that writes down the first failing command's exit code:
-# the program's, through nested makes and crashes (139 for a segfault).
+# Makefile's own SHELL, flags and all) that notes every failing command's code
+# and its make level. make stops at the first failure it doesn't ignore (a `-`
+# line it does), so the top level's last code is the real one; a 2 there with a
+# deeper level noted is a $(MAKE) line, so that level's last code is the
+# program's, through nested makes and crashes (139 for a segfault).
+# shortcut: a program that itself exits 2 after an ignored failure in a sub-make
+# reads as that sub-make's code; upgrade if a real Makefile does that.
 _dev_make_run() {
     local rc=0 rcf wrap saved
-    local -a margs=()
+    local -a margs=() shellarg=()
     if [[ ${#pargs[@]} -gt 0 ]]; then
         # shellcheck disable=SC2016  # $(ARGS) is make syntax
         [[ -n $mk_args ]] || echo 'Note: the Makefile'"'"'s run target does not use $(ARGS); the -a arguments are ignored' >&2
@@ -590,18 +602,38 @@ _dev_make_run() {
     fi
     rcf=$(_dev_tmp) || return 1
     wrap="${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile/make-shell"
-    # shellcheck disable=SC2016  # the stand-in's own $ variables
-    if ! printf '%s\n' '#!/bin/sh' '"$DEV_MAKE_SHELL" "$@"' 'rc=$?' \
-        '[ "$rc" -ne 0 ] && [ ! -s "$DEV_MAKE_RC" ] && echo "$rc" > "$DEV_MAKE_RC"' 'exit "$rc"' >| "$wrap" \
-        || ! command chmod +x -- "$wrap"; then
-        command rm -f -- "$rcf"; return 1
+    # make splits SHELL at spaces, so a stand-in whose path has one can't be used:
+    # then make's own status (2 for any failure) comes back.
+    # shortcut: no program exit code when the cache path has a space; upgrade if someone hits it.
+    # Written to a new file ($BASHPID: unique even in a subshell, unlike $$) and
+    # renamed into place, so a run already using the
+    # old one never sees a half-written script or "Text file busy".
+    if [[ $wrap != *[[:space:]]* ]]; then
+        # shellcheck disable=SC2016  # the stand-in's own $ variables
+        if printf '%s\n' '#!/bin/sh' 'set -f' '$DEV_MAKE_SHELL "$@"' 'rc=$?' \
+            '[ "$rc" -ne 0 ] && echo "${MAKELEVEL:-0} $rc" >> "$DEV_MAKE_RC"' 'exit "$rc"' >| "$wrap.$BASHPID" \
+            && command chmod +x -- "$wrap.$BASHPID" && command mv -f -- "$wrap.$BASHPID" "$wrap"; then
+            shellarg=("SHELL=$wrap")
+        else
+            command rm -f -- "$wrap.$BASHPID"
+        fi
     fi
     # Ctrl-C stops the program, not this function: the code below still runs.
     saved=$(trap -p INT); trap ':' INT
     DEV_MAKE_SHELL=${mk_shell:-/bin/sh} DEV_MAKE_RC=$rcf \
-        command make --no-print-directory -s run SHELL="$wrap" "${margs[@]}" || rc=$?
+        command make --no-print-directory -s run "${shellarg[@]}" "${margs[@]}" || rc=$?
     if [[ -n $saved ]]; then eval "$saved"; else trap - INT; fi
-    [[ $rc != 0 && -s $rcf ]] && rc=$(<"$rcf")
+    if [[ $rc != 0 && -s $rcf ]]; then
+        local lv code top=""; local -A last=()
+        while read -r lv code; do
+            [[ $lv =~ ^[0-9]+$ && $code =~ ^[0-9]+$ ]] || continue
+            last[$lv]=$code; [[ -z $top || $lv -lt $top ]] && top=$lv
+        done < "$rcf"
+        if [[ -n $top ]]; then
+            rc=${last[$top]}
+            while [[ $rc == 2 && -n ${last[$((top + 1))]:-} ]]; do top=$((top + 1)); rc=${last[$top]}; done
+        fi
+    fi
     command rm -f -- "$rcf"
     return "$rc"
 }
@@ -775,7 +807,11 @@ _dev_exit_line() {
     # EOF) would get the exit line glued on. Width-1 spaces then \r: at column 0
     # they fit and \r comes back; mid-line they wrap to a new line first.
     if [[ -t 2 ]]; then
-        local cols=${COLUMNS:-0}; [[ $cols -gt 1 ]] || cols=$(command tput cols 2>/dev/null) || cols=80
+        # The terminal's own width (stty asks it; COLUMNS can be stale after a
+        # resize, and tput guesses 80 without TERM), else COLUMNS, else 80.
+        local cols=""; read -r _ cols < <(command stty size <&2 2>/dev/null) || true
+        [[ $cols =~ ^[0-9]+$ && $cols -gt 1 ]] || cols=${COLUMNS:-0}
+        [[ $cols =~ ^[0-9]+$ && $cols -gt 1 ]] || cols=80
         printf '%*s\r' "$((cols - 1))" '' >&2
     fi
     echo -e "${colour}exit $1, ${secs} s\033[0m" >&2

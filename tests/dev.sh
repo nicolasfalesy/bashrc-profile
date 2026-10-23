@@ -1712,5 +1712,61 @@ check mkt_more               t_mkt_more
 check mkt_args_readonly      t_mkt_args_readonly
 check lazy_all               t_lazy_all
 
+# ── hardening round 4 (2026-10-23): the confirming review of round 3
+t_two_mains_ifdef() {   # a main() hidden behind #ifdef links fine: neither plain run nor -f may refuse it
+    fresh tmi; printf 'int helper(void) { return 3; }\n#ifdef STANDALONE\nint main(void) { return helper(); }\n#endif\n' > lib.c
+    printf 'int helper(void);\nint main(void) { return helper(); }\n' > app.c
+    run >/dev/null 2>&1; [[ $? == 3 ]] || { echo "plain run"; return 1; }
+    run app.c -f lib.c >/dev/null 2>&1; [[ $? == 3 ]] || { echo "run -f"; return 1; }
+    local out; out=$(ru app.c -f app.c 2>&1); [[ $out != *"app.c and app.c"* ]]
+}
+t_cc_errors_readonly_cache() {   # an unwritable cache must not swallow the compiler's messages
+    fresh cro; printf 'int main(void) { return nosuch; }\n' > e.c; mkdir ro; chmod 555 ro
+    local out; out=$(XDG_CACHE_HOME=$PWD/ro/c run e.c 2>&1); chmod 755 ro; [[ $out == *nosuch* ]]
+}
+t_make_run_ignored_failure() {   # a failing - line before the program (top level and one make down)
+    fresh mri; printf 'int main(void) { return 7; }\n' > main.c
+    printf 'all: prog\nprog: main.c\n\tcc -o prog main.c\nrun: prog\n\t-@false\n\t./prog\n' > Makefile
+    run >/dev/null 2>&1; [[ $? == 7 ]] || { echo "top"; return 1; }
+    printf 'all: prog\nprog: main.c\n\tcc -o prog main.c\nrun: prog\n\t-@false\n\t@$(MAKE) -s inner\ninner:\n\t-@false\n\t./prog\n' > Makefile
+    run >/dev/null 2>&1; [[ $? == 7 ]] || { echo "nested"; return 1; }
+}
+t_make_shell_flags() {   # SHELL with flags, and SHELL built from another variable
+    fresh msf; printf 'SHELL := /bin/bash -o pipefail\nall:\n\t@true\nrun:\n\t@false | true\n' > Makefile
+    run >/dev/null 2>&1; [[ $? == 1 ]] || { echo "flags"; return 1; }
+    printf 'BASHX := $(shell command -v bash)\nSHELL = $(BASHX) -o pipefail\nall:\n\t@true\nrun:\n\t@false | true\n' > Makefile
+    run >/dev/null 2>&1; [[ $? == 1 ]] || { echo "variable"; return 1; }
+}
+t_make_run_parallel() {   # many make runs at once share the stand-in shell
+    fresh mrpl; printf 'all:\n\t@true\nrun:\n\t@exit 4\n' > Makefile
+    local i
+    for i in {1..12}; do ( for _ in {1..15}; do run >/dev/null 2>&1; echo $? >> "rc$i"; done ) & done; wait
+    if cat rc* | grep -qvx 4; then sort rc* | uniq -c; return 1; fi
+}
+t_make_cache_space() {   # a cache path with a space: the program still runs
+    fresh mcs; printf 'all:\n\t@true\nrun:\n\t@echo MARK\n' > Makefile
+    local out; out=$(XDG_CACHE_HOME="$PWD/sp dir" run 2>&1); [[ $out == *MARK* ]]
+}
+t_tmp_keeps_recent() {   # an hour-old temp file may belong to a live run (rund waiting for input): only day-old ones go
+    local d=$XDG_CACHE_HOME/bashrc-profile/tmp; mkdir -p "$d"; touch -d '2 hours ago' "$d/live"; touch -d '3 days ago' "$d/dead"
+    command rm -f -- "$(_dev_tmp)"; [[ -e $d/live && ! -e $d/dead ]]
+}
+t_exit_line_narrow() {   # no COLUMNS and no TERM in a 12-column terminal: the padding fits the real width
+    command -v script >/dev/null || { echo "no script"; return 0; }
+    local out; out=$(env -u COLUMNS -u TERM script -qec "stty cols 12; bash -c '. \"$here/lib/dev.sh\"; _dev_exit_line 0 \$EPOCHREALTIME'" /dev/null 2>&1)
+    if ! [[ $out =~ (\ +)$'\r' ]] || (( ${#BASH_REMATCH[1]} > 11 )); then echo "padding ${#BASH_REMATCH[1]}"; return 1; fi
+}
+
+check two_mains_ifdef        t_two_mains_ifdef
+check cc_errors_readonly_cache t_cc_errors_readonly_cache
+check tmp_keeps_recent       t_tmp_keeps_recent
+check exit_line_narrow       t_exit_line_narrow
+if command -v make >/dev/null; then
+    check make_run_ignored_failure t_make_run_ignored_failure
+    check make_shell_flags       t_make_shell_flags
+    check make_run_parallel      t_make_run_parallel
+    check make_cache_space       t_make_cache_space
+fi
+
 echo "$pass passed, $fail failed"
 (( fail == 0 ))
