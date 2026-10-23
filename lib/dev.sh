@@ -24,6 +24,66 @@
 #   • Colour codes are locals per function, not globals — keeps `set | grep`
 #     and the environment clean.
 
+# ── Languages ────────────────────────────────────────────────────────────────
+# The private _dev_* helpers below let every command work on C, C++, Rust,
+# Python and Makefile folders the same way VS Code's Run button does (it calls
+# `run`). Spec: docs/superpowers/specs/2026-10-22-multi-language-run-design.md.
+
+# _dev_lang_of FILE: the language of one source file by its extension, or nothing.
+_dev_lang_of() {
+    case "$1" in
+        *.c)               echo c ;;
+        *.cpp|*.cc|*.cxx)  echo cpp ;;
+        *.rs)              echo rust ;;
+        *.py)              echo python ;;
+    esac
+}
+
+# _dev_cargo_root: the nearest folder at or above the current one with a
+# Cargo.toml; status 1 when there is none.
+_dev_cargo_root() {
+    local d=$PWD
+    while :; do
+        [[ -f $d/Cargo.toml ]] && { echo "$d"; return 0; }
+        [[ $d == / || -z $d ]] && return 1
+        d=${d%/*}; [[ -z $d ]] && d=/
+    done
+}
+
+# _dev_detect [FILE]: which language to build. First match wins: a named file,
+# a Makefile here, a Cargo.toml here or above, then the sources in this folder.
+_dev_detect() {
+    if [[ -n ${1:-} ]]; then
+        local lang; lang=$(_dev_lang_of "$1")
+        [[ -n $lang ]] && { echo "$lang"; return 0; }
+        echo "Error: don't know how to build '$1' (C, C++, Rust or Python files only)" >&2
+        return 1
+    fi
+    if [[ -f Makefile || -f makefile || -f GNUmakefile ]]; then echo make; return 0; fi
+    if _dev_cargo_root >/dev/null; then echo rust; return 0; fi
+    local -a kinds=() first=()
+    local -A names=([c]=C [cpp]=C++ [python]=Python)
+    local k f
+    for k in c cpp python; do
+        for f in *; do
+            [[ -f $f && $(_dev_lang_of "$f") == "$k" ]] || continue
+            kinds+=("$k"); first+=("$f"); break
+        done
+    done
+    case ${#kinds[@]} in
+        0) echo "Error: no C, C++, Rust or Python files here, and no Makefile or Cargo.toml" >&2; return 1 ;;
+        1) echo "${kinds[0]}" ;;
+        *) echo "Error: This folder has ${names[${kinds[0]}]} and ${names[${kinds[1]}]} files; name one: run ${first[0]}" >&2; return 1 ;;
+    esac
+}
+
+# _dev_name LANG [FILE]: the program's name: the named file without its
+# extension, otherwise the folder's name (a Cargo project uses its own name).
+_dev_name() {
+    if [[ -n ${2:-} ]]; then local b=${2##*/}; echo "${b%.*}"; return; fi
+    echo "${PWD##*/}"
+}
+
 # ru: compile C source files with gcc
 ru() {
     case "$1" in
