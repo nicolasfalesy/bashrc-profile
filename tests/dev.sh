@@ -1146,5 +1146,571 @@ check refuses_script         t_refuses_script
 check py_missing             t_py_missing
 check rut_hint_tests         t_rut_hint_tests
 
+# ── hardening round 2 (2026-10-23): gaps found by mutation testing (361 single-line bugs put into lib/dev.sh; 183 survived the suite)
+# Each check below fails when the bug named in its comment is put into lib/dev.sh.
+# inlib CMD...: run CMD in a fresh bash with the library loaded, killed after 20 s (a loop bug must fail the test, not hang it).
+inlib() { timeout 20 bash -c '. "$0"; "$@"' "$here/lib/dev.sh" "$@"; }
+# toolpath NAME GLOB...: a PATH folder holding all of /usr/bin except the programs matching GLOB (case patterns); echoes it.
+toolpath() {
+    local d=$T/tp-$1 f g skip; shift
+    if [[ ! -d $d ]]; then
+        mkdir -p "$d"
+        for f in /usr/bin/*; do
+            skip=""
+            # shellcheck disable=SC2254  # $g is a glob on purpose
+            for g in "$@"; do case ${f##*/} in $g) skip=1 ;; esac; done
+            [[ -n $skip ]] || ln -s "$f" "$d/"
+        done
+    fi
+    echo "$d"
+}
+# retc NAME CODE: a C program that prints ok and exits with CODE (a fake crash code: nothing really crashes).
+retc() { printf '#include <stdio.h>\nint main(void) { puts("ok"); return %s; }\n' "$2" > "$1"; }
+
+# ── detection, naming, listing
+# lang_of: every extension spelling (.C, .CC, .C++ and .CXX are C++, .c is C), non-sources and plain folders
+t_lang_of_exts() {
+    local p f want
+    for p in a.c=c a.C=cpp a.cc=cpp a.CC=cpp a.cpp=cpp a.CPP=cpp a.cxx=cpp a.CXX=cpp 'a.c++=cpp' 'a.C++=cpp' a.rs=rust a.py=python a.h= a.txt= a.cs= a.pyc= a=; do
+        f=${p%%=*}; want=${p#*=}
+        [[ $(_dev_lang_of "$f") == "$want" ]] || { echo "$f: got '$(_dev_lang_of "$f")', want '$want'"; return 1; }
+    done
+}
+t_lang_of_folder() {
+    fresh lof; mkdir plain pkg; touch pkg/__main__.py
+    [[ -z $(_dev_lang_of plain) && $(_dev_lang_of pkg) == python ]] && fails_with "don't know how to build 'plain'" ru plain
+}
+# _dev_list: this folder only, files only, sorted; a folder called x.py and files in sub-folders are not sources
+t_list_shallow_sorted() {
+    fresh lss; local i; mkdir sub dir.py; touch sub/x.py sub/y.c
+    for i in 5 3 9 1 7 2 8 4 6 10 12 11; do touch "$(printf 'f%02d.c' "$i")"; done
+    [[ $(_dev_list | tr '\0' ' ') == "$(printf './f%02d.c ' {1..12})" ]] || { _dev_list | tr '\0' ' '; return 1; }
+    [[ $(_dev_detect) == c ]]
+}
+# __main__.py and Cargo.toml together: Cargo wins; __main__.py and a .c file: the package wins, not "mixed"
+t_detect_package_order() {
+    fresh dpo; touch Cargo.toml __main__.py; [[ $(_dev_detect) == rust ]] || return 1
+    fresh dpo2; touch __main__.py a.c; [[ $(_dev_detect) == python ]]
+}
+# a lone .o with -f means C
+t_f_obj_only() {
+    local cc; cc=$(command -v clang || command -v gcc) || { echo "no cc"; return 0; }
+    fresh fob; printf 'int main(void) { return 7; }\n' > m.c; "$cc" -c m.c -o m.o; rm m.c
+    run -f m.o >/dev/null 2>&1; [[ $? == 7 ]]
+}
+# the named file's language beats -f's: main.cpp -f b.c is C++
+t_file_lang_beats_f() {
+    fresh flb; printf 'int main() { return 0; }\n' > main.cpp; printf 'int g(void) { return 1; }\n' > b.c
+    local out; out=$(ru main.cpp -f b.c 2>&1) && [[ $out == *"-std=gnu++20"* ]]
+}
+# a stray .rs next to C sources is not compiled by the C compiler
+t_stray_rs_in_c_folder() { fresh srf; sq sq.c; echo 'fn main() {}' > notes.rs; ru >/dev/null 2>&1 && [[ -x sq ]]; }
+
+# ── options
+# -f stops at the next option
+t_f_stops_at_option() {
+    fresh fso; printf 'int f(void);\nint main(void) { return f(); }\n' > a.c; printf 'int f(void) { return 0; }\n' > b.c
+    local out; out=$(ru -f a.c b.c -O 2 2>&1) && [[ $out == *-O2* ]]
+}
+# a missing value after -o, -i, -d is an error (-i with nothing used to be a candidate for an endless loop: inlib times out)
+t_option_value_errors() {
+    fresh ove; sq sq.c
+    fails_with "-o requires" ru sq.c -o -O || return 1
+    fails_with "-i requires" inlib run sq.c -i || return 1
+    fails_with "-d requires" rut sq.c -d -v || return 1
+    fails_with "-d requires" rut sq.c -d
+}
+t_glued_warn_list() { fresh gwl; printf 'int main(void) { int unused; return 0; }\n' > w.c; local out; ! out=$(ru w.c -Wall,error 2>&1) && [[ $out == *"-Wall -Werror"* ]]; }
+# the -a note names each option, and appears once
+t_args_note_each() {
+    fresh ane; argsc a.c; local o out
+    for o in -O -W -o -f -i -d -v; do
+        out=$(run a.c -a 1 $o 2>&1)
+        [[ $out == *"everything after -a goes to the program, including '$o'"* ]] || { echo "no note for $o"; return 1; }
+    done
+    out=$(run a.c -a -O -W 2>&1); [[ $(grep -c '^Note: everything' <<<"$out") == 1 ]]
+}
+# which command refuses which option, and its reason
+t_refuse_messages() {
+    fresh rfm; sq sq.c; echo 3 > in.txt; local p=$stub:$PATH
+    local A="-a is for run, rud and rund" I="-i is for run and rund"
+    PATH=$p fails_with "$A (ru only builds)" ru sq.c -a 5 || return 1
+    PATH=$p fails_with "$I (ru only builds)" ru sq.c -i in.txt || return 1
+    PATH=$p fails_with "-v is for rut" ru sq.c -v || return 1
+    PATH=$p fails_with "-d is for rut" ru sq.c -d x || return 1
+    PATH=$p fails_with "-v is for rut" run sq.c -v || return 1
+    PATH=$p fails_with "-d is for rut" run sq.c -d x || return 1
+    PATH=$p fails_with "$I (in rud, type the input in the debugger)" rud sq.c -i in.txt || return 1
+    PATH=$p fails_with "-v is for rut" rud sq.c -v || return 1
+    PATH=$p fails_with "-d is for rut" rud sq.c -d x || return 1
+    PATH=$p fails_with "-v is for rut" rund sq.c -v || return 1
+    PATH=$p fails_with "-d is for rut" rund sq.c -d x || return 1
+    PATH=$p fails_with "$A (rut takes arguments from <stem>.args and input from <stem>.in)" rut sq.c -a 5 || return 1
+    PATH=$p fails_with "$I (rut takes arguments from <stem>.args and input from <stem>.in)" rut sq.c -i in.txt
+}
+t_show_quoting() {
+    [[ $(_dev_show plain 'a b' 'x;y') == 'plain a\ b x\;y' ]] || return 1
+    [[ $(_dev_show ./a/b-c_d.e=f:g,h+i@j%k) == './a/b-c_d.e=f:g,h+i@j%k' ]]
+}
+
+# ── build skipping
+# an in-place edit of the same size within the same second: only the nanoseconds differ
+t_c_same_second_inplace() {
+    fresh csp; printf 'int main(void) { return 1; }\n' > a.c; touch -d @1700000000.100000000 a.c
+    run a.c >/dev/null 2>&1; [[ $? == 1 ]] || return 1
+    printf 'int main(void) { return 2; }\n' | dd of=a.c conv=notrunc status=none; touch -d @1700000000.900000000 a.c
+    run a.c >/dev/null 2>&1; [[ $? == 2 ]]
+}
+# another file of the same size and modification time moved into place: only the inode differs
+t_c_swapped_same_stat() {
+    fresh csw; printf 'int main(void) { return 1; }\n' > a.c; touch -d @1700000000.500000000 a.c
+    run a.c >/dev/null 2>&1; [[ $? == 1 ]] || return 1
+    printf 'int main(void) { return 2; }\n' > b.c; touch -r a.c b.c; mv b.c a.c
+    run a.c >/dev/null 2>&1; [[ $? == 2 ]]
+}
+# header names make escapes: # and $ (cc -M prints a\#b.h and a$$b.h)
+t_c_skip_special_header() {
+    local n
+    for n in 'a#b.h' 'a$b.h'; do
+        fresh csx; echo '#define K 3' > "$n"; printf '#include "%s"\nint main(void) { return K; }\n' "$n" > s.c
+        run s.c >/dev/null 2>&1; [[ $(run s.c 2>&1) != *'[compile]'* ]] || { echo "$n: not skipped"; return 1; }
+        echo '#define K 4' > "$n"; later "$n"; run s.c >/dev/null 2>&1; [[ $? == 4 ]] || { echo "$n: edit not noticed"; return 1; }
+    done
+}
+# a header whose name has glob characters is not expanded against the folder
+t_c_header_with_glob_chars() {
+    fresh chg; echo '#define K 3' > '[xy].h'; echo '/* unrelated */' > x.h; printf '#include "[xy].h"\nint main(void) { return K; }\n' > g.c
+    run g.c >/dev/null 2>&1; echo '#define K 4' > '[xy].h'; later '[xy].h'; run g.c >/dev/null 2>&1; [[ $? == 4 ]]
+}
+# the stamp write survives set -C: after an edit, the next run is skipped again
+t_noclobber_stamp_skips() {
+    fresh nss; echo 'int main(void) { return 1; }' > a.c
+    ( set -C; run a.c ) >/dev/null 2>&1; echo 'int main(void) { return 2; }' > a.c; later a.c
+    ( set -C; run a.c ) >/dev/null 2>&1
+    [[ $( set -C; run a.c 2>&1 ) != *'[compile]'* ]]
+}
+# two folders with a program of the same name keep separate stamps
+t_stamps_per_folder() {
+    fresh sp1; sq sq.c; ru sq.c >/dev/null 2>&1 || return 1
+    fresh sp2; sq sq.c; ru sq.c >/dev/null 2>&1 || return 1
+    cd "$T/w/sp1" && [[ $(ru sq.c 2>&1) != *'[compile]'* ]]
+}
+
+# ── C and C++ builds
+t_o_folder_refused()  { fresh ofr; sq sq.c; mkdir out; fails_with "is a folder" ru sq.c -o out; }
+# a named file and -f files: the program is named after the file, not the folder
+t_file_plus_f_name() {
+    fresh fpn; printf 'int f(void);\nint main(void) { return f(); }\n' > a.c; printf 'int f(void) { return 0; }\n' > b.c
+    ru a.c -f b.c >/dev/null 2>&1 && [[ -x a && ! -e fpn ]]
+}
+# no compiler at all: the message names the package
+t_no_compiler() {
+    local d; d=$(toolpath nocc 'clang*' 'gcc*' 'g++*' cc c++ 'x86_64-*')
+    fresh ncc; sq sq.c; PATH=$d fails_with "gcc not found" ru sq.c || return 1
+    fresh ncp; printf 'int main() {}\n' > a.cpp; PATH=$d fails_with "g++ not found" ru a.cpp || return 1
+    PATH=$d fails_with "g++ not found" mkmake || return 1
+    fresh ncm; sq main.c; PATH=$d fails_with "gcc not found" mkmake
+}
+
+# ── Rust
+t_rust_main_named_default_run() {   # run src/main.rs runs main even when default-run names another program
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rmd; rsproj p && cd p || return 1; sed -i 's/^\[package\]/[package]\ndefault-run = "zebra"/' Cargo.toml
+    [[ $(run src/main.rs 2>&1) == *MAIN* ]]
+}
+t_rust_bin_folder() {   # src/bin/NAME/main.rs
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rbf; rsproj p && cd p || return 1; mkdir src/bin/zed; echo 'fn main() { println!("ZED"); }' > src/bin/zed/main.rs
+    [[ $(run src/bin/zed/main.rs 2>&1) == *ZED* ]]
+}
+t_rust_single_other_bin() {   # the only program is not called like the package
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rso; rsproj p && cd p || return 1; rm src/main.rs
+    [[ $(run 2>&1) == *ZEBRA* ]]
+}
+t_rust_named_not_built() {   # a file cargo does not build (a scratch .rs in the project) is built on its own with rustc
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rnn; rsproj p && cd p || return 1
+    sed -i 's/^\[package\]/[package]\nautobins = false/' Cargo.toml; printf '\n[[bin]]\nname = "other"\npath = "src/main.rs"\n' >> Cargo.toml
+    local out; out=$(run src/bin/zebra.rs 2>&1); [[ $out == *"rustc "*ZEBRA* && $out != *MAIN* ]]
+}
+t_rust_cargo_refusals() {   # -f and compiler flags don't apply to a Cargo project
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rcr2; cargo new -q --vcs none p && cd p || return 1; touch a.rs
+    fails_with "don't apply to Rust" ru -f a.rs || return 1
+    fails_with "don't apply to Rust" ru -- -DX
+}
+t_rust_lone_refusals() {
+    command -v rustc >/dev/null || { echo "no rustc"; return 0; }
+    fresh rlr; echo 'fn main() {}' > a.rs
+    fails_with "don't apply to Rust" ru -W all a.rs || return 1
+    fails_with "don't apply to Rust" ru a.rs -- -DX || return 1
+    fails_with "name the .rs file to build" ru -f a.rs
+}
+t_rust_lone_abs_o() {
+    command -v rustc >/dev/null || { echo "no rustc"; return 0; }
+    fresh rla; echo 'fn main() { println!("RS"); }' > a.rs; mkdir out
+    [[ $(run a.rs -o "$PWD/out/p" 2>&1) == *RS* ]]
+}
+
+# ── Makefiles
+# PROG named as `=` and `:=`, and the first target would clean/test/...: build PROG, never that target
+t_make_prog_forms() {
+    local op
+    for op in = :=; do
+        fresh mpf; sq main.c
+        printf 'clean:\n\t@touch CLEANED\nPROG %s sq\nsq: main.c\n\tcc -o sq main.c\n' "$op" > Makefile
+        [[ $(echo 5 | run 2>&1) == *"5 squared is 25"* && ! -e CLEANED ]] || { echo "PROG $op"; return 1; }
+    done
+}
+t_make_dangerous_goals() {
+    local g
+    for g in clean test check debug install distclean; do
+        fresh mdg; sq main.c
+        printf '%s:\n\t@touch RAN\nPROG = sq\nsq: main.c\n\tcc -o sq main.c\n' "$g" > Makefile
+        ru >/dev/null 2>&1; [[ -x sq && ! -e RAN ]] || { echo "first target $g"; return 1; }
+    done
+}
+t_make_dangerous_no_prog() { fresh mdn; sq main.c; printf 'clean:\n\t@touch RAN\n' > Makefile; fails_with "building would run it" ru && [[ ! -e RAN ]]; }
+# an all that depends on run: building does not run it (ru), run runs it once
+t_make_all_needs_run() {
+    fresh man; printf 'all: run\nrun:\n\t@echo ran >> log\n' > Makefile
+    ru >/dev/null 2>&1; [[ ! -e log ]] || { echo "ru ran the run target"; return 1; }
+    run >/dev/null 2>&1; [[ $(wc -l < log) == 1 ]]
+}
+# a prerequisite merely containing "run" in its name is not the run target
+t_make_prereq_rerun() {
+    fresh mpr; sq main.c; printf 'all: sq rerun\nsq: main.c\n\tcc -o sq main.c\nrerun:\n\t@true\n' > Makefile
+    [[ $(echo 4 | run 2>&1) == *"4 squared is 16"* ]]
+}
+# rund builds PROG even when the first target is run (run's recipe would not be valgrinded)
+t_rund_make_run_goal() {
+    fresh rmg; sq main.c; printf 'run: sq\n\t./sq\nPROG := sq\nsq: main.c\n\tcc -o sq main.c\n' > Makefile
+    [[ $(PATH=$stub:$PATH rund 2>&1) == *"VG -s --leak-check=full --track-origins=yes ./sq"* ]]
+}
+# make's own output goes to stderr (default build and PROG build)
+t_make_build_output_stderr() {
+    fresh mbo; sq main.c; printf 'all: sq\nsq: main.c\n\t@echo BUILDMSG\n\tcc -o sq main.c\n' > Makefile
+    local out; out=$(echo 3 | run 2>/dev/null); [[ $out == *"3 squared is 9"* && $out != *BUILDMSG* && $out != *"cc -o"* ]] || { echo "default: $out"; return 1; }
+    fresh mbo2; sq main.c; printf 'clean:\n\t@true\nPROG = sq\nsq: main.c\n\t@echo BUILDMSG\n\tcc -o sq main.c\n' > Makefile
+    out=$(echo 3 | run 2>/dev/null); [[ $out == *"3 squared is 9"* && $out != *BUILDMSG* && $out != *"cc -o"* ]] || { echo "PROG: $out"; return 1; }
+}
+t_make_run_double_colon() {
+    fresh mdc2; printf 'all:\n\t@true\nrun::\n\t@echo DOUBLE\n' > Makefile; [[ $(run 2>&1) == *DOUBLE* ]] || return 1
+    fresh mdc3; printf 'all:\n\t@true\nrun:: dep\n\t@echo DOUBLE2\ndep:\n\t@true\n' > Makefile; [[ $(run 2>&1) == *DOUBLE2* ]]
+}
+# an existing FILE called run that the Makefile only names as a prerequisite is not a run target
+t_make_run_file_prereq() {
+    fresh mrp; printf 'all: run\n' > Makefile; printf '#!/bin/sh\necho NOT-THIS\n' > run; chmod +x run
+    local out; ! out=$(run 2>&1) && [[ $out != *NOT-THIS* && $out == *"building would run it"* ]]
+}
+# the program is a prerequisite of the default target (all: sq)
+t_make_prereq_program() {
+    fresh mpp; sq main.c; printf 'all: sq\nsq: main.c\n\tcc -o sq main.c\n' > Makefile
+    [[ $(echo 5 | run 2>&1) == *"5 squared is 25"* ]]
+}
+t_make_prereq_plain_file() {   # a plain file among the prerequisites is not a program
+    fresh mpf2; sq main.c; printf 'all: sq main.c\nsq: main.c\n\tcc -o sq main.c\n' > Makefile
+    [[ $(echo 5 | run 2>&1) == *"5 squared is 25"* ]]
+}
+t_make_two_programs() {   # two programs: ask; -o picks one; a missing -o program is an error
+    fresh mtp; sq main.c; printf 'all: sq sq2\nsq: main.c\n\tcc -o sq main.c\nsq2: sq\n\tcp sq sq2\n' > Makefile
+    fails_with "can't tell which program" run || return 1
+    [[ $(echo 5 | run -o sq 2>&1) == *"5 squared is 25"* ]] || return 1
+    fails_with "make didn't build ./ghost" run -o ghost || return 1
+    [[ $(echo 6 | run -o "$PWD/sq" 2>&1) == *"6 squared is 36"* ]]   # an absolute -o
+}
+t_make_goal_not_program() {   # the default target is a data file, not a program
+    fresh mgn; sq main.c; printf 'data.txt: main.c\n\tcp main.c data.txt\n' > Makefile
+    fails_with "can't tell which program" run
+}
+t_make_signal_names() {
+    fresh mig; ulimit -c 0; local sh=$T/omarchy-crash-sh pair sig want rc shell
+    [[ -x $sh ]] || cp /usr/bin/bash "$sh"   # a renamed bash: a core from it is named omarchy-crash-*
+    # A suite started in the background has SIGINT ignored, and a shell cannot undo that: for INT, perl resets it, then runs the same bash.
+    printf '#!/usr/bin/perl\n$SIG{INT} = "DEFAULT";\nexec q(%s), @ARGV;\n' "$sh" > "$T/omarchy-crash-intsh"; chmod +x "$T/omarchy-crash-intsh"
+    for pair in ABRT:134 SEGV:139 BUS:135 FPE:136 ILL:132 KILL:137 TERM:143 INT:130; do
+        sig=${pair%:*}; want=${pair#*:}; shell=$sh
+        if [[ $sig == INT ]]; then command -v perl >/dev/null || continue; shell=$T/omarchy-crash-intsh; fi
+        printf 'SHELL = %s\nall:\n\t@true\nrun:\n\t@kill -%s $$$$\n' "$shell" "$sig" > Makefile
+        run >/dev/null 2>&1; rc=$?
+        [[ $rc == "$want" ]] || { echo "$sig: exit $rc, want $want"; return 1; }
+    done
+}
+t_make_first_target_prefix() {   # targets whose names start with the default target's (make prints rules in hash order, so use several) do not replace its prerequisites
+    fresh mfp; sq main.c; printf 'all: sq\nall-a: main.c\nall-b: main.c\nall-c: main.c\nall-d: main.c\nall-e: main.c\nall-f: main.c\nsq: main.c\n\tcc -o sq main.c\n' > Makefile
+    [[ $(echo 5 | run 2>&1) == *"5 squared is 25"* ]]
+}
+
+# ── Python
+t_py_venv_plain_name() { fresh pvn; sqpy a.py; mkdir -p venv/bin; printf '#!/bin/sh\necho VENV "$@"\n' > venv/bin/python; chmod +x venv/bin/python; [[ $(run a.py 2>&1) == *"VENV a.py"* ]]; }
+t_py_venv_no_python() {   # a .venv/bin without python: say so, use python3
+    fresh pvx; echo 'print("RAN")' > a.py; mkdir -p .venv/bin
+    local out; out=$(run a.py 2>&1); [[ $out == *RAN* && $out == *".venv/bin/python is broken or missing"* ]]
+}
+t_py_venv_not_executable() {
+    fresh pvq; echo 'print("RAN")' > a.py; mkdir -p .venv/bin; printf '#!/bin/sh\necho VENV\n' > .venv/bin/python
+    local out; out=$(run a.py 2>&1); [[ $out == *RAN* && $out != *VENV* && $out == *"broken or missing"* ]]
+}
+t_py_no_python3() {
+    local d; d=$(toolpath nopy 'python*'); fresh pnp; echo 'print(1)' > a.py
+    PATH=$d fails_with "python3 not found" run a.py
+}
+t_py_package_pythonpath() {   # the caller's PYTHONPATH stays
+    fresh ppp; mkdir pkg lib; echo 'X = "LIBOK"' > lib/helper.py; printf 'import helper\nprint(helper.X)\n' > pkg/__main__.py
+    [[ $(PYTHONPATH=$PWD/lib run pkg 2>&1) == *LIBOK* ]]
+}
+t_py_package_odd_name() {   # my.pkg and "my pkg" are no module names: run the folder's __main__.py itself; pkg/ with a slash works
+    fresh ppo; mkdir my.pkg pkg "my pkg"; echo 'print("DOTTED")' > my.pkg/__main__.py; echo 'print("SLASHED")' > pkg/__main__.py; echo 'print("SPACED")' > "my pkg/__main__.py"; echo 'print("OTHER")' > "my pkg/other.py"
+    [[ $(run my.pkg 2>&1) == *DOTTED* && $(run pkg/ 2>&1) == *SLASHED* ]] || return 1
+    cd "my pkg" && [[ $(run 2>&1) == *SPACED* ]]
+}
+t_py_ignores_other_files() { fresh pio; echo 'print("ONLY")' > a.py; echo x > notes.txt; [[ $(run 2>&1) == *ONLY* ]]; }
+t_rud_py_package_env() {   # rud passes PYTHONPATH to the debugger
+    fresh rpe; mkdir pkg; echo 'print(1)' > pkg/__main__.py; unset PYTHONPATH
+    # The stand-in answers the module lookup (python3 -c CODE NAME) with this folder, as a real python would.
+    local d=$T/stubpp; mkdir -p "$d"
+    printf '#!/bin/sh\n[ "$1" = -c ] && { echo "$(pwd -P)/$3"; exit 0; }\necho "PP=$PYTHONPATH $*"\n' > "$d/python3"; chmod +x "$d/python3"
+    [[ $(PATH=$d:$PATH rud pkg 2>&1) == *"PP=$PWD -m pdb -m pkg"* ]]
+}
+t_rut_py_package() {   # rut passes PYTHONPATH to the program (run from inside the package, where the parent folder is not on the path)
+    fresh rpp; mkdir pkg; touch pkg/__init__.py; echo 'X = "PKG"' > pkg/util.py; printf 'from .util import X\nprint(X)\n' > pkg/__main__.py
+    cd pkg && t1 a "" PKG && rut 2>&1 | grep -q "All tests passed"
+}
+
+# ── run, rud, rund
+t_exit_line_decimal_comma() {   # a locale writing 12,5: both the start and the end
+    local out EPOCHREALTIME=1700000002,50
+    out=$(_dev_exit_line 0 1700000000,25 2>&1); [[ $out == *"exit 0, 2.25 s"* ]]
+}
+t_run_missing_input() { fresh rmi2; sq sq.c; fails_with "input file 'nope.txt' not found" run sq.c -i nope.txt; }
+t_rud_no_debugger() {
+    local d; d=$(toolpath nodbg 'lldb*' 'gdb*'); fresh rnd; sq sq.c
+    PATH=$d fails_with "gdb not found" rud sq.c
+}
+t_rund_no_valgrind() {
+    local d; d=$(toolpath novg 'valgrind*'); fresh rnv; sq sq.c
+    PATH=$d fails_with "valgrind not found" rund sq.c
+}
+t_rund_ignores_O() { fresh rio; sq sq.c; local out; out=$(PATH=$stub:$PATH rund sq.c -O 2 2>&1); [[ $out == *" -O0 "* && $out != *" -O2 "* ]]; }
+t_rund_survives_set_e() {   # valgrind exiting 1 must still end in the report, under set -e
+    fresh rse2; sq sq.c; local d out
+    d=$(vgstub e1 'echo "==1== ERROR SUMMARY: 3 errors from 1 contexts (suppressed: 0 from 0)" >&2; exit 1')
+    out=$(bash -c 'set -e; . "$1"; PATH="$2:$PATH"; rund sq.c' _ "$here/lib/dev.sh" "$d" 2>&1)
+    [[ $out == *"RESULT: FAIL"* ]]
+}
+t_rund_interrupted_forms() {   # Ctrl-C is told by the exit status alone, or by valgrind's own line alone
+    fresh rif2; sq sq.c; local d out
+    d=$(vgstub i1 'echo "==1== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)" >&2; exit 130')
+    ! out=$(PATH=$d:$PATH rund sq.c 2>&1) && [[ $out == *interrupted* ]] || { echo "status only: $out"; return 1; }
+    d=$(vgstub i2 'echo "==1== Process terminating with default action of signal 2 (SIGINT)" >&2; echo "==1== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)" >&2')
+    ! out=$(PATH=$d:$PATH rund sq.c 2>&1) && [[ $out == *interrupted* ]]
+}
+t_rund_leak_kinds() {
+    fresh rlk; sq sq.c; local d out k
+    for k in indirectly possibly; do
+        d=$(vgstub "lk$k" "echo '==1==    $k lost: 8 bytes in 1 blocks' >&2; echo '==1== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)' >&2")
+        ! out=$(PATH=$d:$PATH rund sq.c 2>&1) && [[ $out == *LEAKS* ]] || { echo "$k lost: $out"; return 1; }
+    done
+}
+t_rund_cleans_up() {   # no temp file left, no RETURN trap left, the log saved
+    fresh rcu; sq sq.c; mkdir tl xc
+    XDG_CACHE_HOME=$PWD/xc TMPDIR=$PWD/tl PATH=$stub:$PATH rund sq.c >/dev/null 2>&1
+    [[ -z $(find tl xc/bashrc-profile/tmp -mindepth 1 2>/dev/null) ]] || { echo "temp left: $(ls -R tl xc)"; return 1; }
+    [[ -z $(trap -p RETURN) ]] || { echo "trap left"; return 1; }
+    compgen -G 'valgrind_*.log' >/dev/null
+}
+
+# ── rut and _run_suite
+# exit codes that mean "killed by a signal" fail the case, as programs; nothing really crashes (the program just exits with that code)
+t_rut_signal_codes() {
+    fresh rsc; local n out
+    for n in 131 132 134 135 136 137 139; do
+        retc e.c "$n"; t1 a "" ok
+        ! out=$(rut e.c 2>&1) && [[ $out == *"crashed, signal $((n - 128))"* ]] || { echo "$n: $out"; return 1; }
+    done
+    for n in 1 130 255; do retc e.c "$n"; out=$(rut e.c 2>&1) && [[ $out == *"All tests passed"* ]] || { echo "$n: $out"; return 1; }; done
+}
+t_rut_failure_details() {
+    fresh rfd; sq sq.c; t1 a 3 wrong
+    local out; ! out=$(rut sq.c 2>&1) && [[ $out == *"Args:"*"(none)"*"Input:"*"Expected:"*"Actual:"* && $out != *"No such file"* ]]
+}
+t_rut_set_e_summary() {   # failing and crashing cases still end in the summary under set -e
+    fresh rsm; sq sq.c; t1 a 3 wrong
+    local out; out=$(bash -c 'set -e; . "$1"; rut sq.c' _ "$here/lib/dev.sh" 2>&1); [[ $out == *"Some tests failed:"*"1/1"* ]] || { echo "fail: $out"; return 1; }
+    fresh rsm2; retc e.c 139; t1 a "" ok
+    out=$(bash -c 'set -e; . "$1"; rut e.c' _ "$here/lib/dev.sh" 2>&1); [[ $out == *"Some tests failed:"*"1/1"* ]]
+}
+t_rut_cleans_up() {   # temp files live in the cache's tmp folder (round 3); none left there or in TMPDIR
+    fresh rcl; sq sq.c; t1 a 3 "Give me a number: 3 squared is 9"; mkdir tl xc
+    XDG_CACHE_HOME=$PWD/xc TMPDIR=$PWD/tl rut sq.c >/dev/null 2>&1
+    [[ -z $(find tl xc/bashrc-profile/tmp -mindepth 1 2>/dev/null) ]]
+}
+# _run_suite itself: a suite file without a final newline, blank lines, a missing program, one argument, a case without .in under set -C
+t_suite_direct() {
+    fresh sud; printf '#!/bin/sh\necho hi\n' > p; chmod +x p; echo hi > a.expect
+    printf 'a' > s1; [[ $(_run_suite s1 ./p 2>&1) == *"All tests passed"*"1/1"* ]] || { echo "no final newline"; return 1; }
+    printf '\na\n\n' > s2; [[ $(_run_suite s2 ./p 2>&1) == *"All tests passed"*"1/1"* ]] || { echo "blank lines"; return 1; }
+    fails_with "not found or not executable" _run_suite s1 ./nope || return 1
+    fails_with "_run_suite expects" _run_suite s1 || return 1
+    [[ $( set -C; _run_suite s1 ./p 2>&1 ) == *"All tests passed"* ]]
+}
+
+# ── mkt
+t_mkt_more() {
+    fresh mkm
+    [[ $(mkt a b) == *"--- 2 test stems created ---"* && $(mkt solo) != *"---"* ]] || return 1
+    mkt -a x y >/dev/null; [[ -e x.args && -e y.args ]] || return 1
+    fails_with "provide at least one" mkt || return 1
+    fails_with "provide at least one" mkt -a || return 1
+    mkt -dash >/dev/null && [[ -e ./-dash.in ]] || return 1
+    mkt -a -dash2 >/dev/null && [[ -e ./-dash2.args ]]
+}
+t_mkt_args_readonly() { fresh mra; chmod 555 .; local out; out=$(mkt -a t 2>&1); local rc=$?; chmod 755 .; [[ $rc != 0 && $out == *"couldn't create the files for 't'"* ]]; }
+
+# ── mkmake
+t_mkmake_names() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    local n
+    fresh ".hid"; sq main.c; mkmake >/dev/null 2>&1; grep -q '^PROG    = hid$' Makefile || { echo "leading dot"; return 1; }
+    fresh "..."; sq main.c; mkmake >/dev/null 2>&1; grep -q '^PROG    = program$' Makefile || { echo "only dots"; return 1; }
+    for n in all run debug test clean; do
+        fresh "$n"; sq main.c; mkmake >/dev/null 2>&1; grep -q "^PROG    = $n-prog\$" Makefile || { echo "folder $n"; return 1; }
+    done
+}
+t_mkmake_bad_chars() {
+    local c
+    for c in '#' '$' ':' '%' "\\"; do
+        fresh mbc; sq "x${c}y.c"; fails_with "rename" mkmake || { echo "char $c"; return 1; }
+    done
+    fresh mbc2; sq main.c; echo notes > 'my notes.txt'; mkmake >/dev/null 2>&1   # a bad name on a non-source is fine
+}
+t_mkmake_cpp_exts() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    local e
+    for e in cpp cc cxx C CPP Cpp CC CXX c++ C++; do   # every spelling _dev_lang_of calls C++
+        fresh "mce$e"; printf 'int main() { return 0; }\n' > "a.$e"; mkmake >/dev/null 2>&1 || return 1
+        [[ $(make -n 2>&1) == *"a.$e"* ]] || { echo "a.$e not in the build"; return 1; }
+    done
+}
+t_mkmake_hpp_dep() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh mhd; echo '#define K 3' > k.hpp; printf '#include "k.hpp"\nint main() { return K; }\n' > main.cpp
+    mkmake >/dev/null 2>&1 && make -s >/dev/null 2>&1 || return 1
+    later k.hpp; [[ $(make -n 2>&1) == *"-o mhd"* ]]
+}
+t_mkmake_test_crash_codes() {   # fake crash codes (the program exits with them; nothing crashes)
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh mtc; local n
+    for n in 131 132 134 135 136 137 139; do
+        retc main.c "$n"; rm -f Makefile mtc; mkmake >/dev/null 2>&1 && t1 a "" ok
+        ! make -s test >/dev/null 2>&1 || { echo "$n passed"; return 1; }
+    done
+    for n in 1 130 255; do
+        retc main.c "$n"; rm -f Makefile mtc; mkmake >/dev/null 2>&1 && t1 a "" ok
+        make -s test >/dev/null 2>&1 || { echo "$n failed"; return 1; }
+    done
+}
+t_mkmake_test_details() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh mtd; argse main.c; mkmake >/dev/null 2>&1 || return 1
+    local out; ! out=$(make -s test 2>&1) && [[ $out == *"no .in files here"* ]] || { echo "$out"; return 1; }
+    touch x1 x2; echo '*' > a.args; t1 a "" "[*]"; make -s test >/dev/null 2>&1   # an argument * stays *
+}
+t_mkmake_phony_clean_file() { command -v make >/dev/null || { echo "no make"; return 0; }; fresh mpf3; sq main.c; mkmake >/dev/null 2>&1 && make -s >/dev/null 2>&1 && touch clean && make -s clean >/dev/null 2>&1 && [[ ! -e mpf3 ]]; }
+t_mkmake_run_builds() { command -v make >/dev/null || { echo "no make"; return 0; }; fresh mrb; sq main.c; mkmake >/dev/null 2>&1; [[ $(echo 3 | make -s run 2>&1) == *"3 squared is 9"* ]]; }
+t_mkmake_compiler_var() {   # CC / CXX are the Makefile's compiler variables
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh mcv; sq main.c; mkmake >/dev/null 2>&1; ! make -s CC=false >/dev/null 2>&1 || return 1
+    fresh mcv2; printf 'int main() { return 0; }\n' > a.cpp; mkmake >/dev/null 2>&1; ! make -s CXX=false >/dev/null 2>&1
+}
+t_lazy_all() { local c; for c in ru run rud rund rut mkt mkmake; do grep -q "^_bashrc_lazy dev .*\\b$c\\b" "$here/bashrc" || { echo "$c missing from the lazy line"; return 1; }; done; }
+
+check lang_of_exts           t_lang_of_exts
+check lang_of_folder         t_lang_of_folder
+check list_shallow_sorted    t_list_shallow_sorted
+check detect_package_order   t_detect_package_order
+check f_obj_only             t_f_obj_only
+check file_lang_beats_f      t_file_lang_beats_f
+check stray_rs_in_c_folder   t_stray_rs_in_c_folder
+check f_stops_at_option      t_f_stops_at_option
+check option_value_errors    t_option_value_errors
+check glued_warn_list        t_glued_warn_list
+check args_note_each         t_args_note_each
+check refuse_messages        t_refuse_messages
+check show_quoting           t_show_quoting
+check c_same_second_inplace  t_c_same_second_inplace
+check c_swapped_same_stat    t_c_swapped_same_stat
+check c_skip_special_header  t_c_skip_special_header
+check c_header_with_glob_chars t_c_header_with_glob_chars
+check noclobber_stamp_skips  t_noclobber_stamp_skips
+check stamps_per_folder      t_stamps_per_folder
+check o_folder_refused       t_o_folder_refused
+check file_plus_f_name       t_file_plus_f_name
+check no_compiler            t_no_compiler
+if command -v cargo >/dev/null; then
+    check rust_main_named_default_run t_rust_main_named_default_run
+    check rust_bin_folder         t_rust_bin_folder
+    check rust_single_other_bin   t_rust_single_other_bin
+    check rust_named_not_built    t_rust_named_not_built
+    check rust_cargo_refusals     t_rust_cargo_refusals
+fi
+if command -v rustc >/dev/null; then
+    check rust_lone_refusals      t_rust_lone_refusals
+    check rust_lone_abs_o         t_rust_lone_abs_o
+fi
+if command -v make >/dev/null; then
+    check make_prog_forms         t_make_prog_forms
+    check make_dangerous_goals    t_make_dangerous_goals
+    check make_dangerous_no_prog  t_make_dangerous_no_prog
+    check make_all_needs_run      t_make_all_needs_run
+    check make_prereq_rerun       t_make_prereq_rerun
+    check rund_make_run_goal      t_rund_make_run_goal
+    check make_build_output_stderr t_make_build_output_stderr
+    check make_run_double_colon   t_make_run_double_colon
+    check make_run_file_prereq    t_make_run_file_prereq
+    check make_prereq_program     t_make_prereq_program
+    check make_prereq_plain_file  t_make_prereq_plain_file
+    check make_two_programs       t_make_two_programs
+    check make_goal_not_program   t_make_goal_not_program
+    check make_signal_names       t_make_signal_names
+    check make_first_target_prefix t_make_first_target_prefix
+    check mkmake_names            t_mkmake_names
+    check mkmake_cpp_exts         t_mkmake_cpp_exts
+    check mkmake_hpp_dep          t_mkmake_hpp_dep
+    check mkmake_test_crash_codes t_mkmake_test_crash_codes
+    check mkmake_test_details     t_mkmake_test_details
+    check mkmake_phony_clean_file t_mkmake_phony_clean_file
+    check mkmake_run_builds       t_mkmake_run_builds
+    check mkmake_compiler_var     t_mkmake_compiler_var
+fi
+check mkmake_bad_chars       t_mkmake_bad_chars
+check py_venv_plain_name     t_py_venv_plain_name
+check py_venv_no_python      t_py_venv_no_python
+check py_venv_not_executable t_py_venv_not_executable
+check py_no_python3          t_py_no_python3
+check py_package_pythonpath  t_py_package_pythonpath
+check py_package_odd_name    t_py_package_odd_name
+check py_ignores_other_files t_py_ignores_other_files
+check rud_py_package_env     t_rud_py_package_env
+check rut_py_package         t_rut_py_package
+check exit_line_decimal_comma t_exit_line_decimal_comma
+check run_missing_input      t_run_missing_input
+check rud_no_debugger        t_rud_no_debugger
+check rund_no_valgrind       t_rund_no_valgrind
+check rund_ignores_O         t_rund_ignores_O
+check rund_survives_set_e    t_rund_survives_set_e
+check rund_interrupted_forms t_rund_interrupted_forms
+check rund_leak_kinds        t_rund_leak_kinds
+check rund_cleans_up         t_rund_cleans_up
+check rut_signal_codes       t_rut_signal_codes
+check rut_failure_details    t_rut_failure_details
+check rut_set_e_summary      t_rut_set_e_summary
+check rut_cleans_up          t_rut_cleans_up
+check suite_direct           t_suite_direct
+check mkt_more               t_mkt_more
+check mkt_args_readonly      t_mkt_args_readonly
+check lazy_all               t_lazy_all
+
 echo "$pass passed, $fail failed"
 (( fail == 0 ))
