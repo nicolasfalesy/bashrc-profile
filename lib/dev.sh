@@ -30,20 +30,28 @@
 # Python and Makefile folders the same way VS Code's Run button does (it calls
 # `run`). Spec: docs/superpowers/specs/2026-10-22-multi-language-run-design.md.
 
-# _dev_lang_of FILE: the language of one source file by its extension, or nothing.
+# _dev_lang_of FILE: the language of a source file by its extension (or of a
+# folder that is a Python package), or nothing. .C, .cc, .cxx, .c++ and .cpp in
+# any case are C++, as gcc and clang treat them.
 _dev_lang_of() {
+    if [[ -d $1 ]]; then [[ -f $1/__main__.py ]] && echo python; return 0; fi
     case "$1" in
-        *.c)               echo c ;;
-        *.cpp|*.cc|*.cxx)  echo cpp ;;
-        *.rs)              echo rust ;;
-        *.py)              echo python ;;
+        *.c)                                                    echo c ;;
+        *.C|*.[cC][pP][pP]|*.[cC][cC]|*.[cC][xX][xX]|*.[cC]++)  echo cpp ;;
+        *.rs)                                                   echo rust ;;
+        *.py)                                                   echo python ;;
     esac
 }
 
+# _dev_list: this folder's regular files as ./name, NUL-separated and sorted.
+# find, not a * glob: safe with failglob or nullglob set, and with names that
+# start with a dash (./-x.c is never read as an option).
+_dev_list() { find . -maxdepth 1 -type f -print0 2>/dev/null | sort -z; }
+
 # _dev_cargo_root: the nearest folder at or above the current one with a
-# Cargo.toml; status 1 when there is none.
+# Cargo.toml (symlinks resolved, like realpath elsewhere); status 1 when none.
 _dev_cargo_root() {
-    local d=$PWD
+    local d; d=$(pwd -P)
     while :; do
         [[ -f $d/Cargo.toml ]] && { echo "$d"; return 0; }
         [[ $d == / || -z $d ]] && return 1
@@ -52,27 +60,27 @@ _dev_cargo_root() {
 }
 
 # _dev_detect [FILE]: which language to build. First match wins: a named file,
-# a Makefile here, a Cargo.toml here, the C/C++/Python sources here, then a
-# Cargo.toml above (so src/ finds its project, but a C exercise folder inside a
-# Rust repo still builds as C).
+# a Makefile here, a Cargo.toml here, a Python package here (__main__.py), the
+# C/C++/Python sources here, then a Cargo.toml above (so src/ finds its project,
+# but a C exercise folder inside a Rust repo still builds as C).
 _dev_detect() {
     if [[ -n ${1:-} ]]; then
         local lang; lang=$(_dev_lang_of "$1")
         [[ -n $lang ]] && { echo "$lang"; return 0; }
-        echo "Error: don't know how to build '$1' (C, C++, Rust or Python files only)" >&2
+        echo "Error: don't know how to build '$1' (C, C++, Rust or Python files, or a Python package folder)" >&2
         return 1
     fi
     if [[ -f Makefile || -f makefile || -f GNUmakefile ]]; then echo make; return 0; fi
     if [[ -f Cargo.toml ]]; then echo rust; return 0; fi
+    if [[ -f __main__.py ]]; then echo python; return 0; fi
     local -a kinds=() first=()
     local -A names=([c]=C [cpp]=C++ [python]=Python)
-    local k f
-    for k in c cpp python; do
-        for f in *; do
-            [[ -f $f && $(_dev_lang_of "$f") == "$k" ]] || continue
-            kinds+=("$k"); first+=("$f"); break
-        done
-    done
+    local f k
+    while IFS= read -r -d '' f; do
+        k=$(_dev_lang_of "$f")
+        [[ $k == @(c|cpp|python) && " ${kinds[*]} " != *" $k "* ]] || continue
+        kinds+=("$k"); first+=("${f#./}")
+    done < <(_dev_list)
     case ${#kinds[@]} in
         0)
             if _dev_cargo_root >/dev/null; then echo rust; return 0; fi
@@ -82,6 +90,17 @@ _dev_detect() {
         1) echo "${kinds[0]}" ;;
         *) echo "Error: This folder has ${names[${kinds[0]}]} and ${names[${kinds[1]}]} files; name one: run ${first[0]}" >&2; return 1 ;;
     esac
+}
+
+# _dev_pick_lang: the language for the caller's file and srcs (dynamic scope):
+# the named file, else the first -f file with a known language (.o files alone
+# mean C), else the folder.
+_dev_pick_lang() {
+    if [[ -n $file ]]; then _dev_detect "$file"; return; fi
+    local s l
+    for s in "${srcs[@]}"; do l=$(_dev_lang_of "$s"); [[ -n $l ]] && { echo "$l"; return 0; }; done
+    [[ ${#srcs[@]} -gt 0 ]] && { echo c; return 0; }
+    _dev_detect
 }
 
 # _dev_name LANG [FILE]: the program's name: the named file without its
@@ -94,9 +113,9 @@ _dev_name() {
 # _dev_parse ARGS...: the options every command shares. It fills the CALLER's
 # locals (bash dynamic scope), so each command declares these first:
 #   local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-#   local -a srcs=() extra=() pargs=()   (+ local rust_exe="" where _dev_prog runs)
-# `--` puts the rest in extra: compiler flags for ru/run/rud/rut, program
-# arguments for rund (it reads extra that way).
+#   local -a srcs=() extra=() pargs=() penv=()   (+ local rust_exe="" and prog=())
+# `--` puts what follows (up to an -a) in extra: compiler flags for ru/run/rud/rut,
+# program arguments for rund. -a puts everything after it in pargs.
 _dev_parse() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -136,7 +155,13 @@ _dev_parse() {
                 if [[ -z "${2:-}" || "$2" == -* ]]; then echo "Error: -d requires a directory" >&2; return 1; fi
                 test_dir=$2; shift 2
                 ;;
-            --) shift; extra+=("$@"); break ;;
+            # The compiler's own spellings work too: -O2, -Wall, -Wall,error.
+            -O?*) opt=${1#-O}; shift ;;
+            -W?*) warn=${1#-W}; shift ;;
+            --)
+                shift
+                while [[ $# -gt 0 && $1 != -a ]]; do extra+=("$1"); shift; done
+                ;;
             # -a: everything after it goes to the program (so it comes last).
             -a)
                 shift; pargs+=("$@")
@@ -158,6 +183,37 @@ _dev_parse() {
     done
 }
 
+# _dev_refuse CMD LETTER...: status 1 when the caller got an option CMD doesn't
+# use (a: -a, i: -i, v: -v, d: -d), instead of silently ignoring it.
+_dev_refuse() {
+    local cmd=$1 l why; shift
+    for l in "$@"; do
+        case $cmd in
+            ru)  why="ru only builds" ;;
+            rut) why="rut takes arguments from <stem>.args and input from <stem>.in" ;;
+            rud) why="in rud, type the input in the debugger" ;;
+            *)   why="" ;;
+        esac
+        case $l in
+            a) [[ ${#pargs[@]} -eq 0 ]] || { echo "Error: -a is for run, rud and rund${why:+ ($why)}" >&2; return 1; } ;;
+            i) [[ -z $in_file ]] || { echo "Error: -i is for run and rund${why:+ ($why)}" >&2; return 1; } ;;
+            v) [[ -z $verbose ]] || { echo "Error: -v is for rut" >&2; return 1; } ;;
+            d) [[ $test_dir == . ]] || { echo "Error: -d is for rut" >&2; return 1; } ;;
+        esac
+    done
+}
+
+# _dev_show WORD...: a command as you'd type it, for the [compile] and [valgrind]
+# lines: words with spaces, quotes or shell characters are quoted, plain words
+# (commas included; bash's %q would print address\,undefined) as they are.
+_dev_show() {
+    local w s=""
+    for w in "$@"; do
+        if [[ $w =~ ^[A-Za-z0-9_./=:,+@%-]+$ ]]; then s+="$w "; else s+="$(printf '%q' "$w") "; fi
+    done
+    printf '%s' "${s% }"
+}
+
 # _dev_need TOOL PACKAGE: status 1 with one line naming the package when TOOL is missing.
 _dev_need() {
     command -v "$1" &>/dev/null && return 0
@@ -166,70 +222,86 @@ _dev_need() {
 }
 
 # Build stamps: the exact compiler command of the last good build of each
-# program plus a fingerprint (path, mtime, size) of every file it was built
-# from, so an unchanged re-run skips the compiler. Kept out of the project
-# folders, in ${XDG_CACHE_HOME:-~/.cache}/bashrc-profile/run/, one file per program.
+# program, a fingerprint of every file it was built from, and the program file's
+# own, so an unchanged re-run skips the compiler. Kept out of the project folders,
+# in ${XDG_CACHE_HOME:-~/.cache}/bashrc-profile/run/, one file per program. Every
+# write uses >| so a user's `set -C` (noclobber) can't leave a stale stamp.
 _dev_stamp_path() {
     local abs; abs=$(realpath -m -- "$1")
     echo "${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile/run/$(printf '%s' "$abs" | sha1sum | cut -c1-40)"
 }
 _dev_stamp_ok()    { local s; s=$(_dev_stamp_path "$1"); [[ -f $s && $(<"$s") == "$2" ]]; }
-_dev_stamp_write() { local s; s=$(_dev_stamp_path "$1"); mkdir -p "${s%/*}" && printf '%s' "$2" > "$s"; }
+_dev_stamp_write() { local s; s=$(_dev_stamp_path "$1"); command mkdir -p -- "${s%/*}" && printf '%s' "$2" >| "$s"; }
+# _dev_stat FILE...: path, change time to the nanosecond, size and inode, symlinks followed.
+_dev_stat() { stat -L -c '%n %y %s %i' -- "$@" 2>/dev/null; }
 
-# _dev_fingerprint OUT CC STD SOURCES...: one line per file the program depends
-# on (path, mtime, size): the headers the compiler itself lists (cc -MM, so -I
-# folders and subfolders count), the sources, .o files, and the program. A
-# changed file shows up even when restored with an OLDER date (cp -p, unzip).
-# Status 1 when the compiler can't list them (a syntax error): then just build.
+# _dev_fingerprint CC STD SOURCES...: _dev_stat of every file the program is built
+# from: all the headers the compiler itself lists (cc -M: -I and -isystem folders,
+# subfolders, system headers), the sources and the .o files. A same-second edit,
+# an older date (cp -p, unzip) or a swapped file all change it. Status 1 when the
+# compiler can't list them (a syntax error): then just build.
 _dev_fingerprint() {
-    local o=$1 cc=$2 std=$3; shift 3
-    local -a csrc=() objs=() deps=()
-    local f
-    for f in "$@"; do [[ $f == *.o ]] && objs+=("$f") || csrc+=("$f"); done
+    local cc=$1 std=$2; shift 2
+    local -a csrc=() objs=() deps=() toks=()
+    local f tok raw
+    for f in "$@"; do if [[ $f == *.o ]]; then objs+=("$f"); else csrc+=("$f"); fi; done
     if [[ ${#csrc[@]} -gt 0 ]]; then
-        local raw tok
-        raw=$("$cc" -MM "$std" "${extra[@]}" "${csrc[@]}" 2>/dev/null) || return 1
+        raw=$("$cc" -M "$std" "${extra[@]}" "${csrc[@]}" 2>/dev/null) || return 1
         raw=${raw//\\$'\n'/ }          # join continued lines
         raw=${raw//\\ /$'\x01'}        # protect escaped spaces in paths
-        local IFS=$' \n\t'
-        for tok in $raw; do
-            [[ $tok == *: ]] && continue  # the "x.o:" rule names
+        raw=${raw//\\#/#}              # undo make's escapes for # and $
+        raw=${raw//\$\$/\$}
+        IFS=$' \n\t' read -r -d '' -a toks <<<"$raw" || true   # split without globbing
+        for tok in "${toks[@]}"; do
+            [[ $tok == *: ]] && continue   # the "x.o:" rule names
             deps+=("${tok//$'\x01'/ }")
         done
     fi
-    stat -c '%n %Y %s' -- "${deps[@]}" "${objs[@]}" "$o" 2>/dev/null
+    _dev_stat "${deps[@]}" "${objs[@]}"
 }
 
 # _dev_build_cc LANG MODE: build C or C++ into ./$out (sets out when empty).
 # MODE run = the VS Code build (sanitizers on); MODE plain = no sanitizers (rund,
-# since they clash with valgrind). Skips the compiler when the command and the
-# fingerprint of every file it depends on are unchanged since the last build.
+# since they clash with valgrind). Skips the compiler when the command, the
+# fingerprint of every file it depends on and the program file are unchanged.
 _dev_build_cc() {
     local lang=$1 mode=$2 cc std
+    # gnu17, not strict c17: C17 plus the POSIX/GNU functions courses use
+    # (strdup, getline, M_PI...), the same as clang's and gcc's own default.
     if [[ $lang == c ]]; then
-        std=-std=c17
+        std=-std=gnu17
         if command -v clang &>/dev/null; then cc=clang; else _dev_need gcc gcc || return 1; cc=gcc; fi
     else
-        std=-std=c++20
+        std=-std=gnu++20
         if command -v clang++ &>/dev/null; then cc=clang++; else _dev_need g++ g++ || return 1; cc=g++; fi
     fi
 
+    # The named file and any -f files are built together; with neither, every
+    # source of this language in the folder.
     local -a sources=()
-    if [[ ${#srcs[@]} -gt 0 ]]; then sources=("${srcs[@]}")
-    elif [[ -n $file ]]; then sources=("$file")
-    else
-        local f
-        for f in *; do [[ -f $f && $(_dev_lang_of "$f") == "$lang" ]] && sources+=("$f"); done
+    [[ -n $file ]] && sources+=("$file")
+    sources+=("${srcs[@]}")
+    local s f
+    if [[ ${#sources[@]} -eq 0 ]]; then
+        while IFS= read -r -d '' f; do [[ $(_dev_lang_of "$f") == "$lang" ]] && sources+=("$f"); done < <(_dev_list)
     fi
-    local s
     for s in "${sources[@]}"; do
         [[ -f $s ]] || { echo "Error: '$s' not found" >&2; return 1; }
     done
     # One source counts as named, so `run` in a one-file folder and VS Code's
     # `run sq.c` make the same ./sq.
     if [[ -z $out ]]; then
-        if [[ ${#sources[@]} -eq 1 ]]; then out=$(_dev_name "$lang" "${sources[0]}"); else out=$(_dev_name "$lang"); fi
+        if [[ -n $file ]]; then out=$(_dev_name "$lang" "$file")
+        elif [[ ${#sources[@]} -eq 1 ]]; then out=$(_dev_name "$lang" "${sources[0]}")
+        else out=$(_dev_name "$lang"); fi
     fi
+    # Never write the program over a source, or over a file that isn't a program.
+    local oabs; oabs=$(realpath -m -- "$out")
+    for s in "${sources[@]}"; do
+        [[ $(realpath -m -- "$s") == "$oabs" ]] && { echo "Error: -o $out would overwrite the source file $s" >&2; return 1; }
+    done
+    [[ -d $out ]] && { echo "Error: '$out' is a folder; name the program with -o NAME" >&2; return 1; }
+    [[ -e $out && ! -x $out ]] && { echo "Error: '$out' exists and isn't a program; not overwriting it (name the program with -o NAME)" >&2; return 1; }
 
     local -a cmd=("$cc" "$std" "-O$opt" -g)
     case $warn in
@@ -245,17 +317,20 @@ _dev_build_cc() {
     [[ $mode == run ]] && cmd+=(-fsanitize=address,undefined)
     cmd+=("${extra[@]}" "${sources[@]}" -o "$out" -lm)
 
-    local key fp; key=$(printf '%q ' "${cmd[@]}")
-    if [[ -x $out ]] && fp=$(_dev_fingerprint "$out" "$cc" "$std" "${sources[@]}") \
-        && _dev_stamp_ok "$out" "$key"$'\n'"$fp"; then
+    # The fingerprint is taken BEFORE compiling: a file saved during the compile
+    # then differs at the next run, which rebuilds instead of trusting old code.
+    local key fp=""; key=$(printf '%q ' "${cmd[@]}")
+    fp=$(_dev_fingerprint "$cc" "$std" "${sources[@]}") || fp=""
+    if [[ -n $fp && -x $out ]] && _dev_stamp_ok "$out" "$key"$'\n'"$fp"$'\n'"$(_dev_stat "$out")"; then
         return 0
     fi
-    echo -e "\033[0;34m[compile]\033[0m ${cmd[*]}"
+    # On stderr, so `run > out.txt` keeps only the program's output.
+    printf '\033[0;34m[compile]\033[0m %s\n' "$(_dev_show "${cmd[@]}")" >&2
     if "${cmd[@]}"; then
-        fp=$(_dev_fingerprint "$out" "$cc" "$std" "${sources[@]}") && _dev_stamp_write "$out" "$key"$'\n'"$fp"
+        [[ -n $fp ]] && _dev_stamp_write "$out" "$key"$'\n'"$fp"$'\n'"$(_dev_stat "$out")"
         return 0   # a stamp that can't be written only costs the next skip
     else
-        rm -f "$(_dev_stamp_path "$out")"; return 1
+        command rm -f -- "$(_dev_stamp_path "$out")"; return 1
     fi
 }
 
@@ -269,27 +344,30 @@ Build a program in whatever language it is, the same way VS Code's Run does.
 Usage: ru [FILE] [OPTIONS] [-- EXTRA_COMPILER_FLAGS...]
 
 Picks the language from FILE, else from this folder (first match): a Makefile,
-a Cargo.toml here or above, then .c, .cpp/.cc/.cxx or .py files.
+a Cargo.toml here, a Python package (__main__.py), .c, .cpp/.cc/.cxx/.C or .py
+files, then a Cargo.toml in a folder above.
 
-  C     clang -std=c17 -Wall -Wextra -g -O0 -fsanitize=address,undefined ... -lm
-        (gcc with the same flags where clang is missing)
-  C++   clang++ -std=c++20, same flags
-  Rust  cargo build (a lone .rs outside a Cargo project: rustc -g)
-  Make  make
+  C     clang -std=gnu17 -Wall -Wextra -g -O0 -fsanitize=address,undefined ... -lm
+        (gnu17 = C17 plus POSIX functions like strdup; gcc where clang is missing)
+  C++   clang++ -std=gnu++20, same flags
+  Rust  cargo build (a .rs that isn't a project's src/main.rs or src/bin/*.rs:
+        rustc --edition 2021 -g)
+  Make  make (the default target; never a run, clean or test target)
   Python  nothing to build
 
 The program is named after FILE (ru sq.c makes ./sq), or after the folder when
-several files are built. A re-run of C or C++ skips the compiler when nothing
-it depends on changed.
+several files are built; it never overwrites a source or a file that isn't a
+program. A re-run of C or C++ skips the compiler when nothing it depends on
+changed (every header, followed symlinks, to the nanosecond).
 
 Options:
   -h, --help, -H    Show this help message
-  -f FILE [FILE2..] Build these .c/.cpp/.o files together
-  -O LEVEL          Optimisation level (default 0; Cargo: anything but 0 = --release;
-                    lone .rs: rustc -C opt-level; ignored for Python and make)
-  -W [FLAGS]        Warnings: alone = none, comma list = only those (e.g. all,error)
-  -o NAME           Program name
-  -a ARGS...        Arguments for the program (run, rud, rund; put it last)
+  -f FILE [FILE2..] Build these .c/.cpp/.o files too (with FILE, if named)
+  -O LEVEL          Optimisation level, also -O2 (default 0; Cargo: anything but 0
+                    = --release; lone .rs: rustc -C opt-level; ignored for Python and make)
+  -W [FLAGS]        Warnings: alone = none, comma list = only those (e.g. all,error);
+                    also -Wall, -Wall,error
+  -o NAME           Program name (a Makefile folder: the program make builds)
 
 Anything after -- goes to the compiler (C and C++ only).
 
@@ -297,7 +375,7 @@ Examples:
   ru                Build whatever is in this folder
   ru sq.c           Build sq.c into ./sq
   ru -f main.c io.c Build two files into ./<folder name>
-  ru -O 2           Optimised build
+  ru -O2            Optimised build
   ru -- -DDEBUG     Pass a flag to the compiler
 HELP
             return 0
@@ -305,43 +383,94 @@ HELP
     esac
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=() pargs=()
+    local -a srcs=() extra=() pargs=() penv=()
     local rust_exe=""
     _dev_parse "$@" || return 1
-    if [[ ${#pargs[@]} -gt 0 ]]; then echo "Error: -a is for run, rud and rund (ru only builds)" >&2; return 1; fi
-    local lang
-    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
-    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    _dev_refuse ru a i v d || return 1
+    local lang; lang=$(_dev_pick_lang) || return 1
     if [[ $lang == python ]]; then echo "Nothing to build for Python; run it with: run ${file:-FILE.py}"; return 0; fi
     _dev_build "$lang" run
 }
 
-# _dev_use_cargo: Rust goes through cargo when there is a Cargo project here or
-# above and either no file was named or the named file is part of it (under its
-# src/). `run scratch.rs` next to Cargo.toml builds that one file instead.
-_dev_use_cargo() {
-    local root; root=$(_dev_cargo_root) || return 1
-    [[ -z $file ]] && return 0
-    [[ $(realpath -m -- "$file") == "$root"/src/* ]]
+# _dev_cargo_pkg ROOT: the [package] name in ROOT/Cargo.toml (empty for a workspace).
+_dev_cargo_pkg() {
+    sed -n '/^\[package\]/,/^\[/{s/^name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p;}' "$1/Cargo.toml" 2>/dev/null | head -1
 }
 
-# _dev_make_has_run: the Makefile here has its own `run:` target. Read from the
-# Makefile itself: `make -n run` also "succeeds" when a FILE called run exists.
-_dev_make_has_run() {
-    grep -Eqs '^run[[:space:]]*:([^=]|$)' Makefile makefile GNUmakefile
+# _dev_rust_plan: how to build Rust, into the caller's rs_root and rs_bin. No file
+# named: the Cargo project here or above, rs_bin empty (its default program). A
+# named src/main.rs or src/bin/X.rs (or src/bin/X/main.rs) of a project: that
+# project, and that program. Any other .rs file is built on its own with rustc
+# (rs_root empty), even next to a Cargo.toml.
+_dev_rust_plan() {
+    rs_root="" rs_bin=""
+    if [[ -z $file ]]; then rs_root=$(_dev_cargo_root) || rs_root=""; return 0; fi
+    [[ -f $file ]] || { echo "Error: '$file' not found" >&2; return 1; }
+    local abs root; abs=$(realpath -- "$file"); root=${abs%/*}
+    while [[ ! -f $root/Cargo.toml ]]; do
+        [[ $root == / || -z $root ]] && return 0
+        root=${root%/*}; [[ -z $root ]] && root=/
+    done
+    case $abs in
+        "$root"/src/main.rs)  rs_root=$root; rs_bin=$(_dev_cargo_pkg "$root") ;;
+        "$root"/src/bin/*.rs) rs_root=$root; rs_bin=${abs#"$root"/src/bin/}; rs_bin=${rs_bin%/main.rs}; rs_bin=${rs_bin%.rs} ;;
+    esac
+}
+
+# _dev_rust_pick JSON: set the caller's rust_exe to the program to run, from the
+# "executable" paths in cargo's build messages: rs_bin when a file was named; else
+# the only program; else the project's default-run; else the one named like the
+# package (src/main.rs); else stop and list them. A library crate leaves it empty.
+_dev_rust_pick() {
+    local -a exes=(); local e want=$rs_bin built=""
+    mapfile -t exes < <(grep -o '"executable":"[^"]*"' <<<"$1" | cut -d'"' -f4 | sort -u)
+    rust_exe=""
+    [[ ${#exes[@]} -eq 0 ]] && return 0
+    if [[ -z $want ]]; then
+        if [[ ${#exes[@]} -eq 1 ]]; then rust_exe=${exes[0]}; return 0; fi
+        want=$(sed -n 's/^default-run[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$rs_root/Cargo.toml" 2>/dev/null | head -1)
+        [[ -n $want ]] || want=$(_dev_cargo_pkg "$rs_root")
+    fi
+    for e in "${exes[@]}"; do [[ ${e##*/} == "$want" ]] && { rust_exe=$e; return 0; }; done
+    for e in "${exes[@]}"; do built+="${built:+, }${e##*/}"; done
+    if [[ -n $rs_bin ]]; then echo "Error: cargo built no program called $rs_bin (it built: $built)" >&2
+    else echo "Error: this project has several programs ($built); name one: run src/bin/NAME.rs (or set default-run in Cargo.toml)" >&2; fi
+    return 1
+}
+
+# _dev_make_info: read the Makefile the way make does (includes, variables,
+# multi-target lines) from `make -pq`, which prints make's database and runs no
+# recipe (only $(MAKE) lines of the default target, as make always does). Fills
+# the caller's mk_goal (the default target), mk_run (1 with a run target),
+# mk_prog (the PROG variable) and mk_pre (the default target's prerequisites).
+_dev_make_info() {
+    mk_goal="" mk_run="" mk_prog="" mk_pre=()
+    local db line prev=""
+    db=$(LC_ALL=C make -pq 2>/dev/null) || true
+    mk_goal=$(sed -n 's/^\.DEFAULT_GOAL := //p' <<<"$db" | tail -1)
+    mk_prog=$(sed -n 's/^PROG :\{0,2\}= //p' <<<"$db" | tail -1)
+    while IFS= read -r line; do
+        if [[ $prev != "# Not a target:" ]]; then
+            [[ $line == run: || $line == "run: "* || $line == "run:: "* || $line == run:: ]] && mk_run=1
+            [[ -n $mk_goal && $line == "$mk_goal:"* && $line != "$mk_goal:="* ]] && read -r -a mk_pre <<<"${line#*:}"
+        fi
+        prev=$line
+    done <<<"$db"
 }
 
 # _dev_make_run: `make run`, returning the program's own exit code. make turns any
-# failing recipe into 2 and prints "Error N"; this reads N back from its stderr.
+# failing recipe into 2 and prints "Error N" (the first such line is the
+# innermost make, so recursive makes keep the program's code), or the signal's
+# name when the program crashed; this reads it back from make's stderr.
 # shortcut: make's stderr (and so the program's) is collected and shown when make
 # ends, not live; a live tee raced with the read (and $! is unset in $(...) under
 # set -u). Upgrade if a `make run` program ever needs live stderr.
 # shellcheck disable=SC2016  # $(ARGS) is make syntax, matched and printed literally
 _dev_make_run() {
-    local err rc=0
+    local err rc=0 n
     local -a margs=()
     if [[ ${#pargs[@]} -gt 0 ]]; then
-        grep -qsF '$(ARGS)' Makefile makefile GNUmakefile \
+        LC_ALL=C make -pq 2>/dev/null | grep -qF '$(ARGS)' \
             || echo 'Note: the Makefile'"'"'s run target does not use $(ARGS); the -a arguments are ignored' >&2
         # Each argument single-quoted for the recipe's shell, then every $ doubled
         # for make, so spaces, quotes, ; and $ reach the program exactly as typed.
@@ -349,105 +478,169 @@ _dev_make_run() {
         for a in "${pargs[@]}"; do q+="'${a//\'/\'\\\'\'}' "; done
         margs=("ARGS=${q//\$/\$\$}")
     fi
-    err=$(mktemp)
-    make --no-print-directory -s run "${margs[@]}" 2>"$err" || rc=$?
-    cat "$err" >&2
+    err=$(mktemp) || return 1
+    LC_MESSAGES=C make --no-print-directory -s run "${margs[@]}" 2>|"$err" || rc=$?
+    cat -- "$err" >&2
     if [[ $rc == 2 ]]; then
-        local n; n=$(grep -o 'Error [0-9]*$' "$err" | tail -1 | grep -o '[0-9]*$')
-        [[ -n $n ]] && rc=$n
+        n=$(grep -o -m1 'Error [0-9][0-9]*$' "$err" | grep -o '[0-9]*$') || n=""
+        if [[ -n $n ]]; then rc=$n
+        else
+            case $(<"$err") in
+                *"Segmentation fault"*)        rc=139 ;;
+                *Aborted*)                     rc=134 ;;
+                *"Bus error"*)                 rc=135 ;;
+                *"Floating point exception"*)  rc=136 ;;
+                *"Illegal instruction"*)       rc=132 ;;
+                *Killed*)                      rc=137 ;;
+                *Terminated*)                  rc=143 ;;
+                *Interrupt*)                   rc=130 ;;
+            esac
+        fi
     fi
-    command rm -f "$err"
+    command rm -f -- "$err"
     return "$rc"
 }
 
 # _dev_build LANG MODE: build for LANG. Sets out (the program's name) for C,
-# C++ and a lone .rs. MODE run = VS Code's build; plain = no sanitizers (rund).
+# C++ and a lone .rs, and rust_exe for a Cargo project. MODE run = VS Code's
+# build; plain = no sanitizers (rund).
 _dev_build() {
     case $1 in
         c|cpp) _dev_build_cc "$1" "$2" ;;
         rust)
-            if [[ $warn != default || ${#extra[@]} -gt 0 ]]; then
-                echo "Error: -W and compiler flags don't apply to Rust" >&2; return 1
-            fi
-            if _dev_use_cargo; then
+            local rs_root rs_bin
+            _dev_rust_plan || return 1
+            if [[ -n $rs_root ]]; then
+                if [[ $warn != default || ${#extra[@]} -gt 0 || -n $out || ${#srcs[@]} -gt 0 ]]; then
+                    echo "Error: -W, -o, -f and compiler flags don't apply to Rust (Cargo projects)" >&2; return 1
+                fi
                 _dev_need cargo cargo || return 1
-                # One cargo call: errors and warnings render on stderr as usual,
-                # and stdout carries JSON with the program's path for _dev_prog
-                # (rust_exe is the caller's local). grep, not jq, which not every
-                # machine has.
-                local -a c=(cargo build -q --message-format=json-render-diagnostics)
+                # One cargo call: errors and warnings render on stderr as usual, and
+                # stdout carries JSON with the programs' paths for _dev_rust_pick.
+                local -a c=(cargo build -q --message-format=json-render-diagnostics --manifest-path "$rs_root/Cargo.toml")
                 [[ $opt != 0 ]] && c+=(--release)
                 local json
                 json=$("${c[@]}") || return 1
-                # A library crate has no executable; grep then fails, which under
-                # pipefail would end the build silently, so it counts as success and
-                # _dev_prog reports "built no program".
-                rust_exe=$(grep -o '"executable":"[^"]*"' <<<"$json" | tail -1 | cut -d'"' -f4) || true
+                _dev_rust_pick "$json"
             else
-                # A lone .rs file (outside a Cargo project, or not part of it).
                 [[ -n $file ]] || { echo "Error: name the .rs file to build: run x.rs" >&2; return 1; }
-                _dev_need rustc rust || return 1
+                if [[ $warn != default || ${#extra[@]} -gt 0 ]]; then
+                    echo "Error: -W and compiler flags don't apply to Rust" >&2; return 1
+                fi
+                _dev_need rustc rustc || return 1
                 [[ -n $out ]] || out=$(_dev_name rust "$file")
-                local -a c=(rustc -g -o "$out" "$file")
+                local -a c=(rustc --edition 2021 -g -o "$out" "$file")
                 [[ $opt != 0 ]] && c+=("-Copt-level=$opt")
-                echo -e "\033[0;34m[compile]\033[0m ${c[*]}"
+                printf '\033[0;34m[compile]\033[0m %s\n' "$(_dev_show "${c[@]}")" >&2
                 "${c[@]}"
             fi
             ;;
         python) return 0 ;;
         make)
             _dev_need make make || return 1
-            make
+            local mk_goal mk_run mk_prog; local -a mk_pre
+            _dev_make_info
+            # Building means making the default target, unless that target runs,
+            # tests or cleans (a Makefile whose first target is run or clean, or
+            # whose all depends on run): then run builds through `make run`, and
+            # the others build PROG if the Makefile names one.
+            if [[ $mk_goal == @(run|clean|test|check|debug|install|distclean) || " ${mk_pre[*]} " == *" run "* ]]; then
+                if [[ $2 == run && -n $mk_run ]]; then return 0
+                elif [[ -n $mk_prog ]]; then make --no-print-directory "$mk_prog" >&2
+                else
+                    echo "Error: the Makefile's first target is '$mk_goal', so building would run it; put the build target first, or add PROG = name" >&2
+                    return 1
+                fi
+            else
+                # make's output on stderr, so `run > out.txt` keeps only the program's.
+                make --no-print-directory >&2
+            fi
             ;;
     esac
 }
 
+# _dev_venv_python: the python of the nearest .venv or venv in this folder or a
+# folder above, else python3 (with a note when one is there but broken).
+_dev_venv_python() {
+    local d v; d=$(pwd -P)
+    while :; do
+        for v in "$d/.venv" "$d/venv"; do
+            [[ -x $v/bin/python ]] && { echo "$v/bin/python"; return 0; }
+            [[ -L $v/bin/python || -d $v/bin ]] && echo "Note: $v/bin/python is broken or missing; using python3" >&2
+        done
+        [[ $d == / || -z $d ]] && break
+        d=${d%/*}; [[ -z $d ]] && d=/
+    done
+    _dev_need python3 python3 || return 1
+    echo python3
+}
+
 # _dev_prog LANG: fill the caller's prog array with the command that runs the
-# program just built (after _dev_build, which set out).
+# program just built (after _dev_build, which set out or rust_exe), and penv with
+# any environment it needs (PYTHONPATH for a package).
 _dev_prog() {
     case $1 in
-        c|cpp) prog=("./$out") ;;
+        c|cpp) if [[ $out == */* ]]; then prog=("$out"); else prog=("./$out"); fi ;;
         rust)
-            if _dev_use_cargo; then
-                # _dev_build already asked cargo for the program's path.
-                [[ -n ${rust_exe:-} ]] || { echo "Error: cargo built no program here (a library crate?)" >&2; return 1; }
-                prog=("$rust_exe")
-            else
-                prog=("./$out")
-            fi
+            if [[ -n $rust_exe ]]; then prog=("$rust_exe")
+            elif [[ -n $out ]]; then if [[ $out == */* ]]; then prog=("$out"); else prog=("./$out"); fi
+            else echo "Error: cargo built no program here (a library crate?)" >&2; return 1; fi
             ;;
         python)
-            local f=$file py=python3
+            local py f=$file abs
+            py=$(_dev_venv_python) || return 1
+            # A package (a folder with __main__.py, named or the current one) runs
+            # as `python -m pkg` from its parent, so its relative imports work.
+            if [[ -n $f && -d $f ]]; then abs=$(realpath -- "$f")
+            elif [[ -z $f && -f __main__.py ]]; then abs=$(pwd -P)
+            fi
+            if [[ -n ${abs:-} && ${abs##*/} =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+                penv=("PYTHONPATH=${abs%/*}${PYTHONPATH:+:$PYTHONPATH}"); prog=("$py" -m "${abs##*/}"); return 0
+            elif [[ -n ${abs:-} ]]; then
+                f=${abs}/__main__.py   # not a valid module name: run the file itself
+            fi
             if [[ -z $f ]]; then
                 if [[ -f main.py ]]; then f=main.py
                 else
-                    local -a pys=(*.py)
-                    if [[ ${#pys[@]} -eq 1 && -f ${pys[0]} ]]; then f=${pys[0]}
-                    else echo "Error: several Python files here; name one: run ${pys[0]}" >&2; return 1; fi
+                    local -a pys=(); local p
+                    while IFS= read -r -d '' p; do [[ $p == *.py ]] && pys+=("${p#./}"); done < <(_dev_list)
+                    if [[ ${#pys[@]} -eq 1 ]]; then f=${pys[0]}
+                    else echo "Error: several Python files here; name one: run ${pys[0]:-FILE.py}" >&2; return 1; fi
                 fi
-            fi
-            if [[ -x .venv/bin/python ]]; then py=.venv/bin/python
-            else
-                [[ -L .venv/bin/python ]] && echo "Note: .venv/bin/python is broken (what it points to is gone); using python3" >&2
-                _dev_need python3 python3 || return 1
             fi
             prog=("$py" "$f")
             ;;
         make)
-            # The Makefile's PROG (mkmake writes one), else the folder's name.
-            [[ -n $out ]] || out=$(sed -n 's/^PROG[[:space:]]*=[[:space:]]*//p' Makefile makefile GNUmakefile 2>/dev/null | head -1)
-            [[ -n $out ]] || out=$(_dev_name make)
-            [[ -x $out ]] || { echo "Error: make didn't build ./$out; add a run target to the Makefile" >&2; return 1; }
-            prog=("./$out")
+            local mk_goal mk_run mk_prog cand; local -a mk_pre found=()
+            _dev_make_info
+            # -o NAME, else the Makefile's PROG, else the default target when it is
+            # a program file (main: main.c), else the one program among its
+            # prerequisites (all: main). Never a guess from the folder's name.
+            local p=${out:-$mk_prog}
+            if [[ -z $p ]]; then
+                if [[ -n $mk_goal && -f $mk_goal && -x $mk_goal ]]; then p=$mk_goal
+                else
+                    for cand in "${mk_pre[@]}"; do [[ -f $cand && -x $cand ]] && found+=("$cand"); done
+                    [[ ${#found[@]} -eq 1 ]] && p=${found[0]}
+                fi
+            fi
+            [[ -n $p ]] || { echo "Error: can't tell which program the Makefile builds; add PROG = name to it, or a run: target, or use -o NAME" >&2; return 1; }
+            [[ -f $p && -x $p ]] || { echo "Error: make didn't build ./$p" >&2; return 1; }
+            if [[ $p == */* ]]; then prog=("$p"); else prog=("./$p"); fi
             ;;
     esac
 }
 
+# _dev_exec CMD...: run CMD with the caller's penv (environment assignments) when
+# there are any. env can't run shell functions (_dev_make_run), so only then.
+_dev_exec() { if [[ ${#penv[@]} -gt 0 ]]; then env "${penv[@]}" "$@"; else "$@"; fi; }
+
 # _dev_exit_line RC START: one dim line after a run (red when RC isn't 0), on
-# stderr so `run > out.txt` keeps only the program's own output.
+# stderr so `run > out.txt` keeps only the program's own output. A locale with a
+# decimal comma writes EPOCHREALTIME as 12,5; awk wants 12.5.
 _dev_exit_line() {
-    local secs colour='\033[2m'
-    secs=$(awk -v a="$2" -v b="$EPOCHREALTIME" 'BEGIN { printf "%.2f", b - a }')
+    local secs colour='\033[2m' end=${EPOCHREALTIME/,/.}
+    secs=$(awk -v a="${2/,/.}" -v b="$end" 'BEGIN { printf "%.2f", b - a }')
     [[ $1 != 0 ]] && colour='\033[0;31m'
     echo -e "${colour}exit $1, ${secs} s\033[0m" >&2
 }
@@ -462,12 +655,15 @@ Run button calls this too.
 
 Usage: run [FILE] [OPTIONS] [-- EXTRA_COMPILER_FLAGS...] [-a PROGRAM_ARGS...]
 
-Same language rules and options as ru (see ru -h). Then:
+Same language rules and options as ru (see ru -h), plus -i FILE to feed FILE to
+the program's stdin. Then:
   C, C++, lone .rs   ./<name>
   Rust (Cargo)       the project's program, from target/
   Python             .venv/bin/python FILE when the folder has a .venv, else python3 FILE
                      (no FILE: main.py, or the only .py)
-  Makefile           make run when the Makefile has a run target, else its PROG or ./<folder name>
+  Makefile           make run when the Makefile has a run target; else the program
+                     it builds: -o NAME, its PROG, or its first target when that is a
+                     program (never a guess from the folder's name)
 
 Afterwards one dim line shows the exit code and the time (red when it isn't 0),
 and run returns the program's exit code.
@@ -484,20 +680,23 @@ HELP
     esac
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=() prog=() pargs=()
+    local -a srcs=() extra=() prog=() pargs=() penv=()
     local rust_exe=""
     _dev_parse "$@" || return 1
-    local lang
-    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
-    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    _dev_refuse run v d || return 1
+    if [[ -n $in_file && ! -f $in_file ]]; then echo "Error: input file '$in_file' not found" >&2; return 1; fi
+    local lang; lang=$(_dev_pick_lang) || return 1
     _dev_build "$lang" run || return 1
-    if [[ $lang == make ]] && _dev_make_has_run; then
+    local mk_goal="" mk_run="" mk_prog=""; local -a mk_pre=()
+    [[ $lang == make ]] && _dev_make_info
+    if [[ -n $mk_run ]]; then
         prog=(_dev_make_run)
     else
         _dev_prog "$lang" || return 1
     fi
     local start=$EPOCHREALTIME rc=0
-    "${prog[@]}" "${pargs[@]}" || rc=$?
+    if [[ -n $in_file ]]; then _dev_exec "${prog[@]}" "${pargs[@]}" < "$in_file" || rc=$?
+    else _dev_exec "${prog[@]}" "${pargs[@]}" || rc=$?; fi
     _dev_exit_line "$rc" "$start"
     return "$rc"
 }
@@ -531,17 +730,16 @@ HELP
     esac
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=() prog=() pargs=()
+    local -a srcs=() extra=() prog=() pargs=() penv=()
     local rust_exe=""
     _dev_parse "$@" || return 1
+    _dev_refuse rud i v d || return 1
     opt=0
-    local lang
-    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
-    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    local lang; lang=$(_dev_pick_lang) || return 1
     _dev_build "$lang" run || return 1
     _dev_prog "$lang" || return 1
     if [[ $lang == python ]]; then
-        "${prog[0]}" -m pdb "${prog[@]:1}" "${pargs[@]}"
+        _dev_exec "${prog[0]}" -m pdb "${prog[@]:1}" "${pargs[@]}"
     elif command -v lldb &>/dev/null; then
         lldb -- "${prog[@]}" "${pargs[@]}"
     else
@@ -589,9 +787,10 @@ HELP
 
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=() prog=() prog_args=() pargs=()
+    local -a srcs=() extra=() prog=() prog_args=() pargs=() penv=()
     local rust_exe=""
     _dev_parse "$@" || return 1
+    _dev_refuse rund v d || return 1
     # For rund, everything after -- is the program's arguments, not compiler flags.
     prog_args=("${extra[@]}"); extra=(); opt=0
     local input_file=$in_file
@@ -601,9 +800,7 @@ HELP
         return 1
     fi
 
-    local lang
-    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
-    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    local lang; lang=$(_dev_pick_lang) || return 1
     if [[ $lang == python ]]; then
         echo "Error: valgrind is for compiled programs (C, C++, Rust)" >&2
         return 1
@@ -626,25 +823,30 @@ HELP
     logfile="valgrind_$(date +"%Y%m%d-%H%M%S").log"
     local tmpfile
     tmpfile="$(mktemp)"
+    # Removes the file when rund returns, then removes itself: a RETURN trap set
+    # in a function otherwise stays set in the user's shell.
     # shellcheck disable=SC2064
-    trap "command rm -f '$tmpfile'" RETURN
+    trap "command rm -f '$tmpfile'; trap - RETURN" RETURN
 
     # Build valgrind command
     local -a vcmd=(valgrind -s --leak-check=full --track-origins=yes "${prog[@]}")
     vcmd+=("${prog_args[@]}" "${pargs[@]}")
 
-    echo -e "\033[0;34m[valgrind]\033[0m ${vcmd[*]}"
+    printf '\033[0;34m[valgrind]\033[0m %s\n' "$(_dev_show "${vcmd[@]}")"
     echo ""
 
-    # Run valgrind — stderr has the report, stdout has program output
+    # Run valgrind — stderr has the report, stdout has program output. The status
+    # is kept (|| vrc=) so a user's `set -e` can't end their shell here, and so a
+    # Ctrl-C (130) is told apart from a finished run.
+    local vrc=0
     if [[ -n "$input_file" ]]; then
-        "${vcmd[@]}" < "$input_file" 2>"$tmpfile"
+        "${vcmd[@]}" < "$input_file" 2>|"$tmpfile" || vrc=$?
     else
-        "${vcmd[@]}" 2>"$tmpfile"
+        "${vcmd[@]}" 2>|"$tmpfile" || vrc=$?
     fi
 
     # Save raw output
-    command cp "$tmpfile" "$logfile"
+    command cp -- "$tmpfile" "$logfile" || echo "Note: couldn't save the log to $logfile" >&2
 
     # Colors for pretty output
     local RED='\033[0;31m'
@@ -694,7 +896,7 @@ HELP
         # "definitely lost: 0 bytes in 0 blocks" (also indirectly / possibly)
         if [[ ${content,,} =~ (definitely|indirectly|possibly)\ lost:\ *([0-9,]+)\ bytes ]]; then
             if [[ ${BASH_REMATCH[2]} == 0 ]]; then echo -e "  ${GREEN}${content}${RESET}"
-            else echo -e "  ${RED}${BOLD}${content}${RESET}"; (( leaks++ )); fi
+            else echo -e "  ${RED}${BOLD}${content}${RESET}"; leaks=$((leaks + 1)); fi
             continue
         fi
 
@@ -718,7 +920,9 @@ HELP
     echo ""
     echo -e "${BLUE}${BOLD}════════════════════════════════════════════════════════${RESET}"
     local result=1
-    if [[ -z $summary ]]; then
+    if [[ $vrc == 130 ]] || grep -q 'default action of signal 2 (SIGINT)' "$tmpfile"; then
+        echo -e "  ${RED}${BOLD}RESULT: FAIL${RESET} ${RED}— interrupted (Ctrl-C) before the program finished${RESET}"
+    elif [[ -z $summary ]]; then
         echo -e "  ${RED}${BOLD}RESULT: FAIL${RESET} ${RED}— valgrind could not run the program to the end (no ERROR SUMMARY; see the log)${RESET}"
     elif [[ "$errors" -eq 0 && "$leaks" -eq 0 ]]; then
         echo -e "  ${GREEN}${BOLD}RESULT: PASS${RESET} ${GREEN}— no errors, no leaks${RESET}"; result=0
@@ -804,7 +1008,7 @@ _run_suite() {
     local TEMPFILE
     TEMPFILE="$(mktemp)"
     # shellcheck disable=SC2064
-    trap "command rm -f '$TEMPFILE'" RETURN
+    trap "command rm -f '$TEMPFILE'; trap - RETURN" RETURN
 
     local stem expect_file args_file in_file
     local -a argv
@@ -812,7 +1016,7 @@ _run_suite() {
         # Skip blank lines
         [[ -z "$stem" ]] && continue
 
-        (( total++ ))
+        total=$((total + 1))   # not (( total++ )): that is status 1 at 0, which ends a set -e shell
         expect_file="${stem}.expect"
         args_file="${stem}.args"
         in_file="${stem}.in"
@@ -822,19 +1026,19 @@ _run_suite() {
             return 1
         fi
 
-        # Build argv array from .args if readable
+        # Arguments from .args, split on spaces and newlines but never globbed
+        # (an argument * stays *).
         argv=()
         if [[ -r "$args_file" ]]; then
-            # shellcheck disable=SC2207
-            argv=($(cat "$args_file"))
+            IFS=$' \t\n' read -r -d '' -a argv < "$args_file" || true
         fi
 
         # Run program with optional stdin redirection
         local prc=0
         if [[ -r "$in_file" ]]; then
-            "${PROGRAM[@]}" "${argv[@]}" < "$in_file" > "$TEMPFILE" 2>&1 || prc=$?
+            "${PROGRAM[@]}" "${argv[@]}" < "$in_file" >| "$TEMPFILE" 2>&1 || prc=$?
         else
-            "${PROGRAM[@]}" "${argv[@]}" > "$TEMPFILE" 2>&1 || prc=$?
+            "${PROGRAM[@]}" "${argv[@]}" >| "$TEMPFILE" 2>&1 || prc=$?
         fi
 
         # A program killed by a signal (a crash, abort) fails even when its
@@ -842,7 +1046,7 @@ _run_suite() {
         # 131 QUIT, 132 ILL, 134 ABRT, 135 BUS, 136 FPE, 137 KILL, 139 SEGV; an
         # exit(-1) (255) or any other code is the program's own and only output counts.
         if [[ $prc == @(131|132|134|135|136|137|139) ]]; then
-            (( failed++ ))
+            failed=$((failed + 1))
             echo -e "${RED}${BOLD}x Test failed:${RESET} ${UNDERLINE}$stem${RESET} (crashed, signal $(( prc - 128 )))"
             _run_suite_details "$stem"
         elif diff "$TEMPFILE" "$expect_file" > /dev/null 2>&1; then
@@ -851,7 +1055,7 @@ _run_suite() {
                 _run_suite_details "$stem"
             fi
         else
-            (( failed++ ))
+            failed=$((failed + 1))
             echo -e "${RED}${BOLD}x Test failed:${RESET} ${UNDERLINE}$stem${RESET}"
             _run_suite_details "$stem"
         fi
@@ -901,21 +1105,20 @@ HELP
 
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
-    local -a srcs=() extra=() prog=() pargs=()
+    local -a srcs=() extra=() prog=() pargs=() penv=()
     local rust_exe=""
     _dev_parse "$@" || return 1
-    if [[ ${#pargs[@]} -gt 0 ]]; then echo "Error: -a is for run, rud and rund (rut takes arguments from <stem>.args)" >&2; return 1; fi
+    _dev_refuse rut a i || return 1
 
     if [[ ! -d "$test_dir" ]]; then
         echo "Error: test directory '$test_dir' not found" >&2
         return 1
     fi
 
-    local lang
-    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
-    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    local lang; lang=$(_dev_pick_lang) || return 1
     _dev_build "$lang" run || return 1
     _dev_prog "$lang" || return 1
+    [[ ${#penv[@]} -gt 0 ]] && prog=(env "${penv[@]}" "${prog[@]}")
 
     # Gather test stems from *.in files in the test directory
     local stems
@@ -929,19 +1132,19 @@ HELP
     # Build a temp suite file for _run_suite
     local suite
     suite="$(mktemp)"
-    printf '%s\n' "$stems" > "$suite"
+    printf '%s\n' "$stems" >| "$suite"
 
     # shellcheck disable=SC2086  # $verbose is empty or -v
     _run_suite $verbose "$suite" "${prog[@]}"
     local rc=$?
 
-    command rm -f "$suite"
+    command rm -f -- "$suite"
     return "$rc"
 }
 
 # mkt: create test stem files (.in and .expect; .args with -a)
 mkt() {
-    case "$1" in
+    case "${1:-}" in
         -h|--help|-H)
             cat <<'EOF'
 Create test case file pairs for the test runner.
@@ -980,14 +1183,14 @@ EOF
 
     local stem count=0
     for stem in "$@"; do
-        touch "${stem}.in" "${stem}.expect"
         if [[ "$with_args" -eq 1 ]]; then
-            touch "${stem}.args"
+            command touch -- "${stem}.in" "${stem}.expect" "${stem}.args" || { echo "Error: couldn't create the files for '$stem'" >&2; return 1; }
             echo "Created: ${stem}.in  ${stem}.expect  ${stem}.args"
         else
+            command touch -- "${stem}.in" "${stem}.expect" || { echo "Error: couldn't create the files for '$stem'" >&2; return 1; }
             echo "Created: ${stem}.in  ${stem}.expect"
         fi
-        (( count++ ))
+        count=$((count + 1))
     done
 
     if (( count > 1 )); then
@@ -1004,10 +1207,12 @@ mkmake() {
 Write a Makefile for the C or C++ files in this folder, with the same build as
 run and VS Code. Refuses to overwrite an existing Makefile.
 
-Targets: all (the default: build), run, debug (lldb only), test (every
-.in/.expect case, like rut), clean. The program is named after the folder
-(spaces become -). `make SANITIZE=` builds without the sanitizers, for valgrind.
-Needs a folder of C or C++ files (not both).
+Targets: all (the default: build), run (make run ARGS="5 10"), debug (lldb, or
+gdb), test (every .in/.expect case, like rut; a crash fails), clean. The program
+is named after the folder (made safe for make: test becomes test-prog, other
+characters become -). `make SANITIZE=` builds without the sanitizers, for
+valgrind. Needs a folder of C or C++ files (not both) whose names have no
+spaces or # $ : % \ (make can't handle those).
 
 Usage: mkmake
 HELP
@@ -1018,16 +1223,34 @@ HELP
         echo "Error: Makefile already exists" >&2
         return 1
     fi
-    local lang; lang=$(_dev_detect) || return 1
-    # make can't have spaces in a target name, so "my dir" makes ./my-dir.
-    local prog; prog=$(_dev_name "$lang"); prog=${prog//[[:space:]]/-}
+    # The C or C++ files here, never both (one Makefile, one compiler).
+    local f k has_c="" has_cpp=""
+    local -a bad=()
+    while IFS= read -r -d '' f; do
+        k=$(_dev_lang_of "$f")
+        case $k in c) has_c=1 ;; cpp) has_cpp=1 ;; *) continue ;; esac
+        # make splits names on spaces and treats # $ : % \ specially.
+        [[ ${f#./} == *[[:space:]\#\$:%\\]* ]] && bad+=("${f#./}")
+    done < <(_dev_list)
+    if [[ -n $has_c && -n $has_cpp ]]; then echo "Error: mkmake needs a folder of C or C++ files, not both" >&2; return 1; fi
+    if [[ -z $has_c && -z $has_cpp ]]; then echo "Error: mkmake writes Makefiles for C and C++, and there are no C or C++ files here" >&2; return 1; fi
+    if [[ ${#bad[@]} -gt 0 ]]; then
+        echo "Error: make can't handle a source file name with a space or # \$ : % \\ in it; rename: ${bad[*]}" >&2
+        return 1
+    fi
+    local lang=c; [[ -n $has_cpp ]] && lang=cpp
+    # The program is named after the folder, made safe for make: other characters
+    # become -, no leading - or ., and never a target name the Makefile itself uses.
+    local prog; prog=$(_dev_name "$lang"); prog=${prog//[^A-Za-z0-9._-]/-}
+    while [[ $prog == [-.]* ]]; do prog=${prog#?}; done
+    [[ -n $prog ]] || prog=program
+    [[ $prog == @(all|run|debug|test|clean) ]] && prog=$prog-prog
     local cc cvar flags fvar srcs
     case $lang in
-        c)   cvar=CC;  fvar=CFLAGS;   flags=-std=c17;   srcs='$(wildcard *.c)'
-             if command -v clang &>/dev/null; then cc=clang; else cc=gcc; fi ;;
-        cpp) cvar=CXX; fvar=CXXFLAGS; flags=-std=c++20; srcs='$(wildcard *.cpp *.cc *.cxx)'
-             if command -v clang++ &>/dev/null; then cc=clang++; else cc=g++; fi ;;
-        *)   echo "Error: mkmake writes Makefiles for C and C++ (this folder is $lang)" >&2; return 1 ;;
+        c)   cvar=CC;  fvar=CFLAGS;   flags=-std=gnu17;   srcs='$(wildcard *.c)'
+             if command -v clang &>/dev/null; then cc=clang; else _dev_need gcc "clang or gcc" || return 1; cc=gcc; fi ;;
+        cpp) cvar=CXX; fvar=CXXFLAGS; flags=-std=gnu++20; srcs='$(wildcard *.cpp *.cc *.cxx *.C)'
+             if command -v clang++ &>/dev/null; then cc=clang++; else _dev_need g++ "clang or g++" || return 1; cc=g++; fi ;;
     esac
     # Recipe lines must start with a real tab; printf '\t' keeps them.
     {
@@ -1054,18 +1277,22 @@ HELP
         echo "debug: \$(PROG)"
         printf '\t$(DEBUGGER) ./$(PROG) $(ARGS)\n'
         echo
-        echo "# Every <stem>.in through the program, compared with <stem>.expect (and <stem>.args)."
+        echo "# Every <stem>.in through the program, compared with <stem>.expect (stdout and"
+        echo "# stderr; arguments from <stem>.args), like rut. A crash fails even with matching output."
         echo "test: \$(PROG)"
-        printf '\t@pass=0; fail=0; for t in *.in; do [ -e "$$t" ] || continue; s="$${t%%.in}"; \\\n'
-        printf '\t  if ./$(PROG) $$(cat "$$s.args" 2>/dev/null) < "$$t" 2>&1 | diff -q - "$$s.expect" >/dev/null; \\\n'
-        printf '\t  then echo "ok   $$s"; pass=$$((pass+1)); else echo "FAIL $$s"; fail=$$((fail+1)); fi; done; \\\n'
+        printf '\t@set -- *.in; [ -e "$$1" ] || { echo "no .in files here (mkt NAME makes one)"; exit 1; }; set -f; \\\n'
+        printf '\tpass=0; fail=0; out=$$(mktemp); for t in "$$@"; do s="$${t%%.in}"; \\\n'
+        printf '\t  ./$(PROG) $$(cat "$$s.args" 2>/dev/null) < "$$t" > "$$out" 2>&1; rc=$$?; \\\n'
+        printf '\t  case $$rc in 131|132|134|135|136|137|139) echo "FAIL $$s (crashed, exit $$rc)"; fail=$$((fail+1)); continue;; esac; \\\n'
+        printf '\t  if diff -q "$$out" "$$s.expect" >/dev/null; then echo "ok   $$s"; pass=$$((pass+1)); \\\n'
+        printf '\t  else echo "FAIL $$s"; fail=$$((fail+1)); fi; done; rm -f "$$out"; \\\n'
         printf '\techo "$$pass passed, $$fail failed"; [ $$fail -eq 0 ]\n'
         echo
         echo "clean:"
         printf '\trm -f $(PROG)\n'
         echo
         echo ".PHONY: all run debug test clean"
-    } > Makefile
+    } >| Makefile
     echo "Wrote Makefile ($lang, program ./$prog). Try: make, make run, make test"
 }
 
