@@ -15,6 +15,8 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 T=$(mktemp -d "${TMPDIR:-/tmp}/dev-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
 export XDG_CACHE_HOME=$T/cache
+# Cargo's builds go to each test project's own target/ (some tests look there).
+unset CARGO_TARGET_DIR
 
 pass=0 fail=0
 ok()    { pass=$((pass + 1)); echo "ok   $1"; }
@@ -413,6 +415,48 @@ if command -v make >/dev/null; then
 fi
 if command -v cargo >/dev/null; then check rust_one_cargo t_rust_one_cargo; fi
 check gdb_note         t_gdb_note
+# shellcheck disable=SC2016  # literal $HOME is the point: it must reach the program unexpanded
+t_run_args_make_quoting() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh rmq; argsc main.c; mkmake >/dev/null 2>&1 || return 1
+    local out; out=$(run -a 'x y' "it's" '$HOME' 'a;echo PWNED' 2>&1)
+    [[ $out == *'[x y][it'"'"'s][$HOME][a;echo PWNED]'* && $out != *$'\nPWNED'* ]]
+}
+t_rut_exit255_ok() {
+    fresh r255; printf '#include <stdio.h>\nint main(void) { puts("bad input"); return -1; }\n' > e.c
+    t1 a "" "bad input"; rut e.c 2>&1 | grep -q "All tests passed"
+}
+t_args_swallow_note() { fresh asn; argsc a.c; [[ $(run a.c -a 5 -O 2 2>&1) == *"everything after -a goes to the program"* ]]; }
+t_ru_refuses_a()  { fresh rra; sq sq.c; local out; ! out=$(ru sq.c -a 5 2>&1) && [[ $out == *"-a is for run, rud and rund"* ]]; }
+# shellcheck disable=SC2016  # $(ARGS) is the literal text of the note
+t_make_args_ignored_note() {
+    fresh mai; printf 'all:\n\t@true\nrun:\n\t@echo RAN\n' > Makefile
+    local out; out=$(run -a 5 2>&1); [[ $out == *RAN* && $out == *'does not use $(ARGS)'* ]]
+}
+t_lldb_no_note()  { fresh lnn; sq sq.c; [[ $(PATH=$stub:$PATH rud sq.c 2>&1) != *"using gdb"* ]]; }
+t_rust_compile_error() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rce; cargo new -q --vcs none bad && cd bad || return 1
+    printf 'fn main() { let x: i32 = "no"; println!("RAN {x}"); }\n' > src/main.rs
+    local out rc; out=$(run 2>&1); rc=$?
+    # No "exit" line means the program never ran (the error message itself quotes the source).
+    [[ $rc == 1 && $out == *"mismatched types"* && $out != *"exit "* ]]
+}
+t_rust_library() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rlib; cargo new -q --vcs none --lib lb && cd lb || return 1
+    local out; out=$(run 2>&1); [[ $out == *"built no program"* ]] || { echo "$out"; return 1; }
+}
+check run_args_make_quoting t_run_args_make_quoting
+check rut_exit255_ok        t_rut_exit255_ok
+check args_swallow_note     t_args_swallow_note
+check ru_refuses_a          t_ru_refuses_a
+check make_args_ignored_note t_make_args_ignored_note
+check lldb_no_note          t_lldb_no_note
+if command -v cargo >/dev/null; then
+    check rust_compile_error t_rust_compile_error
+    check rust_library       t_rust_library
+fi
 check venv_broken_note t_venv_broken_note
 
 echo "$pass passed, $fail failed"

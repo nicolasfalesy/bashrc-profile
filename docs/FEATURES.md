@@ -237,10 +237,10 @@ in `$XDG_CACHE_HOME/bashrc-profile/run/`, else `~/.cache/…`).
 | `ru [file] [-f files] [-O n] [-W flags] [-o name] [-- flags]` | build: clang/gcc, `cargo build` (`-O` ≠ 0 = `--release`), `make`; Python has nothing to build |
 | `run [file] … [-a args]` | build when needed, then run (with `-a` arguments, last): `./name`, the Cargo program, `.venv/bin/python` or `python3` (`main.py` or the only `.py`), `make run` if the Makefile has it; then a dim `exit N, 0.02 s` line (red when N ≠ 0) and the program's exit code |
 | `rud [file] … [-a args]` | debug build, then `lldb` (says so and uses `gdb` without lldb); Python: `python -m pdb` |
-| `rund [file] [-i FILE] [-- args \| -a args]` | build C/C++ without sanitizers, run under valgrind, colourised leak/error report, log saved; returns 1 on errors, leaks, or when valgrind couldn't run it |
-| `rut [file] [-v] [-d dir] [-f files]` | build, then run every `<stem>.in` against `<stem>.expect` (+ optional `<stem>.args`), any language; a crash (signal) fails even with matching output |
+| `rund [file] [-i FILE] [-- args \| -a args (last)]` | build C/C++ without sanitizers, run under valgrind, colourised leak/error report, log saved; returns 1 on errors, leaks, or when valgrind couldn't run it |
+| `rut [file] [-v] [-d dir] [-f files]` | build, then run every `<stem>.in` against `<stem>.expect` (+ optional `<stem>.args`), any language; a crash (segfault, abort…) fails even with matching output, an ordinary exit code doesn't |
 | `mkt [-a] <stem>...` | create empty `.in`/`.expect` test files; `-a` also makes `.args` |
-| `mkmake` | write a Makefile for the C or C++ files here: `all`, `run`, `debug`, `test`, `clean`; refuses to overwrite one |
+| `mkmake` | write a Makefile for the C or C++ files here: `all`, `run` (`make run ARGS="5 10"`), `debug` (lldb, or gdb), `test`, `clean`, and `make SANITIZE=` for a valgrind build; refuses to overwrite one |
 
 ## Profile: pi (profiles/pi.sh)
 

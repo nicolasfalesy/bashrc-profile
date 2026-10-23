@@ -138,7 +138,17 @@ _dev_parse() {
                 ;;
             --) shift; extra+=("$@"); break ;;
             # -a: everything after it goes to the program (so it comes last).
-            -a) shift; pargs+=("$@"); break ;;
+            -a)
+                shift; pargs+=("$@")
+                local a
+                for a in "$@"; do
+                    case $a in
+                        -O|-W|-o|-f|-i|-d|-v)
+                            echo "Note: everything after -a goes to the program, including '$a'; put options before -a" >&2
+                            break ;;
+                    esac
+                done
+                break ;;
             -*) echo "Error: unknown option '$1'. Use -h for help." >&2; return 1 ;;
             *)
                 if [[ -n $file ]]; then echo "Error: name one file at a time ('$file' and '$1')" >&2; return 1; fi
@@ -296,7 +306,9 @@ HELP
     # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
     local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
     local -a srcs=() extra=() pargs=()
+    local rust_exe=""
     _dev_parse "$@" || return 1
+    if [[ ${#pargs[@]} -gt 0 ]]; then echo "Error: -a is for run, rud and rund (ru only builds)" >&2; return 1; fi
     local lang
     if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
     [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
@@ -324,10 +336,21 @@ _dev_make_has_run() {
 # shortcut: make's stderr (and so the program's) is collected and shown when make
 # ends, not live; a live tee raced with the read (and $! is unset in $(...) under
 # set -u). Upgrade if a `make run` program ever needs live stderr.
+# shellcheck disable=SC2016  # $(ARGS) is make syntax, matched and printed literally
 _dev_make_run() {
     local err rc=0
+    local -a margs=()
+    if [[ ${#pargs[@]} -gt 0 ]]; then
+        grep -qsF '$(ARGS)' Makefile makefile GNUmakefile \
+            || echo 'Note: the Makefile'"'"'s run target does not use $(ARGS); the -a arguments are ignored' >&2
+        # Each argument single-quoted for the recipe's shell, then every $ doubled
+        # for make, so spaces, quotes, ; and $ reach the program exactly as typed.
+        local a q=""
+        for a in "${pargs[@]}"; do q+="'${a//\'/\'\\\'\'}' "; done
+        margs=("ARGS=${q//\$/\$\$}")
+    fi
     err=$(mktemp)
-    make --no-print-directory -s run ${pargs[@]+"ARGS=${pargs[*]}"} 2>"$err" || rc=$?
+    make --no-print-directory -s run "${margs[@]}" 2>"$err" || rc=$?
     cat "$err" >&2
     if [[ $rc == 2 ]]; then
         local n; n=$(grep -o 'Error [0-9]*$' "$err" | tail -1 | grep -o '[0-9]*$')
@@ -356,7 +379,10 @@ _dev_build() {
                 [[ $opt != 0 ]] && c+=(--release)
                 local json
                 json=$("${c[@]}") || return 1
-                rust_exe=$(grep -o '"executable":"[^"]*"' <<<"$json" | tail -1 | cut -d'"' -f4)
+                # A library crate has no executable; grep then fails, which under
+                # pipefail would end the build silently, so it counts as success and
+                # _dev_prog reports "built no program".
+                rust_exe=$(grep -o '"executable":"[^"]*"' <<<"$json" | tail -1 | cut -d'"' -f4) || true
             else
                 # A lone .rs file (outside a Cargo project, or not part of it).
                 [[ -n $file ]] || { echo "Error: name the .rs file to build: run x.rs" >&2; return 1; }
@@ -550,7 +576,7 @@ Options:
   -a ARGS...        Arguments for the program (rund only; put it last)
   -W [FLAGS]        Warnings (see ru -h)
 
-Program arguments go after --.
+Program arguments go after -- (or after -a, which comes last).
 
 Examples:
   rund                       Build and valgrind
@@ -813,7 +839,9 @@ _run_suite() {
 
         # A program killed by a signal (a crash, abort) fails even when its
         # output matched up to that point; an ordinary non-zero exit doesn't.
-        if (( prc > 128 )); then
+        # 131 QUIT, 132 ILL, 134 ABRT, 135 BUS, 136 FPE, 137 KILL, 139 SEGV; an
+        # exit(-1) (255) or any other code is the program's own and only output counts.
+        if [[ $prc == @(131|132|134|135|136|137|139) ]]; then
             (( failed++ ))
             echo -e "${RED}${BOLD}x Test failed:${RESET} ${UNDERLINE}$stem${RESET} (crashed, signal $(( prc - 128 )))"
             _run_suite_details "$stem"
@@ -849,7 +877,8 @@ Test cases are file stems: for a stem "foo", the runner looks for
   foo.in       (stdin input; cases are found by their .in)
   foo.expect   (expected stdout and stderr together, required)
   foo.args     (command-line arguments, optional)
-A test whose program crashes (killed by a signal) fails even if its output matched.
+A test whose program crashes (segfault, abort and other crash signals) fails even
+if its output matched; an ordinary exit code, even exit(-1), doesn't count.
 mkt makes empty ones: mkt foo.
 
 Usage: rut [FILE] [-v] [-d DIR] [-f FILE...] [-- EXTRA_COMPILER_FLAGS...]
@@ -875,6 +904,7 @@ HELP
     local -a srcs=() extra=() prog=() pargs=()
     local rust_exe=""
     _dev_parse "$@" || return 1
+    if [[ ${#pargs[@]} -gt 0 ]]; then echo "Error: -a is for run, rud and rund (rut takes arguments from <stem>.args)" >&2; return 1; fi
 
     if [[ ! -d "$test_dir" ]]; then
         echo "Error: test directory '$test_dir' not found" >&2
