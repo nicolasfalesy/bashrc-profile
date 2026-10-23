@@ -195,5 +195,43 @@ fi
 if command -v rustc >/dev/null; then check rust_lone t_rust_lone; else skip "rust_lone (no rustc)"; fi
 check compat_o        t_compat_o
 
+# ── rud and rund, with stand-ins for the debugger and valgrind that print how they were called
+stub=$T/stub; mkdir -p "$stub"
+printf '#!/bin/sh\necho "LLDB $*"\n' > "$stub/lldb"
+printf '#!/bin/sh\necho "GDB $*"\n' > "$stub/gdb"
+printf '#!/bin/sh\necho "VG $*" >&2\n' > "$stub/valgrind"
+printf '#!/bin/sh\necho "PY $*"\n' > "$stub/python3"
+chmod +x "$stub"/*
+# nolldb: /usr/bin without lldb and gdb, plus the gdb stand-in.
+nolldb() {
+    local d=$T/nolldb f
+    if [[ ! -d $d ]]; then
+        mkdir -p "$d"
+        for f in /usr/bin/*; do case ${f##*/} in lldb*|gdb*) ;; *) ln -s "$f" "$d/" ;; esac; done
+        cp "$stub/gdb" "$d/gdb"
+    fi
+    echo "$d"
+}
+t_rud_c()          { fresh dbc; sq sq.c; [[ $(PATH=$stub:$PATH rud sq.c 2>&1) == *"LLDB -- ./sq"* ]]; }
+t_rud_gdb_fallback(){ fresh dbg; sq sq.c; local p; p=$(nolldb); [[ $(PATH=$p rud sq.c 2>&1) == *"GDB --args ./sq"* ]]; }
+t_rud_py()         { fresh dbp; sqpy a.py; [[ $(PATH=$stub:$PATH rud a.py 2>&1) == *"PY -m pdb a.py"* ]]; }
+t_rund_plain() {
+    fresh vgp; sq sq.c
+    local out; out=$(PATH=$stub:$PATH rund sq.c 2>&1)
+    [[ $out == *'[compile]'* && $out != *fsanitize* && $out == *"VG -s --leak-check=full --track-origins=yes ./sq"* ]]
+}
+t_compat_rund() {
+    fresh vgc; sq sq.c; echo 5 > in.txt
+    [[ $(PATH=$stub:$PATH rund -i in.txt sq.c -- 1 2 2>&1) == *"./sq 1 2"* ]]
+}
+t_rund_py_refuses(){ fresh vgy; sqpy a.py; ! PATH=$stub:$PATH rund a.py 2>/dev/null; }
+
+check rud_c            t_rud_c
+check rud_gdb_fallback t_rud_gdb_fallback
+check rud_py           t_rud_py
+check rund_plain       t_rund_plain
+check compat_rund      t_compat_rund
+check rund_py_refuses  t_rund_py_refuses
+
 echo "$pass passed, $fail failed"
 (( fail == 0 ))

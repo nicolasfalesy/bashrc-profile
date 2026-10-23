@@ -394,145 +394,108 @@ HELP
     return "$rc"
 }
 
-# rud: compile C source files for debugging
+# rud: debug build, then open it in the debugger (lldb; gdb if lldb is missing; pdb for Python)
 rud() {
-    case "$1" in
+    case "${1:-}" in
         -h|--help|-H)
-            cat <<'EOF'
-Compile C source files for debugging (no optimization, debug symbols).
+            cat <<'HELP'
+Build for debugging (no optimisation, debug info) and open the program in a
+debugger, in whatever language it is.
 
-Uses gcc -std=c99 -O0 -g with all warnings by default.
+Usage: rud [FILE] [OPTIONS] [-- EXTRA_COMPILER_FLAGS...]
 
-Usage: rud [OPTIONS] [-- EXTRA_GCC_FLAGS...]
+Same language rules and options as ru (see ru -h); -O is ignored (always 0).
+  C, C++, Rust, Makefile   lldb (gdb where lldb is missing)
+  Python                   python -m pdb
 
-Options:
-  -h, --help, -H   Show this help message
-  -f FILE [FILE2..] Compile specific .c/.o files
-  -W [FLAGS]        Override warnings (see ru -h for details)
-  -o NAME           Output binary name (default: myprogram)
-
-Anything after -- is passed directly to gcc.
+In lldb: b main (breakpoint), r (run), n (next line), s (step in), p n
+(print n), c (continue), q (quit).
 
 Examples:
-  rud                                 Debug build of all .c files
-  rud -f main.c utils.c               Debug build of specific files
-  rud -- -fsanitize=address           Build with AddressSanitizer
-EOF
+  rud               Debug whatever is in this folder
+  rud sq.c          Build sq.c and open it in lldb
+  rud main.py       Step through main.py with pdb
+HELP
             return 0
             ;;
     esac
-
-    # Force -O0 for debug builds by stripping any -O from args and prepending -O 0
-    local -a args=()
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -O) shift 2 ;;  # discard any optimization override
-            *)  args+=("$1"); shift ;;
-        esac
-    done
-
-    ru -O 0 "${args[@]}"
+    # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
+    local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
+    local -a srcs=() extra=() prog=()
+    _dev_parse "$@" || return 1
+    opt=0
+    local lang
+    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
+    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    _dev_build "$lang" run || return 1
+    _dev_prog "$lang" || return 1
+    if [[ $lang == python ]]; then
+        "${prog[0]}" -m pdb "${prog[@]:1}"
+    elif command -v lldb &>/dev/null; then
+        lldb -- "${prog[@]}"
+    else
+        _dev_need gdb "lldb or gdb" || return 1
+        gdb --args "${prog[@]}"
+    fi
 }
 
-# rund: compile for debug and run under valgrind
+# rund: debug build without sanitizers, then run under valgrind with a colourised report
 rund() {
-    case "$1" in
+    case "${1:-}" in
         -h|--help|-H)
-            cat <<'EOF'
-Compile for debug and run under valgrind with leak checking.
+            cat <<'HELP'
+Build for debugging and run under valgrind with leak checking, in C, C++,
+Rust or a Makefile folder.
 
-Compiles using rud (debug build), then runs the program under valgrind
-with --leak-check=full and --track-origins=yes. Output is colorized for
-readability. Raw valgrind output is saved to valgrind_YYYYMMDD-HHMMSS.log.
+Builds without the sanitizers (they clash with valgrind), then runs the program
+under valgrind --leak-check=full --track-origins=yes. Output is colourised;
+the raw report is saved to valgrind_YYYYMMDD-HHMMSS.log.
 
-Usage: rund [OPTIONS] [-- PROGRAM_ARGS...]
+Usage: rund [FILE] [OPTIONS] [-- PROGRAM_ARGS...]
 
 Options:
-  -h, --help, -H   Show this help message
-  -f FILE [FILE2..] Compile specific .c/.o files
-  -i INPUT          Redirect INPUT file to program's stdin
-  -o NAME           Output binary name (default: myprogram)
-  -W [FLAGS]        Override warnings (see ru -h for details)
+  -h, --help, -H    Show this help message
+  -f FILE [FILE2..] Build these files together
+  -i INPUT          Feed INPUT to the program's stdin
+  -o NAME           Program name
+  -W [FLAGS]        Warnings (see ru -h)
 
-Program arguments go after --:
+Program arguments go after --.
 
 Examples:
-  rund                           Build and valgrind
-  rund -f main.c utils.c         Build specific files and valgrind
-  rund -- arg1 arg2              Pass args to program
-  rund -i input.txt              Redirect stdin from file
-  rund -i input.txt -- 5 10      Stdin + program args
-EOF
+  rund                       Build and valgrind
+  rund sq.c                  Build sq.c and valgrind it
+  rund -i input.txt -- 5 10  Stdin from a file, plus program arguments
+HELP
             return 0
             ;;
     esac
 
-    local input_file=""
-    local output="myprogram"
-    local -a compile_args=()
-    local -a prog_args=()
-    local parsing_prog=0
-
-    while [[ $# -gt 0 ]]; do
-        if [[ "$parsing_prog" -eq 1 ]]; then
-            prog_args+=("$1"); shift
-            continue
-        fi
-        case "$1" in
-            -i)
-                if [[ -z "$2" ]]; then
-                    echo "Error: -i requires an input file" >&2
-                    return 1
-                fi
-                input_file="$2"; shift 2
-                ;;
-            -o)
-                if [[ -z "$2" || "$2" == -* ]]; then
-                    echo "Error: -o requires an output name" >&2
-                    return 1
-                fi
-                output="$2"
-                compile_args+=(-o "$2"); shift 2
-                ;;
-            -f)
-                compile_args+=(-f)
-                shift
-                # Pass all non-flag args as files
-                while [[ $# -gt 0 && "$1" != -* ]]; do
-                    compile_args+=("$1"); shift
-                done
-                ;;
-            -W)
-                # -W with no argument or next arg is a flag = no warnings
-                if [[ -z "${2:-}" || "$2" == -* ]]; then
-                    compile_args+=(-W)
-                    shift
-                else
-                    compile_args+=(-W "$2"); shift 2
-                fi
-                ;;
-            --)
-                shift; parsing_prog=1
-                ;;
-            *)
-                echo "Error: unknown option '$1'. Use -h for help." >&2
-                return 1
-                ;;
-        esac
-    done
+    # shellcheck disable=SC2034  # filled by _dev_parse (dynamic scope); not every command reads all of them
+    local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
+    local -a srcs=() extra=() prog=() prog_args=()
+    _dev_parse "$@" || return 1
+    # For rund, everything after -- is the program's arguments, not compiler flags.
+    prog_args=("${extra[@]}"); extra=(); opt=0
+    local input_file=$in_file
 
     if [[ -n "$input_file" && ! -f "$input_file" ]]; then
         echo "Error: input file '$input_file' not found" >&2
         return 1
     fi
 
-    if ! command -v valgrind &>/dev/null; then
-        echo "Error: valgrind not found. Install it with: sudo nala install valgrind" >&2
+    local lang
+    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
+    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    if [[ $lang == python ]]; then
+        echo "Error: valgrind is for compiled programs (C, C++, Rust)" >&2
         return 1
     fi
+    _dev_need valgrind valgrind || return 1
 
     # Compile
-    rud "${compile_args[@]}" || return 1
+    _dev_build "$lang" plain || return 1
+    _dev_prog "$lang" || return 1
 
     # Prepare valgrind output
     local logfile
@@ -543,7 +506,7 @@ EOF
     trap "command rm -f '$tmpfile'" RETURN
 
     # Build valgrind command
-    local -a vcmd=(valgrind -s --leak-check=full --track-origins=yes "./$output")
+    local -a vcmd=(valgrind -s --leak-check=full --track-origins=yes "${prog[@]}")
     vcmd+=("${prog_args[@]}")
 
     echo -e "\033[0;34m[valgrind]\033[0m ${vcmd[*]}"
