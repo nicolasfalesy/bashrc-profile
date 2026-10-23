@@ -471,7 +471,7 @@ install_dependencies() {
              have cloudflared || warn "cloudflared not found — see https://pkg.cloudflare.com" ;;
         nas) have nvim || have vim || warn "no vim/nvim on this NAS — EDITOR will fall back to nano" ;;
         uw)  have nvim || warn "no nvim on this server — unpack a release into ~/.local (EDITOR falls back to vim)"
-             { { have clang || have gcc; } && have valgrind; } || warn "a C compiler or valgrind is missing — the dev commands (ru, run, rut, rund) need them" ;;
+             { { have clang || have gcc; } && have valgrind; } || warn "a C compiler or valgrind is missing — C/C++ builds (ru, run, rut) and rund need them" ;;
     esac
     return 0
 }

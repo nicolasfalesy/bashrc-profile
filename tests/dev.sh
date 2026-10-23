@@ -21,8 +21,9 @@ ok()    { pass=$((pass + 1)); echo "ok   $1"; }
 bad()   { fail=$((fail + 1)); echo "FAIL $1"; }
 skip()  { echo "skip $1"; }
 # check NAME FUNC: runs FUNC (a t_* function below) in a subshell, so one test's cd, exit or
-# unset variable cannot break the next, and records ok/FAIL by its status.
-check() { if ( "$2" ) >"$T/last.out" 2>&1; then ok "$1"; else bad "$1"; sed 's/^/     /' "$T/last.out" | tail -15; fi; }
+# unset variable cannot break the next, with stdin from /dev/null (a test that wants input pipes
+# its own), and records ok/FAIL by its status.
+check() { if ( "$2" ) </dev/null >"$T/last.out" 2>&1; then ok "$1"; else bad "$1"; sed 's/^/     /' "$T/last.out" | tail -15; fi; }
 # fresh NAME: cd into a new empty folder called NAME.
 fresh() { rm -rf "${T:?}/w/$1"; mkdir -p "$T/w/$1" && cd "$T/w/$1" || exit 2; }
 
@@ -77,7 +78,13 @@ t_c_build() {
     [[ -x sq && $out == *-std=c17* && $out == *-fsanitize=address,undefined* && $out == *-lm* ]]
 }
 t_c_skip()         { fresh cs; sq sq.c; ru sq.c >/dev/null 2>&1 || return 1; [[ $(ru sq.c 2>&1) != *'[compile]'* ]]; }
-t_c_header()       { fresh ch; sq sq.c; ru sq.c >/dev/null 2>&1 || return 1; touch x.h; later x.h; [[ $(ru sq.c 2>&1) == *'[compile]'* ]]; }
+t_c_header() {
+    fresh ch; echo '#define K 3' > x.h; printf '#include "x.h"\nint main(void) { return K; }\n' > h.c
+    ru h.c >/dev/null 2>&1 || return 1
+    [[ $(ru h.c 2>&1) != *'[compile]'* ]] || return 1   # unchanged: skipped
+    echo '#define K 4' > x.h; later x.h; [[ $(ru h.c 2>&1) == *'[compile]'* ]]
+}
+t_c_unrelated_header() { fresh cu; sq sq.c; ru sq.c >/dev/null 2>&1 || return 1; touch other.h; later other.h; [[ $(ru sq.c 2>&1) != *'[compile]'* ]]; }
 t_c_flags_change() { fresh cf; sq sq.c; ru sq.c >/dev/null 2>&1 || return 1; [[ $(ru sq.c -O 2 2>&1) == *'[compile]'*-O2* ]]; }
 t_cpp_build() {
     fresh cpp
@@ -106,11 +113,12 @@ t_compat_f() {
     ru -f a.c b.c >/dev/null 2>&1 && [[ -x multi ]]
 }
 t_compat_W()   { fresh cw; sq sq.c; local out; out=$(ru -W sq.c 2>&1) || return 1; [[ -x sq && $out != *-Wall* ]]; }
-t_unknown_opt(){ fresh uo; sq sq.c; ! ru -q sq.c 2>/dev/null; }
+t_unknown_opt(){ fresh uo; sq sq.c; local out; ! out=$(ru -q sq.c 2>&1) && [[ $out == *"unknown option '-q'"* ]]; }
 
 check c_build        t_c_build
 check c_skip         t_c_skip
 check c_header       t_c_header
+check c_unrelated_header t_c_unrelated_header
 check c_flags_change t_c_flags_change
 check cpp_build      t_cpp_build
 check gcc_fallback   t_gcc_fallback
@@ -148,7 +156,7 @@ t_py_venv() {
     printf '#!/bin/sh\necho VENV "$@"\n' > .venv/bin/python; chmod +x .venv/bin/python
     [[ $(run a.py 2>&1) == *"VENV a.py"* ]]
 }
-t_py_main()       { fresh pm; sqpy main.py; sqpy other.py; [[ $(echo 3 | run 2>&1) == *"3 squared is 9"* ]]; }
+t_py_main()       { fresh pm; echo 'print("MAIN")' > main.py; echo 'print("OTHER")' > other.py; local out; out=$(run 2>&1); [[ $out == *MAIN* && $out != *OTHER* ]]; }
 t_run_make_target(){ fresh mt; printf 'all:\n\t@true\nrun:\n\t@echo MADE\n' > Makefile; [[ $(run 2>&1) == *MADE* ]]; }
 t_run_make_plain() {
     fresh mkp; sq main.c
@@ -173,7 +181,7 @@ t_rust_lone() {
 t_rust_refuses_W() {
     command -v cargo >/dev/null || { echo "no cargo"; return 0; }
     fresh rw; cargo new -q --vcs none sqr && cd sqr || return 1
-    ! ru -W all 2>/dev/null
+    local out; ! out=$(ru -W all 2>&1) && [[ $out == *"don't apply to Rust"* ]]
 }
 t_compat_o()      { fresh co; sq sq.c; [[ $(echo 2 | run -o x sq.c 2>&1) == *"2 squared is 4"* && -x x ]]; }
 
@@ -199,7 +207,9 @@ check compat_o        t_compat_o
 stub=$T/stub; mkdir -p "$stub"
 printf '#!/bin/sh\necho "LLDB $*"\n' > "$stub/lldb"
 printf '#!/bin/sh\necho "GDB $*"\n' > "$stub/gdb"
-printf '#!/bin/sh\necho "VG $*" >&2\n' > "$stub/valgrind"
+# The valgrind stand-in echoes its arguments and its stdin, then the summary line rund needs.
+# shellcheck disable=SC2016  # $* and $(cat) belong to the stand-in script, written literally
+printf '#!/bin/sh\necho "VG $*" >&2\necho "STDIN:$(cat)" >&2\necho "==1== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)" >&2\n' > "$stub/valgrind"
 printf '#!/bin/sh\necho "PY $*"\n' > "$stub/python3"
 chmod +x "$stub"/*
 # nolldb: /usr/bin without lldb and gdb, plus the gdb stand-in.
@@ -222,9 +232,10 @@ t_rund_plain() {
 }
 t_compat_rund() {
     fresh vgc; sq sq.c; echo 5 > in.txt
-    [[ $(PATH=$stub:$PATH rund -i in.txt sq.c -- 1 2 2>&1) == *"./sq 1 2"* ]]
+    local out; out=$(PATH=$stub:$PATH rund -i in.txt sq.c -- 1 2 2>&1)
+    [[ $out == *"./sq 1 2"* && $out == *"STDIN:5"* ]]
 }
-t_rund_py_refuses(){ fresh vgy; sqpy a.py; ! PATH=$stub:$PATH rund a.py 2>/dev/null; }
+t_rund_py_refuses(){ fresh vgy; sqpy a.py; local out; ! out=$(PATH=$stub:$PATH rund a.py 2>&1) && [[ $out == *"valgrind is for compiled programs"* ]]; }
 
 check rud_c            t_rud_c
 check rud_gdb_fallback t_rud_gdb_fallback
@@ -261,6 +272,98 @@ else
 fi
 check mkmake_refuses   t_mkmake_refuses
 check lazy_line        t_lazy_line
+
+# ── review fixes (2026-10-22): build skipping, exit line, detection order, rund, make, mkmake
+t_c_source_edit()  { fresh se; sq sq.c; ru sq.c >/dev/null 2>&1 || return 1; later sq.c; [[ $(ru sq.c 2>&1) == *'[compile]'* ]]; }
+t_c_multi_skip() {
+    fresh ms; printf 'int f(void);\nint main(void) { return f(); }\n' > a.c; printf 'int f(void) { return 0; }\n' > b.c
+    ru -f a.c b.c >/dev/null 2>&1 || return 1
+    [[ $(ru -f a.c b.c 2>&1) != *'[compile]'* ]] || return 1
+    later b.c; [[ $(ru -f a.c b.c 2>&1) == *'[compile]'* ]]
+}
+t_c_subdir_header() {
+    fresh sh; mkdir inc; echo '#define K 3' > inc/k.h
+    printf '#include "k.h"\nint main(void) { return K; }\n' > k.c
+    run k.c -- -Iinc >/dev/null 2>&1; echo '#define K 4' > inc/k.h; later inc/k.h
+    run k.c -- -Iinc >/dev/null 2>&1; [[ $? == 4 ]]
+}
+t_c_older_restore() {
+    fresh ro; printf 'int main(void) { return 5; }\n' > r.c; touch -d '2001-01-01' r.c
+    run r.c >/dev/null 2>&1
+    printf 'int main(void) { return 6; }\n' > r.c; touch -d '2000-01-01' r.c   # older than the first copy
+    run r.c >/dev/null 2>&1; [[ $? == 6 ]]
+}
+t_exit_red()       { fresh er; printf 'int main(void) { return 3; }\n' > e.c; [[ $(run e.c 2>&1) == *$'\033[0;31mexit 3, '* ]]; }
+t_exit_dim()       { fresh ed; sq sq.c; [[ $(echo 1 | run sq.c 2>&1) == *$'\033[2mexit 0, '* ]]; }
+t_exit_on_stderr() { fresh es; sq sq.c; [[ $(echo 1 | run sq.c 2>/dev/null) != *"exit 0"* ]]; }
+t_make_beats_cargo(){ fresh mbc; touch Makefile Cargo.toml; [[ $(_dev_detect) == make ]]; }
+t_cargo_here_beats_c(){ fresh chc; touch Cargo.toml a.c; [[ $(_dev_detect) == rust ]]; }
+t_local_c_beats_cargo_above(){ fresh cab; touch Cargo.toml; mkdir ex && cd ex && touch a.c && [[ $(_dev_detect) == c ]]; }
+t_rust_named_lone() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rnl; cargo new -q --vcs none sqr && cd sqr || return 1
+    printf 'fn main() { println!("SCRATCH"); }\n' > scratch.rs
+    local out; out=$(run scratch.rs 2>&1); [[ $out == *SCRATCH* && $out != *"Hello, world"* ]]
+}
+t_rust_release() {
+    command -v cargo >/dev/null || { echo "no cargo"; return 0; }
+    fresh rre; cargo new -q --vcs none sqr && cd sqr && ru -O 2 >/dev/null 2>&1 && [[ -x target/release/sqr ]]
+}
+t_rund_no_summary() {
+    fresh rns; sq sq.c; local d=$T/vgsilent; mkdir -p "$d"
+    printf '#!/bin/sh\nexit 1\n' > "$d/valgrind"; chmod +x "$d/valgrind"
+    local out rc; out=$(PATH=$d:$PATH rund sq.c 2>&1); rc=$?
+    [[ $rc != 0 && $out == *"valgrind could not run"* ]]
+}
+t_rund_asan_make() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh ram; sq main.c; mkmake >/dev/null 2>&1 || return 1
+    local out rc; out=$(PATH=$stub:$PATH rund 2>&1); rc=$?
+    [[ $rc != 0 && $out == *AddressSanitizer* ]]
+}
+t_make_run_exit() {
+    fresh mre; printf 'all:\n\t@true\nrun:\n\t@exit 3\n' > Makefile
+    local out rc; out=$(run 2>&1); rc=$?
+    [[ $rc == 3 && $out == *"exit 3, "* ]]
+}
+t_make_run_file() {
+    fresh mrf; sq main.c; printf 'mrf: main.c\n\tcc -o mrf main.c\n' > Makefile
+    printf '#!/bin/sh\necho NOT-THIS\n' > run; chmod +x run
+    local out; out=$(echo 4 | run 2>&1); [[ $out == *"4 squared is 16"* && $out != *NOT-THIS* ]]
+}
+t_mkmake_spaces() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh "my dir"; sq main.c; mkmake >/dev/null 2>&1 && make -s >/dev/null 2>&1 || return 1
+    t1 "a b" 2 "Give me a number: 2 squared is 4"
+    make -s test >/dev/null 2>&1 && [[ $(echo 3 | run 2>&1) == *"3 squared is 9"* ]] && rut 2>&1 | grep -q "All tests passed"
+}
+t_mkmake_test_fails() {
+    command -v make >/dev/null || { echo "no make"; return 0; }
+    fresh mtf; sq main.c; mkmake >/dev/null 2>&1 || return 1; t1 a 3 wrong; ! make -s test >/dev/null 2>&1
+}
+
+check c_source_edit          t_c_source_edit
+check c_multi_skip           t_c_multi_skip
+check c_subdir_header        t_c_subdir_header
+check c_older_restore        t_c_older_restore
+check exit_red               t_exit_red
+check exit_dim               t_exit_dim
+check exit_on_stderr         t_exit_on_stderr
+check make_beats_cargo       t_make_beats_cargo
+check cargo_here_beats_c     t_cargo_here_beats_c
+check local_c_beats_cargo_above t_local_c_beats_cargo_above
+if command -v cargo >/dev/null; then
+    check rust_named_lone t_rust_named_lone
+    check rust_release    t_rust_release
+fi
+check rund_no_summary        t_rund_no_summary
+if command -v make >/dev/null; then
+    check rund_asan_make     t_rund_asan_make
+    check mkmake_spaces      t_mkmake_spaces
+    check mkmake_test_fails  t_mkmake_test_fails
+fi
+check make_run_exit          t_make_run_exit
+check make_run_file          t_make_run_file
 
 echo "$pass passed, $fail failed"
 (( fail == 0 ))
