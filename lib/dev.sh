@@ -84,147 +84,191 @@ _dev_name() {
     echo "${PWD##*/}"
 }
 
-# ru: compile C source files with gcc
-ru() {
-    case "$1" in
-        -h|--help|-H)
-            cat <<'EOF'
-Compile C source files with gcc (C99, all warnings by default).
-
-Auto-detects all .c files in the current directory, or specify one or
-more source/object files with -f. Compiles to ./myprogram.
-
-Usage: ru [OPTIONS] [-- EXTRA_GCC_FLAGS...]
-
-Options:
-  -h, --help, -H   Show this help message
-  -f FILE [FILE2..] Compile specific .c and/or .o files (at least one required)
-  -O LEVEL          Optimization level (default: 0)
-  -W [FLAGS]        Override warnings: empty = no warnings,
-                    comma-separated list = only those (e.g. all,extra)
-  -o NAME           Output binary name (default: myprogram)
-
-Anything after -- is passed directly to gcc.
-
-Default warnings: -Wall -Wextra -Wpedantic
-
-Examples:
-  ru                          Auto-detect .c files, compile with all warnings
-  ru -f main.c                Compile only main.c
-  ru -f main.c utils.c io.c   Compile specific files
-  ru -f main.c lib.o          Compile main.c and link with lib.o
-  ru -O2                      Compile with -O2 instead of -O0
-  ru -W                       Compile with no warning flags
-  ru -W all,error             Compile with only -Wall -Werror
-  ru -- -DDEBUG               Pass extra flags to gcc
-EOF
-            return 0
-            ;;
-    esac
-
-    local opt_level="0"
-    local warnings="default"
-    local output="myprogram"
-    local -a sources=()
-    local -a extra_flags=()
-
+# _dev_parse ARGS...: the options every command shares. It fills the CALLER's
+# locals (bash dynamic scope), so each command declares these first:
+#   local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
+#   local -a srcs=() extra=()
+# `--` puts the rest in extra: compiler flags for ru/run/rud/rut, program
+# arguments for rund (it reads extra that way).
+_dev_parse() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -f)
                 shift
-                # Collect all following args that end in .c (until next flag or --)
-                while [[ $# -gt 0 && "$1" != -* ]]; do
-                    sources+=("$1"); shift
-                done
-                if [[ ${#sources[@]} -eq 0 ]]; then
-                    echo "Error: -f requires at least one .c or .o file" >&2
-                    return 1
+                while [[ $# -gt 0 && "$1" != -* ]]; do srcs+=("$1"); shift; done
+                if [[ ${#srcs[@]} -eq 0 ]]; then
+                    echo "Error: -f requires at least one source or .o file" >&2; return 1
                 fi
                 ;;
             -O)
-                if [[ -z "$2" || "$2" == -* ]]; then
-                    echo "Error: -O requires a level (0, 1, 2, 3, s, g)" >&2
-                    return 1
+                if [[ -z "${2:-}" || "$2" == -* ]]; then
+                    echo "Error: -O requires a level (0, 1, 2, 3, s, g)" >&2; return 1
                 fi
-                opt_level="$2"; shift 2
+                opt=$2; shift 2
                 ;;
             -W)
-                # -W with no argument or next arg is a flag = no warnings
-                if [[ -z "${2:-}" || "$2" == -* ]]; then
-                    warnings="none"
-                    shift
+                # -W alone (or before a flag or a source file) means no warning flags.
+                if [[ -z "${2:-}" || "$2" == -* || -n $(_dev_lang_of "$2") ]]; then
+                    warn=none; shift
                 else
-                    warnings="$2"; shift 2
+                    warn=$2; shift 2
                 fi
                 ;;
             -o)
-                if [[ -z "$2" || "$2" == -* ]]; then
-                    echo "Error: -o requires an output name" >&2
-                    return 1
+                if [[ -z "${2:-}" || "$2" == -* ]]; then
+                    echo "Error: -o requires an output name" >&2; return 1
                 fi
-                output="$2"; shift 2
+                out=$2; shift 2
                 ;;
-            --)
-                shift
-                extra_flags+=("$@")
-                break
+            -i)
+                if [[ -z "${2:-}" ]]; then echo "Error: -i requires an input file" >&2; return 1; fi
+                in_file=$2; shift 2
                 ;;
+            -v) verbose=-v; shift ;;
+            -d)
+                if [[ -z "${2:-}" || "$2" == -* ]]; then echo "Error: -d requires a directory" >&2; return 1; fi
+                test_dir=$2; shift 2
+                ;;
+            --) shift; extra+=("$@"); break ;;
+            -*) echo "Error: unknown option '$1'. Use -h for help." >&2; return 1 ;;
             *)
-                echo "Error: unknown option '$1'. Use -h for help." >&2
-                return 1
+                if [[ -n $file ]]; then echo "Error: name one file at a time ('$file' and '$1')" >&2; return 1; fi
+                file=$1; shift
                 ;;
         esac
     done
+}
 
-    if ! command -v gcc &>/dev/null; then
-        echo "Error: gcc not found. Install it with: sudo nala install gcc" >&2
-        return 1
-    fi
+# _dev_need TOOL PACKAGE: status 1 with one line naming the package when TOOL is missing.
+_dev_need() {
+    command -v "$1" &>/dev/null && return 0
+    echo "Error: $1 not found. Install it with your package manager (package: $2)" >&2
+    return 1
+}
 
-    # Build the source file list (auto-detect if -f was not used)
-    if [[ ${#sources[@]} -eq 0 ]]; then
-        local f
-        for f in *.c; do
-            [[ -f "$f" ]] && sources+=("$f")
-        done
-        if [[ ${#sources[@]} -eq 0 ]]; then
-            echo "Error: no .c files found in $(pwd)" >&2
-            return 1
-        fi
+# Build stamps: the exact compiler command of the last good build of each
+# program, so an unchanged re-run skips the compiler. Kept out of the project
+# folders, in the cache.
+_dev_stamp_path() {
+    local abs; abs=$(realpath -m -- "$1")
+    echo "${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile/run/$(printf '%s' "$abs" | sha1sum | cut -c1-40)"
+}
+_dev_stamp_ok()    { local s; s=$(_dev_stamp_path "$1"); [[ -f $s && $(<"$s") == "$2" ]]; }
+_dev_stamp_write() { local s; s=$(_dev_stamp_path "$1"); mkdir -p "${s%/*}" && printf '%s' "$2" > "$s"; }
+
+# _dev_build_cc LANG MODE: build C or C++ into ./$out (sets out when empty).
+# MODE run = the VS Code build (sanitizers on); MODE plain = no sanitizers (rund,
+# since they clash with valgrind). Skips the compiler when the stamp matches and
+# no source or header is newer than the program.
+_dev_build_cc() {
+    local lang=$1 mode=$2 cc std
+    if [[ $lang == c ]]; then
+        std=-std=c17
+        if command -v clang &>/dev/null; then cc=clang; else _dev_need gcc gcc || return 1; cc=gcc; fi
     else
-        # Validate all specified files exist
-        local f
-        for f in "${sources[@]}"; do
-            if [[ ! -f "$f" ]]; then
-                echo "Error: '$f' not found" >&2
-                return 1
-            fi
-        done
+        std=-std=c++20
+        if command -v clang++ &>/dev/null; then cc=clang++; else _dev_need g++ g++ || return 1; cc=g++; fi
     fi
 
-    # Build gcc command
-    local -a cmd=(gcc -std=c99 "-O${opt_level}" -g)
+    local -a sources=()
+    if [[ ${#srcs[@]} -gt 0 ]]; then sources=("${srcs[@]}")
+    elif [[ -n $file ]]; then sources=("$file")
+    else
+        local f
+        for f in *; do [[ -f $f && $(_dev_lang_of "$f") == "$lang" ]] && sources+=("$f"); done
+    fi
+    local s
+    for s in "${sources[@]}"; do
+        [[ -f $s ]] || { echo "Error: '$s' not found" >&2; return 1; }
+    done
+    # One source counts as named, so `run` in a one-file folder and VS Code's
+    # `run sq.c` make the same ./sq.
+    if [[ -z $out ]]; then
+        if [[ ${#sources[@]} -eq 1 ]]; then out=$(_dev_name "$lang" "${sources[0]}"); else out=$(_dev_name "$lang"); fi
+    fi
 
-    # Warning flags
-    case "$warnings" in
-        default) cmd+=(-Wall -Wextra -Wpedantic) ;;
-        none)    ;;  # no warning flags
+    local -a cmd=("$cc" "$std" "-O$opt" -g)
+    case $warn in
+        default) cmd+=(-Wall -Wextra) ;;
+        none)    ;;
         *)
-            local w
-            IFS=',' read -ra _warn_arr <<< "$warnings"
-            for w in "${_warn_arr[@]}"; do
-                cmd+=("-W${w}")
-            done
-            unset _warn_arr
+            local w; local -a ws
+            IFS=',' read -ra ws <<< "$warn"
+            for w in "${ws[@]}"; do cmd+=("-W$w"); done
             ;;
     esac
+    # shellcheck disable=SC2054  # one flag: the comma belongs to -fsanitize
+    [[ $mode == run ]] && cmd+=(-fsanitize=address,undefined)
+    cmd+=("${extra[@]}" "${sources[@]}" -o "$out" -lm)
 
-    cmd+=("${extra_flags[@]}")
-    cmd+=("${sources[@]}")
-    cmd+=(-o "$output")
-
+    local key; key=$(printf '%q ' "${cmd[@]}")
+    if [[ -x $out ]] && _dev_stamp_ok "$out" "$key"; then
+        local newer=""
+        for s in "${sources[@]}"; do [[ $s -nt $out ]] && newer=1; done
+        [[ -z $newer && -n $(find . -maxdepth 1 -newer "$out" -type f \
+            \( -name '*.h' -o -name '*.hpp' -o -name '*.hh' -o -name '*.c' -o -name '*.cpp' -o -name '*.cc' -o -name '*.cxx' \) -print -quit) ]] && newer=1
+        [[ -z $newer ]] && return 0
+    fi
     echo -e "\033[0;34m[compile]\033[0m ${cmd[*]}"
-    "${cmd[@]}"
+    if "${cmd[@]}"; then _dev_stamp_write "$out" "$key"; else rm -f "$(_dev_stamp_path "$out")"; return 1; fi
+}
+
+# ru: build the program (C, C++, Rust; Python has nothing to build; a Makefile folder runs make)
+ru() {
+    case "${1:-}" in
+        -h|--help|-H)
+            cat <<'HELP'
+Build a program in whatever language it is, the same way VS Code's Run does.
+
+Usage: ru [FILE] [OPTIONS] [-- EXTRA_COMPILER_FLAGS...]
+
+Picks the language from FILE, else from this folder (first match): a Makefile,
+a Cargo.toml here or above, then .c, .cpp/.cc/.cxx or .py files.
+
+  C     clang -std=c17 -Wall -Wextra -g -O0 -fsanitize=address,undefined ... -lm
+        (gcc with the same flags where clang is missing)
+  C++   clang++ -std=c++20, same flags
+  Rust  cargo build (a lone .rs outside a Cargo project: rustc -g)
+  Make  make
+  Python  nothing to build
+
+The program is named after FILE (ru sq.c makes ./sq), or after the folder when
+several files are built. A re-run skips the compiler when nothing changed.
+
+Options:
+  -h, --help, -H    Show this help message
+  -f FILE [FILE2..] Build these .c/.cpp/.o files together
+  -O LEVEL          Optimisation level (default 0; for Rust, anything but 0 = --release)
+  -W [FLAGS]        Warnings: alone = none, comma list = only those (e.g. all,error)
+  -o NAME           Program name
+
+Anything after -- goes to the compiler (C and C++ only).
+
+Examples:
+  ru                Build whatever is in this folder
+  ru sq.c           Build sq.c into ./sq
+  ru -f main.c io.c Build two files into ./<folder name>
+  ru -O 2           Optimised build
+  ru -- -DDEBUG     Pass a flag to the compiler
+HELP
+            return 0
+            ;;
+    esac
+    local file="" opt=0 warn=default out="" in_file="" verbose="" test_dir=.
+    local -a srcs=() extra=()
+    _dev_parse "$@" || return 1
+    local lang
+    if [[ -z $file && ${#srcs[@]} -gt 0 ]]; then lang=$(_dev_lang_of "${srcs[0]}"); fi
+    [[ -n ${lang:-} ]] || lang=$(_dev_detect "$file") || return 1
+    _dev_build "$lang" run
+}
+
+# _dev_build LANG MODE: build for LANG (Task 3 adds Rust, Python and make).
+_dev_build() {
+    case $1 in
+        c|cpp) _dev_build_cc "$1" "$2" ;;
+        *) echo "Error: building $1 is not supported yet" >&2; return 1 ;;
+    esac
 }
 
 # run: compile and execute
