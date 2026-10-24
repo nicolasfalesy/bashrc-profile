@@ -3,6 +3,11 @@
 # plus a dry-run of the installer. Runs on every push and pull request to main.
 name: smoke
 
+# 2026-10-24 GitHub access deep review: this repo is public, so the job's token is read-only (nothing here writes),
+# and a hung step is cut off instead of burning runner minutes.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -12,6 +17,7 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
