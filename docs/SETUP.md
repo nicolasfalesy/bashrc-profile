@@ -21,7 +21,7 @@ The installer asks one question. Useful flags:
 | `--with-mcrcon` | build the Minecraft RCON client |
 | `--with-zoxide` | install zoxide and turn on `z` / `zi` (off by default) |
 | `--upgrade` | refresh the user-local tools (ble.sh nightly, starship, fzf, zoxide) — `prereqs --upgrade` |
-| `--update` | pull + relink + add new toggles to the config + clear caches (what `bup` runs) |
+| `--update` | show incoming commits and ask, then pull + relink + add new toggles to the config + clear caches (what `bup` runs) |
 | `--uninstall` | remove links, restore backups |
 
 Backups: `~/.bashrc.bak.<timestamp>`, `~/.config/starship.toml.bak.<timestamp>`,

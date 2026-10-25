@@ -95,7 +95,7 @@ bt            # edit lib/aliases.sh        bt pi / bt system / bt local / bt con
               # on save: bash -n, then the profile is reloaded in this shell
 bgit status   # git inside the repo from anywhere: bgit add -A && bgit commit -m … && bgit push
 reload        # re-source ~/.bashrc
-bup           # install.sh --update: git pull, relink, add new toggles to the config, reload
+bup           # install.sh --update: show incoming commits and ask, git pull, relink, add new toggles, reload
 prereqs       # (re)install this profile's dependencies    prereqs --with-dev
 prereqs --upgrade   # refresh ble.sh nightly / starship / fzf / zoxide to their latest
 bash "$BASHRC_PROFILE_DIR/tests/smoke.sh"   # before committing: every profile still loads and works

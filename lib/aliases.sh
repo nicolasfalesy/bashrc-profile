@@ -210,7 +210,7 @@ _bt_completions() {
 complete -F _bt_completions bt
 
 # bup — update the profile from GitHub and reload.
-# install.sh --update = git pull --ff-only, relink, add toggles introduced since
+# install.sh --update = list incoming commits and ask, git pull --ff-only, relink, add toggles introduced since
 # this machine's config was written, clear the init caches, verify. Then re-source.
 bup() {
     if [[ ${1-} == -h || ${1-} == --help ]]; then

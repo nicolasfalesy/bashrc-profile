@@ -207,5 +207,27 @@ else
     echo "${dim}skip dev commands (no C compiler)${n}"
 fi
 
+# bup must show incoming commits and pull only on a yes. update_repo and its helpers are lifted out of
+# install.sh and run against a throw-away origin; `ask` is stubbed, so no terminal is needed.
+echo "── bup asks before pulling"
+bup_t=$(mktemp -d)
+# shellcheck disable=SC2016  # expanded by the inner shell, not here
+bup_out=$(cd "$bup_t" && bash -c '
+    g() { git -c user.name=t -c user.email=t@t -c init.defaultBranch=main "$@"; }
+    g init -q --bare o.git && g clone -q o.git a 2>/dev/null && g -C a commit -q --allow-empty -m one && g -C a push -q origin HEAD 2>/dev/null
+    g clone -q o.git b && g -C a commit -q --allow-empty -m two-incoming && g -C a push -q origin HEAD 2>/dev/null
+    source <(sed -n "/^info()/,/^have()/p; /^run()/,/^}/p; /^update_repo()/,/^}/p" "$1")
+    DRY=0 REPO_FROM_CHECKOUT=1 REPO_DIR=$PWD/b
+    ask() { return 1; }; o=$(update_repo 2>&1)
+    [[ $o == *two-incoming* && $o == *"pull skipped"* && $(git -C b log -1 --format=%s) == one ]] && echo "ok   a no keeps the old commit and lists the new one"
+    ask() { return 0; }; update_repo >/dev/null 2>&1
+    [[ $(git -C b log -1 --format=%s) == two-incoming ]] && echo "ok   a yes pulls"
+    [[ $(update_repo 2>&1) == *"already up to date"* ]] && echo "ok   nothing incoming: no question"
+' _ "$here/install.sh" 2>&1)
+rm -rf "${bup_t:?}"
+for want in "a no keeps the old commit and lists the new one" "a yes pulls" "nothing incoming: no question"; do
+    if [[ $bup_out == *"ok   $want"* ]]; then echo "${green}ok${n}   $want"; else echo "${red}FAIL${n} bup: $want"; fail=1; fi
+done
+
 echo
 if (( fail )); then echo "${red}smoke test FAILED${n}"; exit 1; else echo "${green}smoke test passed${n}"; fi

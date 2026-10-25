@@ -104,7 +104,7 @@ are in the docker group)
 | (after `bt`) | a changed bash file is `bash -n`-checked and, if it parses, `~/.bashrc` is re-sourced in the current shell; a file with a syntax error is *not* reloaded |
 | `bgit …` | `git -C $BASHRC_PROFILE_DIR …` — `bgit status`, `bgit add -A`, `bgit commit -m …`, `bgit push` |
 | `reload` | `source ~/.bashrc` |
-| `bup` | `install.sh --update`: `git pull --ff-only`, relink, append toggles new since this config was written, clear caches, verify — then reload |
+| `bup` | `install.sh --update`: lists the incoming commits and asks, then `git pull --ff-only`, relink, append toggles new since this config was written, clear caches, verify — then reload |
 | `prereqs [opts]` | `install.sh --deps-only` — e.g. `prereqs --with-dev` |
 | `prereqs --upgrade` | refresh the user-local tools to their latest: ble.sh nightly, starship, fzf (`~/.fzf`), zoxide; apt-managed copies are left to `nu` |
 | `fetch` | fastfetch |

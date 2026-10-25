@@ -86,7 +86,8 @@ Usage: install.sh [options]
 
 Modes (default: full install)
   --deps-only          only install/refresh dependencies for the profile
-  --update             git pull, relink, add new toggles to the config, clear caches (what bup runs)
+  --update             show incoming commits and ask, git pull, relink, add new toggles to the config,
+                       clear caches (what bup runs)
   --uninstall          remove symlinks, restore the newest ~/.bashrc backup
                        (profile "omarchy": strips the appended block instead)
 
@@ -215,6 +216,19 @@ locate_repo() {
 update_repo() {
     (( REPO_FROM_CHECKOUT )) || return 0
     if [[ -d $REPO_DIR/.git ]]; then
+        # Show what a pull would bring in, and ask first. This code runs in every shell on every
+        # machine (passwordless sudo on the Pi), so one bad push must not land with nobody seeing it.
+        # A failed fetch falls through to the pull, which then fails and warns as before.
+        local incoming n
+        if (( ! DRY )) && git -C "$REPO_DIR" fetch --quiet; then
+            incoming=$(git -C "$REPO_DIR" log --oneline --no-decorate 'HEAD..@{u}' 2>/dev/null)
+            if [[ -z $incoming ]]; then ok "already up to date"; return 0; fi
+            n=$(grep -c . <<<"$incoming")
+            info "$n incoming commit(s):"
+            while IFS= read -r line; do printf '      %s\n' "$line"; done <<<"$incoming"
+            git -C "$REPO_DIR" --no-pager diff --stat 'HEAD...@{u}'
+            ask "Pull these $n commit(s)?" || { warn "pull skipped — keeping what is there"; return 0; }
+        fi
         run git -C "$REPO_DIR" pull --ff-only || warn "git pull failed — continuing with what is there"
     else
         warn "$REPO_DIR is not a git clone (tarball install) — re-run the curl installer to update"
