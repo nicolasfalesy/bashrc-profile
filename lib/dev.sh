@@ -229,6 +229,26 @@ _dev_tmp() {
     command mktemp "$d/XXXXXXXX"
 }
 
+# _dev_san CC: the -fsanitize flag for a sanitized build with compiler CC. address,undefined where an
+# AddressSanitizer program can run; undefined alone where it cannot: the Raspberry Pi's kernel address
+# layout makes every ASan program die at start ("AddressSanitizer: CHECK failed"). Probed once per compiler
+# and kernel (a tiny program built and run), the answer cached beside the build stamps.
+_dev_san() {
+    local f t
+    f="${XDG_CACHE_HOME:-$HOME/.cache}/bashrc-profile/asan-$(printf '%s %s' "$(command -v "$1")" "$(uname -r)" | command sha1sum | command cut -c1-12)"
+    if [[ ! -s $f ]]; then
+        t=$(_dev_tmp) || { echo -fsanitize=address,undefined; return 0; }
+        if printf 'int main(void) { return 0; }\n' | "$1" -x c -fsanitize=address -o "$t" - 2>/dev/null && "$t" >/dev/null 2>&1; then
+            echo -fsanitize=address,undefined >"$f"
+        else
+            echo -fsanitize=undefined >"$f"
+            echo "note: AddressSanitizer can't run on this machine, so $1 builds use -fsanitize=undefined only" >&2
+        fi
+        command rm -f -- "$t"
+    fi
+    command cat -- "$f"
+}
+
 # _dev_need TOOL PACKAGE: status 1 with one line naming the package when TOOL is missing.
 _dev_need() {
     command -v "$1" &>/dev/null && return 0
@@ -353,8 +373,7 @@ _dev_build_cc() {
             for w in "${ws[@]}"; do cmd+=("-W$w"); done
             ;;
     esac
-    # shellcheck disable=SC2054  # one flag: the comma belongs to -fsanitize
-    [[ $mode == run ]] && cmd+=(-fsanitize=address,undefined)
+    [[ $mode == run ]] && cmd+=("$(_dev_san "$cc")")
     # Libraries (-lNAME) go after the sources, where every linker looks for them.
     local -a libs=() flags=()
     for f in "${extra[@]}"; do if [[ $f == -l?* ]]; then libs+=("$f"); else flags+=("$f"); fi; done
@@ -433,7 +452,8 @@ a Cargo.toml here, a Python package (__main__.py), .c, .cpp/.cc/.cxx/.C or .py
 files, then a Cargo.toml in a folder above.
 
   C     clang -std=gnu17 -Wall -Wextra -g -O0 -fsanitize=address,undefined ... -lm
-        (gnu17 = C17 plus POSIX functions like strdup; gcc where clang is missing)
+        (gnu17 = C17 plus POSIX functions like strdup; gcc where clang is missing;
+        -fsanitize=undefined alone where AddressSanitizer can't run, like the Raspberry Pi)
   C++   clang++ -std=gnu++20, same flags
   Rust  cargo build (a .rs that isn't a project's src/main.rs or src/bin/*.rs:
         rustc --edition 2021 -g)
@@ -1476,7 +1496,7 @@ HELP
         echo "# Written by mkmake (bashrc-profile): the same build as run and VS Code's Run."
         echo "$cvar      = $cc"
         echo "# make SANITIZE= builds without the sanitizers (for valgrind / rund)."
-        echo "SANITIZE = -fsanitize=address,undefined"
+        echo "SANITIZE = $(_dev_san "$cc")"
         echo "$fvar  = $flags -Wall -Wextra -g -O0 \$(SANITIZE)"
         echo "LDLIBS  = -lm"
         echo "PROG    = $prog"

@@ -80,7 +80,16 @@ later() { touch -d "@$(( $(date +%s) + 5 ))" "$1"; }
 t_c_build() {
     fresh cb; sq sq.c
     local out; out=$(ru sq.c 2>&1) || return 1
-    [[ -x sq && $out == *-std=gnu17* && $out == *-fsanitize=address,undefined* && $out == *-lm* ]]
+    [[ -x sq && $out == *-std=gnu17* && $out == *"$(_dev_san "$(_t_cc)")"* && $out == *-lm* ]]
+}
+# The C compiler the dev commands pick (clang first), and the sanitizer flag they probe for it.
+_t_cc() { if command -v clang >/dev/null; then echo clang; else echo gcc; fi; }
+# A compiler whose AddressSanitizer programs cannot run (the Pi's kernel): only -fsanitize=undefined is used.
+t_san_fallback() {
+    fresh sf; local real; real=$(command -v "$(_t_cc)")
+    printf '#!/bin/sh\ncase "$*" in *address*) exit 1;; esac\nexec %s "$@"\n' "$real" > noasan-cc
+    chmod +x noasan-cc
+    [[ $(_dev_san "$PWD/noasan-cc" 2>/dev/null) == -fsanitize=undefined ]] && [[ $(_dev_san "$real") == -fsanitize=address* || $(uname -m) == aarch64 ]]
 }
 t_c_skip()         { fresh cs; sq sq.c; ru sq.c >/dev/null 2>&1 || return 1; [[ $(ru sq.c 2>&1) != *'[compile]'* ]]; }
 t_c_header() {
@@ -121,6 +130,7 @@ t_compat_W()   { fresh cw; sq sq.c; local out; out=$(ru -W sq.c 2>&1) || return 
 t_unknown_opt(){ fresh uo; sq sq.c; local out; ! out=$(ru -q sq.c 2>&1) && [[ $out == *"unknown option '-q'"* ]]; }
 
 check c_build        t_c_build
+check san_fallback   t_san_fallback
 check c_skip         t_c_skip
 check c_header       t_c_header
 check c_unrelated_header t_c_unrelated_header
@@ -322,6 +332,7 @@ t_rund_no_summary() {
 }
 t_rund_asan_make() {
     command -v make >/dev/null || { echo "no make"; return 0; }
+    [[ $(_dev_san "$(_t_cc)" 2>/dev/null) == *address* ]] || { echo "no AddressSanitizer here (the Pi)"; return 0; }
     fresh ram; sq main.c; mkmake >/dev/null 2>&1 || return 1
     local out rc; out=$(PATH=$stub:$PATH rund 2>&1); rc=$?
     [[ $rc != 0 && $out == *AddressSanitizer* ]]
@@ -609,7 +620,7 @@ t_mkt_files() { fresh mk; mkt a >/dev/null && [[ -e a.in && -e a.expect && ! -e 
 t_mkmake_same_build() {
     command -v make >/dev/null || { echo "no make"; return 0; }
     fresh msb; sq main.c; mkmake >/dev/null 2>&1 || return 1
-    [[ $(make -n 2>&1) == *"-std=gnu17 -Wall -Wextra -g -O0 -fsanitize=address,undefined main.c -o msb -lm"* ]]
+    [[ $(make -n 2>&1) == *"-std=gnu17 -Wall -Wextra -g -O0 $(_dev_san "$(_t_cc)") main.c -o msb -lm"* ]]
 }
 t_mkmake_header_rebuild() {
     command -v make >/dev/null || { echo "no make"; return 0; }

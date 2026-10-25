@@ -231,7 +231,8 @@ The program is named after the file (`run sq.c` makes `./sq`) or the folder, and
 is never written over a source or a file that isn't a program. C builds with
 `clang -std=gnu17 -Wall -Wextra -g -O0 -fsanitize=address,undefined … -lm` (gnu17:
 C17 plus POSIX functions such as `strdup`; C++: `clang++ -std=gnu++20`; gcc/g++
-where clang is missing), and a re-run skips the compiler only when the command,
+where clang is missing; `-fsanitize=undefined` alone on a machine whose kernel can't run AddressSanitizer, like the
+Raspberry Pi: probed once and cached), and a re-run skips the compiler only when the command,
 every file the compiler says the program depends on (system headers, `-I` and
 `-isystem` folders, symlinks followed, times to the nanosecond, the fingerprint
 taken before compiling) and the program file are unchanged; one stamp per program
