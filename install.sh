@@ -71,9 +71,11 @@ run() {
 # ask <question> — yes/no, honours --yes, reads from the terminal even when piped
 ask() {
     (( YES )) && return 0
-    local reply
-    if [[ -r /dev/tty ]]; then
-        read -rp "$1 [Y/n] " reply < /dev/tty
+    # /dev/tty can exist and still fail to open (ssh without -t has no controlling terminal): that counts as no
+    # terminal too. Before 2026-10-25 that case died on `reply: unbound variable` under set -u.
+    local reply=''
+    if [[ -r /dev/tty ]] && { read -rp "$1 [Y/n] " reply < /dev/tty; } 2>/dev/null; then
+        :
     else
         warn "no terminal to ask '$1' — assuming yes"; return 0
     fi

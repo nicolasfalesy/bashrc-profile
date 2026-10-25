@@ -223,9 +223,14 @@ bup_out=$(cd "$bup_t" && bash -c '
     ask() { return 0; }; update_repo >/dev/null 2>&1
     [[ $(git -C b log -1 --format=%s) == two-incoming ]] && echo "ok   a yes pulls"
     [[ $(update_repo 2>&1) == *"already up to date"* ]] && echo "ok   nothing incoming: no question"
+    # The real ask with no terminal (setsid: no controlling tty, like ssh without -t) must assume yes, not die.
+    g -C a commit -q --allow-empty -m three && g -C a push -q origin HEAD 2>/dev/null
+    source <(sed -n "/^ask()/,/^}/p" "$1"); YES=0
+    o=$(setsid -w bash -uc "$(declare -f info ok warn run ask update_repo); B= G= Y= N= DRY=0 YES=0 REPO_FROM_CHECKOUT=1 REPO_DIR=$PWD/b; update_repo" </dev/null 2>&1)
+    [[ $o == *"assuming yes"* && $(git -C b log -1 --format=%s) == three ]] && echo "ok   no terminal: assumes yes and pulls"
 ' _ "$here/install.sh" 2>&1)
 rm -rf "${bup_t:?}"
-for want in "a no keeps the old commit and lists the new one" "a yes pulls" "nothing incoming: no question"; do
+for want in "a no keeps the old commit and lists the new one" "a yes pulls" "nothing incoming: no question" "no terminal: assumes yes and pulls"; do
     if [[ $bup_out == *"ok   $want"* ]]; then echo "${green}ok${n}   $want"; else echo "${red}FAIL${n} bup: $want"; fail=1; fi
 done
 
