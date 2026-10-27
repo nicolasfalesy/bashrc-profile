@@ -278,6 +278,9 @@ and make's output go to stderr, so `run > out.txt` holds only the program's outp
 
 `ZPOOL` (default `tank`) comes from `~/.bashrc.local`.
 
+A shell that starts with a negative OOM score (the TrueNAS web Shell inherits middlewared's -1000) is put back to 0,
+so a tmux or Claude session started there can still be killed when memory runs out, like one started over SSH.
+
 | Command | Does |
 |---------|------|
 | `zs` / `zh` | `zpool status -v` / `zpool status -x` (health one-liner) |
