@@ -7,6 +7,14 @@
 # Package aliases (ni/nu/…) are skipped automatically because lib/aliases.sh
 # only defines them when apt is executable.
 
+# The TrueNAS web Shell runs under middlewared, which has oom_score_adj -1000 ("never kill"), and every shell
+# opened there inherits it. On 2026-10-27 a tmux started from that Shell made all its Claude sessions and their
+# hooks unkillable: one runaway hook took 34.8 GB, and the kernel killed Minecraft, Chromium and sd-pam instead,
+# which took down every session. SSH logins already get 0; put this shell back to 0 too. Raising the value needs
+# no privilege, and builtins only, so no fork.
+read -r _oom_adj < /proc/self/oom_score_adj 2>/dev/null && ((_oom_adj < 0)) && echo 0 2>/dev/null > /proc/self/oom_score_adj
+unset _oom_adj
+
 export ZPOOL="${ZPOOL:-tank}"          # override in ~/.bashrc.local
 unalias apt ni np ns nu nclean 2>/dev/null   # no package manager on TrueNAS
 
