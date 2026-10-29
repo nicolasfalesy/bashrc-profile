@@ -208,7 +208,9 @@ locate_repo() {
         (( DRY )) && return
         local tmp; tmp=$(mktemp -d)
         curl -fsSL "$TARBALL_URL" | tar xz -C "$tmp" || die "download failed"
-        mkdir -p "$REPO_DIR" && cp -r "$tmp"/bashrc-profile-main/. "$REPO_DIR"/ && rm -rf "$tmp"
+        # Without this `|| die` a failed mkdir/cp still fell through to "repo: …" and the install went on with no repo.
+        if ! { mkdir -p "$REPO_DIR" && cp -r "$tmp"/bashrc-profile-main/. "$REPO_DIR"/; }; then die "could not unpack the tarball into $REPO_DIR"; fi
+        rm -rf "$tmp"
     fi
     ok "repo: $REPO_DIR"
 }
@@ -411,12 +413,19 @@ install_blesh() {
     fi
     if (( DRY )); then return 0; fi
     local tmp; tmp=$(mktemp -d)
+    # The new copy is moved in beside the old one ($dest.new) and only then swapped: the old `rm -rf "$dest"` first
+    # meant an interrupted move (full disk, ctrl-c on a slow cross-filesystem copy) left no ble.sh at all.
     if curl -fsSL https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz | tar xJ -C "$tmp" &&
-       mkdir -p "$(dirname "$dest")" && rm -rf "$dest" && mv "$tmp"/ble-nightly "$dest"; then
+       mkdir -p "$(dirname "$dest")" && rm -rf "${dest:?}.new" "${dest:?}.old" && mv "$tmp"/ble-nightly "$dest.new" &&
+       { [[ ! -e $dest ]] || mv "$dest" "$dest.old"; } && mv "$dest.new" "$dest"; then
+        rm -rf "${dest:?}.old"
         if [[ -n $old ]]; then local new; new=$(bash "$dest/ble.sh" --version 2>/dev/null); new=${new#*version }; new=${new%% *}
             note_upgrade ble.sh "$old" "$new"
         else INSTALLED+=(ble.sh); fi
     else
+        # Put the old copy back if the swap stopped half way, and drop the half-copied new one.
+        [[ -e $dest || ! -e $dest.old ]] || mv "$dest.old" "$dest"
+        rm -rf "${dest:?}.new"
         FAILED+=(ble.sh)
     fi
     rm -rf "$tmp"
@@ -501,11 +510,14 @@ link() {
     fi
     if [[ -e $dst || -L $dst ]]; then
         if [[ -L $dst ]]; then
-            run cp -L "$dst" "$bak" 2>/dev/null; run rm -f "$dst"
+            # A dangling link has nothing behind it: cp -L fails, and "backed up" would be a lie.
+            if run cp -L "$dst" "$bak" 2>/dev/null; then info "backed up $dst → $bak"
+            else info "$dst is a dangling link (nothing to back up) — replacing it"; fi
+            run rm -f "$dst"
         else
             run mv "$dst" "$bak"
+            info "backed up $dst → $bak"
         fi
-        info "backed up $dst → $bak"
     fi
     run mkdir -p "$(dirname "$dst")"
     run ln -s "$src" "$dst" && ok "$dst → $src"
@@ -522,7 +534,20 @@ link_layered() {
     elif (( DRY )); then
         printf '%s[dry-run]%s append the bashrc-profile block to %s\n' "$Y" "$N" "$rc"
     else
-        cp "$rc" "$rc.bak.$TS" && ok "backed up ~/.bashrc → ~/.bashrc.bak.$TS"
+        # An earlier server/nas/desktop install left ~/.bashrc as a symlink into the repo. Appending through it
+        # would write the block into the repo's own bashrc, which would then source itself without end. So the
+        # link becomes a plain file first (a dangling one has no content to keep and is simply dropped).
+        if [[ -L $rc ]]; then
+            local was; was=$(readlink "$rc")
+            if [[ -e $rc ]]; then
+                cp "$rc" "$rc.bak.$TS" && ok "backed up ~/.bashrc → ~/.bashrc.bak.$TS (it was a symlink to $was)"
+                if ! { cp -L "$rc" "$rc.new.$TS" && mv -f "$rc.new.$TS" "$rc"; }; then die "could not turn the ~/.bashrc symlink into a regular file"; fi
+            else
+                warn "~/.bashrc was a dangling symlink to $was — starting a fresh file"; rm -f "$rc"
+            fi
+        else
+            cp "$rc" "$rc.bak.$TS" && ok "backed up ~/.bashrc → ~/.bashrc.bak.$TS"
+        fi
         cat >> "$rc" <<EOF
 
 # --- bashrc-profile: BEGIN (layered under Omarchy) ---
@@ -615,15 +640,23 @@ CFG
 }
 
 write_config() {
-    step "Config"
-    info "writing $CONFIG_DIR/config  (profile=$PROFILE blesh=$WITH_BLESH zoxide=$WITH_ZOXIDE)"
+    # An existing config holds the user's own values (bt config); a plain re-install used to overwrite them
+    # with the installer's defaults and no backup. Keep them, exactly as --update does.
+    if [[ -f $CONFIG_DIR/config ]]; then
+        refresh_config
+    else
+        step "Config"
+        info "writing $CONFIG_DIR/config  (profile=$PROFILE blesh=$WITH_BLESH zoxide=$WITH_ZOXIDE)"
+        (( DRY )) || {
+            mkdir -p "$CONFIG_DIR"
+            {
+                echo "# bashrc-profile machine config — written by install.sh on $TS. Edit with: bt config"
+                echo "# Environment beats this file: BASHRC_BLESH=0 bash -i tries a toggle without editing it."
+                config_lines
+            } > "$CONFIG_DIR/config"
+        }
+    fi
     (( DRY )) && return 0
-    mkdir -p "$CONFIG_DIR"
-    {
-        echo "# bashrc-profile machine config — written by install.sh on $TS. Edit with: bt config"
-        echo "# Environment beats this file: BASHRC_BLESH=0 bash -i tries a toggle without editing it."
-        config_lines
-    } > "$CONFIG_DIR/config"
     if [[ ! -f $HOME/.bashrc.local ]]; then
         cp "$REPO_DIR/bashrc.local.example" "$HOME/.bashrc.local"
         chmod 600 "$HOME/.bashrc.local"
@@ -733,7 +766,10 @@ main() {
     case $MODE in
         uninstall) uninstall; return ;;
         deps)      locate_repo; install_dependencies; rm -f "$CACHE_DIR"/*.bash 2>/dev/null; summary; return ;;
-        update)    locate_repo; update_repo; link_files; refresh_config; rm -f "$CACHE_DIR"/*.bash 2>/dev/null; verify; summary; return ;;
+        # A failed verify must reach the exit status (summary's own status used to win): bup runs this and
+        # reloads ~/.bashrc only on success, so it must not reload a profile that just failed to parse or start.
+        update)    locate_repo; update_repo; link_files; refresh_config; rm -f "$CACHE_DIR"/*.bash 2>/dev/null
+                   local vrc=0; verify || vrc=1; summary; return "$vrc" ;;
     esac
 
     locate_repo
@@ -743,7 +779,8 @@ main() {
     (( DEPS )) && install_dependencies
     link_files
     write_config
-    verify
+    local vrc=0; verify || vrc=1    # same reason as in the update path above
     summary
+    return "$vrc"
 }
 main "$@"

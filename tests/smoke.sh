@@ -80,6 +80,10 @@ _clip_ages() ( BASHRC_CLIP_BACKEND=file
                cpy -p && [[ $(BASHRC_CLIP_PASTE_FRESH=0 pst) == laptop-clip ]] &&
                cpy -p && cpy "plain" && [[ $(pst) == laptop-clip ]] && [[ $(pst -l) == plain ]] )
 _t "cpy -p ages" _clip_ages
+# empty stdin (`cat missing | cpy`) must fail and leave the spool alone: it used to truncate it first
+_clip_empty() ( BASHRC_CLIP_BACKEND=file
+                cpy "keep-me"; cpy </dev/null 2>/dev/null; (( $? == 1 )) && [[ $(pst -l) == keep-me ]] )
+_t "cpy empty stdin" _clip_empty
 _t "sys"         sys
 _t "psg"         psg bash
 _t "port -h"     port -h
@@ -233,6 +237,25 @@ rm -rf "${bup_t:?}"
 for want in "a no keeps the old commit and lists the new one" "a yes pulls" "nothing incoming: no question" "no terminal: assumes yes and pulls"; do
     if [[ $bup_out == *"ok   $want"* ]]; then echo "${green}ok${n}   $want"; else echo "${red}FAIL${n} bup: $want"; fail=1; fi
 done
+
+# The installer's state-keeping promises, in a throw-away HOME (never the real one): a re-install keeps the
+# user's config values, a layered install turns a ~/.bashrc symlink into a plain file instead of writing the
+# block into the repo's own bashrc, and a failed verify reaches the exit status (bup relies on it).
+echo "── installer"
+inst_t=$(mktemp -d)
+inst() { local h=$1; shift; env -i HOME="$h" PATH="$PATH" TERM=dumb timeout 60 bash "$here/install.sh" --no-deps -y "$@" >"$inst_t/out" 2>&1; }
+mkdir "$inst_t/h1" "$inst_t/h2"
+inst "$inst_t/h1" --profile server
+sed -i 's/^BASHRC_CD_LS_MAX=.*/BASHRC_CD_LS_MAX=7/' "$inst_t/h1/.config/bashrc-profile/config"
+inst "$inst_t/h1" --profile server
+if grep -q '^BASHRC_CD_LS_MAX=7$' "$inst_t/h1/.config/bashrc-profile/config"; then echo "${green}ok${n}   re-install keeps config values"
+else echo "${red}FAIL${n} re-install overwrote the config"; fail=1; fi
+ln -s "$here/bashrc" "$inst_t/h2/.bashrc"
+inst "$inst_t/h2" --profile omarchy
+if [[ ! -L $inst_t/h2/.bashrc ]] && grep -q 'bashrc-profile: BEGIN' "$inst_t/h2/.bashrc" && ! grep -q 'bashrc-profile: BEGIN' "$here/bashrc"; then
+    echo "${green}ok${n}   layered install replaces a ~/.bashrc symlink, repo bashrc untouched"
+else echo "${red}FAIL${n} layered install wrote through the ~/.bashrc symlink"; fail=1; fi
+rm -rf "${inst_t:?}"
 
 echo
 if (( fail )); then echo "${red}smoke test FAILED${n}"; exit 1; else echo "${green}smoke test passed${n}"; fi

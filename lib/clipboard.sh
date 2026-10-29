@@ -225,10 +225,20 @@ HELP
         printf '%s' "$d" > "$caught"
         [[ -t 2 ]] && echo "caught ✅" >&2
     fi
-    ( umask 077; : > "$f"; ) || { echo "cpy: cannot write $f" >&2; return 1; }
-    if (( paste )); then command cat -- "$caught" > "$f"; command rm -f -- "$caught"
-    elif (( $# )); then printf '%s' "$*" > "$f"
-    else command cat > "$f"; fi
+    # Stdin is read to a private temp file BEFORE the spool is touched, like a paste: `cat missing | cpy` used to
+    # truncate the spool first, wiping the only copy of a secret held by `cpy -p` and sending an empty clipboard.
+    # The temp file sits beside the spool (same private directory, mktemp's 0600) and no input means "do nothing".
+    if (( ! paste && ! $# )); then
+        caught=$(mktemp "${f%/*}/cpy.XXXXXX") || { echo "cpy: cannot write in ${f%/*}" >&2; return 1; }
+        command cat > "$caught"
+        if [[ ! -s $caught ]]; then
+            command rm -f -- "$caught"
+            echo "cpy: nothing on stdin — clipboard left as it was" >&2; return 1
+        fi
+    fi
+    ( umask 077; : > "$f"; ) || { echo "cpy: cannot write $f" >&2; command rm -f -- "$caught"; return 1; }
+    if [[ -n $caught ]]; then command cat -- "$caught" > "$f"; command rm -f -- "$caught"
+    else printf '%s' "$*" > "$f"; fi
     if (( strip )); then local d; d=$(command cat -- "$f"); printf '%s' "$d" > "$f"; fi
     # A caught paste is what pst should hand back next (see _clip_mark); any other
     # copy is also on the terminal's clipboard, so the normal read order applies again.

@@ -18,7 +18,8 @@ alias home-pc='ssh user@example.com'      # from the UW servers back home
 # A remote server instead (needs mcrcon):
 export RCON_IP=192.0.2.10
 export RCON_PORT=25575
-export RCON_PASS='change-me'
+# No `export`: an exported password is inherited by every program the shell starts (see rcon in lib/system.sh).
+RCON_PASS='change-me'
 
 # ── Cloudflare tunnel (cloud, Pi profile) ────────────────────────────────────
 export CF_TUNNEL=my-tunnel
