@@ -53,6 +53,37 @@ _clip_file() {
 # "pst > ~/.cf-workers-token && chmod 600 ~/.cf-workers-token" into the token file).
 _clip_mark() { printf '%s.paste' "$(_clip_file)"; }
 
+# A `cpy -p` capture is usually a secret (the house way to hand one over without the chat), so it does not outlive its
+# 10 minutes (BASHRC_CLIP_PASTE_FRESH): a detached timer shreds it then, and every new shell and every pst also wipe a
+# capture older than that (a reboot or a killed session takes the timer with it). A plain cpy has no mark and is never
+# wiped. Why: on 2026-10-29 a live GitHub token sat in this spool for 15 h, readable by every process of the user.
+# BASHRC_CLIP_WIPE_TIMER=0 skips the timer (the smoke tests; the age check still applies).
+_clip_wipe_stale() {
+    local m f t now
+    m=$(_clip_mark); f=$(_clip_file)
+    [[ -r $m ]] || return 0
+    IFS= read -r t < "$m"; now=$(date +%s)
+    [[ $t =~ ^[0-9]+$ ]] && (( now - t < ${BASHRC_CLIP_PASTE_FRESH:-600} )) && return 0
+    command shred -u -- "$f" 2>/dev/null || command rm -f -- "$f"
+    command rm -f -- "$m"
+}
+_clip_expire_later() {
+    [[ ${BASHRC_CLIP_WIPE_TIMER:-1} == 0 ]] && return 0
+    local f m t
+    f=$(_clip_file); m=$(_clip_mark)
+    IFS= read -r t < "$m" 2>/dev/null || return 0
+    # Only the capture it was started for: a newer `cpy -p` writes a new mark, and this timer then leaves it alone.
+    # shellcheck disable=SC2016  # the job text expands in the child bash, from its own $1..$4
+    local job='sleep "$1"; IFS= read -r now < "$3" 2>/dev/null || exit 0; [ "$now" = "$4" ] || exit 0
+               shred -u -- "$2" 2>/dev/null || rm -f -- "$2"; rm -f -- "$3"'
+    if command -v setsid >/dev/null 2>&1; then
+        setsid -f bash -c "$job" _ "${BASHRC_CLIP_PASTE_FRESH:-600}" "$f" "$m" "$t" </dev/null >/dev/null 2>&1
+    else
+        ( nohup bash -c "$job" _ "${BASHRC_CLIP_PASTE_FRESH:-600}" "$f" "$m" "$t" </dev/null >/dev/null 2>&1 & )
+    fi
+}
+_clip_wipe_stale
+
 # Which backend is live right now? Resolved per call, not at startup: the same
 # shell can be local one minute and inside tmux over SSH the next, and this keeps
 # startup at zero cost.
@@ -242,7 +273,7 @@ HELP
     if (( strip )); then local d; d=$(command cat -- "$f"); printf '%s' "$d" > "$f"; fi
     # A caught paste is what pst should hand back next (see _clip_mark); any other
     # copy is also on the terminal's clipboard, so the normal read order applies again.
-    if (( paste )); then date +%s > "$(_clip_mark)"; else command rm -f -- "$(_clip_mark)"; fi
+    if (( paste )); then date +%s > "$(_clip_mark)"; _clip_expire_later; else command rm -f -- "$(_clip_mark)"; fi
 
     backend=$(_clip_backend)
     (( paste )) && backend="file"    # it came from the clipboard; no point sending it back
@@ -307,6 +338,7 @@ HELP
             return 0 ;;
     esac
     local f tmp src t now fresh=${BASHRC_CLIP_PASTE_FRESH:-600}
+    _clip_wipe_stale
     f=$(_clip_file)
     tmp=$(mktemp "${TMPDIR:-/tmp}/cpy.XXXXXX") || return 1
     # A fresh `cpy -p` capture beats the terminal (why: _clip_mark).

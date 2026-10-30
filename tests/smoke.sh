@@ -61,6 +61,8 @@ _t "size"        size "$T"
 _t "path -c"     path -c
 _t "cpy -h"      cpy -h
 _t "pst -h"      pst -h
+# No detached wipe timers from these tests (each cpy -p would leave a 10-minute sleep behind); _clip_timer turns it on.
+BASHRC_CLIP_WIPE_TIMER=0
 _clip_rt() { local BASHRC_CLIP_BACKEND=file; cpy "smoke-clip" && [[ $(pst) == smoke-clip ]]; }
 _t "cpy/pst"     _clip_rt
 # a paste that never arrives must fail fast and leave the clipboard untouched
@@ -84,6 +86,17 @@ _t "cpy -p ages" _clip_ages
 _clip_empty() ( BASHRC_CLIP_BACKEND=file
                 cpy "keep-me"; cpy </dev/null 2>/dev/null; (( $? == 1 )) && [[ $(pst -l) == keep-me ]] )
 _t "cpy empty stdin" _clip_empty
+# 2026-10-30: a cpy -p capture is wiped once it is older than BASHRC_CLIP_PASTE_FRESH (here by the age check in pst),
+# a plain cpy never is, and the detached timer wipes a capture by itself.
+_clip_wipe() ( BASHRC_CLIP_BACKEND=file
+               _clip_slurp() { printf "caught-token"; }
+               cpy -p && echo 1 > "$(_clip_mark)" && ! pst -l >/dev/null 2>&1 && [[ ! -e $(_clip_file) ]] &&
+               cpy "plain" && [[ $(BASHRC_CLIP_PASTE_FRESH=0 pst -l) == plain ]] )
+_t "cpy -p wiped" _clip_wipe
+_clip_timer() ( BASHRC_CLIP_BACKEND=file BASHRC_CLIP_WIPE_TIMER=1 BASHRC_CLIP_PASTE_FRESH=1
+                _clip_slurp() { printf "caught-token"; }
+                cpy -p && sleep 3 && [[ ! -e $(_clip_file) ]] )
+_t "cpy -p timer" _clip_timer
 _t "sys"         sys
 _t "psg"         psg bash
 _t "port -h"     port -h
