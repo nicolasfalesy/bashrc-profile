@@ -43,7 +43,7 @@ if [[ -n ${CLAUDE_CODE_OAUTH_TOKEN-} ]]; then echo "token: $CLAUDE_CODE_OAUTH_TO
 f=$CLAUDE_CONFIG_DIR/.credentials.json
 [[ -s $f ]] || { echo "Not logged in"; exit 1; }
 # a dead login: like the real one, blank the tokens in the file, then fail
-grep -q dead "$f" && { echo '{"claudeAiOauth":{"accessToken":"","refreshToken":""}}' > "$f"; echo "Failed to authenticate: OAuth session expired"; exit 1; }
+grep -q dead "$f" && { echo '{"claudeAiOauth":{"accessToken":"","refreshToken":""}}' > "$f"; echo "Failed to authenticate. API Error: 401 OAuth token has expired."; exit 1; }
 [[ -n ${STUB_RENEW-} ]] && jq -c '. + {renewed: true}' "$f" > "$f.n" && mv "$f.n" "$f"
 echo ok
 EOF
@@ -132,6 +132,12 @@ t "check tests the job token too, where jobs run" 'grep -q "2  Label 2 .*login w
 t "check keeps a renewal for the slot and the live login" '[ "$(jq -r .renewed "$S/acc/1.login.json"):$(jq -r .renewed "$S/cfg/.credentials.json"):$(jq -r .renewed "$S/acc/2.login.json")" = true:true:true ]'
 t "check never saves the blanked file a dead login leaves" '[ "$(jq -r .tok "$S/acc/3.login.json")" = dead ]'
 t "check passes the job token in the environment, never in argv" 'grep -q "token: token2" "$S/stub.log" && ! grep -q "argv:.*token2" "$S/stub.log"'
+
+# 8b. a failed state rewrite never blanks ~/.claude.json; name takes only a number
+new_sb 2 1; rm "$S/acc/2.account.json"; run use 2 >/dev/null
+t "a missing account file leaves ~/.claude.json whole" '[ "$(jq -r .keep "$S/cfg/.claude.json")" = me ]'
+run name . x >/dev/null
+t "name refuses a non-number and keeps the other labels" '[ "$(grep -c . "$S/acc/labels")" -eq 2 ] && ! grep -q "^\\.=" "$S/acc/labels"'
 
 # 9. it never prints a token or a login
 new_sb 2 1; echo token1 > "$S/acc/1.token"; out=$(run; run help; run use 2; run check)

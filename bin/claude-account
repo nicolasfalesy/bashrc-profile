@@ -67,9 +67,12 @@ label() { local l; l=$(sed -n "s/^$1=//p" "$ACC/labels" 2>/dev/null | tail -1); 
 email_of() { local e; e=$(jq -r '.emailAddress // empty' "$ACC/$1.account.json" 2>/dev/null); echo "${e:-no login saved}"; }
 slot_uuid() { jq -r '.accountUuid // empty' "$ACC/$1.account.json" 2>/dev/null; }
 # Write a file by temp name and rename, so nothing starting mid-switch ever reads half a file.
+# An empty input is refused: `jq ... | put` gets nothing when jq fails, and writing that would blank the file
+# (bug hunt 2026-10-30: a missing account file emptied ~/.claude.json). No file here is ever meant to be empty.
 put() {   # <dest> < content
     local tmp; tmp=$(mktemp "$1.XXXXXX") || return 1
-    cat > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$1"
+    if cat > "$tmp" && [[ -s $tmp ]] && chmod 600 "$tmp" && mv -f "$tmp" "$1"; then return 0; fi
+    rm -f -- "$tmp"; return 1
 }
 name() {   # <n> <label>
     local tmp; tmp=$(mktemp "$ACC/labels.XXXXXX")
@@ -237,7 +240,8 @@ check() {   # one tiny message per account: its login, and its job token where j
         (cd "$tmp/cfg" && env -u CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CONFIG_DIR="$tmp/cfg" ENABLE_CLAUDEAI_MCP_SERVERS=false \
             timeout 90 "$CLAUDE_BIN" -p --model claude-sonnet-5 --strict-mcp-config "Reply with the single word ok" 2>&1 | tail -1)
     }
-    verdict() { case $1 in *[Oo]k*) echo "${G}works$R" ;; *) echo "$Y${1:0:90}$R" ;; esac; }
+    # The whole reply must be "ok": a substring match passed "OAuth token revoked" (t-OK-en) as working.
+    verdict() { local v=${1,,}; v=${v//[[:space:]]/}; case $v in ok|ok.) echo "${G}works$R" ;; *) echo "$Y${1:0:90}$R" ;; esac; }
     for n in $(accounts); do
         line=""
         if [[ -s $ACC/$n.login.json ]]; then
@@ -340,6 +344,8 @@ case ${1:-status} in
     check) LIVE=$(live_uuid); check ;;
     name)
         [[ -n ${2-} && -n ${3-} ]] || die 'For example: claude-account name 2 "Apple (Alt)"'
+        # A number only: name() puts it in a grep pattern, where "." matched every other label and dropped them.
+        [[ $2 =~ ^[0-9]+$ ]] || die "The account must be a number, like: claude-account name 2 \"Apple (Alt)\""
         name "$2" "$3"; write_prom; echo "Account $2 is now called \"$3\"." ;;
     help|-h|--help) LIVE=$(live_uuid); help ;;
     *) echo "${Y}claude-account doesn't know \"$1\".$R"; echo; LIVE=$(live_uuid); help; exit 1 ;;

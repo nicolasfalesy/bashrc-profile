@@ -27,8 +27,8 @@
 #  light_foreground dark_foreground red green yellow orange blue cyan magenta
 #  plus two the generator derives along this theme's own background→foreground
 #  axis, so their contrast is the same on every theme, light or dark:
-#    rule  42% — the fill rule
-#    dim   72% — secondary text (clock, untracked count, the path before a repo)
+#    rule  the first blend reaching 2.5:1 contrast — the fill rule
+#    dim   the first blend reaching 4.5:1 — secondary text (clock, untracked count, the path before a repo)
 #  Use those for anything subdued. A named background tone like `muted` or
 #  `selection` is a background tone: it disappears on some themes.
 # ─────────────────────────────────────────────────────────────────────────────

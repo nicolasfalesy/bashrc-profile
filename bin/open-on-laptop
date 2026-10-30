@@ -13,7 +13,9 @@
 url=$1
 case $url in
     http://*|https://*) ;;
-    *) echo "open-on-laptop: only http(s) links: $url" >&2; exit 1 ;;
+    # printf + tr, not echo: dash's echo turns a typed \033 into a real ESC, which would put a live escape
+    # code on the terminal from the very line that refuses the link.
+    *) printf 'open-on-laptop: only http(s) links: %s\n' "$url" | tr -d '\000-\011\013-\037' >&2; exit 1 ;;
 esac
 # -w0 would be GNU-only; tr keeps it portable to the Pi and the laptop.
 b64=$(printf %s "$url" | base64 | tr -d '\n')
