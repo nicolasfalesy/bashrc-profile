@@ -16,6 +16,9 @@
 #    message, the same as a /login. So it no longer asks for Claude to be closed (the laptop's copy did).
 #    A one-year `claude setup-token` token is not used for these: a session started that way cannot use Remote
 #    Control ("Claude.ai login was rejected", NAS 2026-09-27).
+#    OpenCode (its "Claude Agent" provider) follows along with no step of its own: it runs this same `claude` binary,
+#    keeps no login of its own (its stored credential holds no token), and answered "Not logged in" with an empty
+#    CLAUDE_CONFIG_DIR (laptop, 2026-11-04).
 # 2. The unattended jobs, only on a machine with $ACC/jobs.conf (the NAS). Each job reads a one-year token from
 #    a file when it starts, so switching = rewriting those files; nothing restarts. jobs.conf names them, so no
 #    machine's paths sit in this public repo. One entry per line, paths without spaces, # starts a comment:
@@ -221,6 +224,7 @@ use() {
         if [[ $lnow == "$n" ]]; then
             echo "Switched Claude from $(label "$from") to ${G}$(label "$n")$R."
             echo "${D}Open sessions move over on their next message.$R"
+            command -v opencode >/dev/null 2>&1 && echo "${D}OpenCode moves over too: it uses this same login.$R"
         else
             echo "${Y}Wrote account $n's login, but Anthropic says Claude is on $(label "$lnow")."
             echo "If it keeps happening: /login inside Claude with that account, then run: claude-account save $n$R"
