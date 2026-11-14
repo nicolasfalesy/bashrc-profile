@@ -39,7 +39,7 @@ lib/aliases.sh         aliases + bt / bup / prereqs
 lib/navigation.sh      ll, cd, up, mkcd, take, tre
 lib/files.sh           extract, ftext, size, bak, diff2, path
 lib/clipboard.sh       cpy, pst (OSC 52 — works over SSH)
-lib/system.sh          sys, psg, port, killport, topp, myip, weather, t, rcon
+lib/system.sh          sys, psg, port, killport, topp, myip, weather, t, tkill, rcon
 lib/dev.sh             dev commands for C, C++, Rust, Python, make (lazy-loaded)
 lib/prompt.sh          fzf, starship, ble.sh, optional zoxide (always last)
 profiles/{pi,nas,desktop,omarchy,uw,server}.sh
@@ -54,7 +54,7 @@ legacy/                the old single-file uw_bashrc and TrueNAS zshrc (referenc
 bashrc.local.example   template for ~/.bashrc.local (secrets, ssh hosts — never committed)
 install.sh             install / --update / --deps-only / --uninstall
 tests/smoke.sh         parse + shellcheck + start every profile in a sandbox and call the functions
-.github/workflows/     CI: runs tests/smoke.sh and an installer dry run on every push
+.github/workflows/     CI: runs tests/smoke.sh and an installer dry run on every push and PR to main
 .shellcheckrc          repo-wide shellcheck settings (the code is shellcheck-clean)
 docs/                  ARCHITECTURE, FEATURES, SETUP, AUDIT
 ```
